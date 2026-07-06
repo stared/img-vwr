@@ -1,0 +1,12 @@
+[package]
+name = "imgvwr-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure core logic for imgvwr: scanning, decoding, thumbnails. No Tauri dependency."
+
+[dependencies]
+serde = { workspace = true }
+specta = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  --bg: #101114;
+  --bg-raised: #17181c;
+  --border: #26272c;
+  --text: #e6e7ea;
+  --text-dim: #8a8d94;
+  --accent: #5e6ad2;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background-color: var(--bg);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  filter: brightness(1.1);
+}
+
+.folder-path {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+.hint,
+.error {
+  padding: 16px;
+  color: var(--text-dim);
+}
+
+.error {
+  color: #e5534b;
+}
+
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 8px 0;
+}
+
+.file-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 16px;
+}
+
+.file-list li:hover {
+  background: var(--bg-raised);
+}
+
+.file-meta {
+  color: var(--text-dim);
+  white-space: nowrap;
+}

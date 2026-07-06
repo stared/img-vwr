@@ -1,0 +1,34 @@
+[workspace]
+members = ["crates/imgvwr-core"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+specta = { version = "=2.0.0-rc.22", features = ["derive"] }
+
+[package]
+name = "imgvwr"
+version = "0.1.0"
+description = "An extensible image viewer"
+authors = ["Piotr Migdał"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "imgvwr_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+imgvwr-core = { path = "crates/imgvwr-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = "1"
+specta = { workspace = true }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
