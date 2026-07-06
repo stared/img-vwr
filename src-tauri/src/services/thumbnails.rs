@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
+use imgvwr_core::{thumb_cache_key, CodecError, CodecRegistry, ThumbError, THUMB_MAX_EDGE};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
 
@@ -102,19 +102,23 @@ impl ThumbnailService {
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
 
-        let result = std::fs::read(path)
-            .map_err(|e| e.to_string())
-            .and_then(|bytes| {
-                imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE)
-                    .map_err(|e| e.to_string())
-            })
-            .and_then(|webp| write_atomically(cache_file, &webp).map_err(|e| e.to_string()));
+        let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| {
+            match imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
+                Ok(webp) => write_atomically(cache_file, &webp)
+                    .map(|()| cache_file.to_path_buf())
+                    .map_err(|e| e.to_string()),
+                // No Rust codec (e.g. AVIF): serve the original file and let
+                // the webview decode and downscale it natively.
+                Err(ThumbError::Codec(CodecError::Unsupported)) => Ok(PathBuf::from(path)),
+                Err(e) => Err(e.to_string()),
+            }
+        });
 
         if self.is_stale(epoch) {
             return;
         }
         match result {
-            Ok(()) => emit_ready(app, path, cache_file, epoch),
+            Ok(shown_file) => emit_ready(app, path, &shown_file, epoch),
             Err(error) => emit_failed(app, path, &error, epoch),
         }
     }
@@ -143,4 +147,32 @@ fn emit_failed(app: &AppHandle, path: &str, error: &str, epoch: u64) {
         epoch,
     }
     .emit(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn epoch_bump_invalidates_older_requests() {
+        let tmp = tempfile::tempdir().unwrap();
+        let service = ThumbnailService::new(tmp.path().to_path_buf()).unwrap();
+
+        let first = service.bump_epoch();
+        assert!(!service.is_stale(first));
+
+        let second = service.bump_epoch();
+        assert!(second > first);
+        assert!(service.is_stale(first));
+        assert!(!service.is_stale(second));
+    }
+
+    #[test]
+    fn atomic_write_leaves_no_temp_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("t.webp");
+        write_atomically(&target, b"bytes").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"bytes");
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 1);
+    }
 }

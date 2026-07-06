@@ -21,6 +21,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .events(collect_events![events::ThumbnailReady, events::ThumbnailFailed])
 }
 
+#[cfg(any(debug_assertions, test))]
 fn export_bindings(builder: &Builder<tauri::Wry>) {
     builder
         .export(
