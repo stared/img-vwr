@@ -1,19 +1,23 @@
 import { useEffect } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { CommandPalette } from "./components/shell/CommandPalette";
+import { Sidebar } from "./components/shell/Sidebar";
+import { StatusBar } from "./components/shell/StatusBar";
+import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { events } from "./ipc";
+import { executeCommand } from "./registry/commands";
 import { useAppStore } from "./state/store";
 import "./App.css";
 
 function App() {
-  const folderPath = useAppStore((s) => s.folderPath);
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
   const count = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
-  const openFolder = useAppStore((s) => s.openFolder);
+
+  useGlobalKeybindings();
 
   // Stream thumbnail results from Rust into the store.
   useEffect(() => {
@@ -30,26 +34,30 @@ function App() {
     };
   }, []);
 
-  const pickFolder = async () => {
-    const selected = await open({ directory: true, title: "Open Folder" });
-    if (typeof selected === "string") {
-      await openFolder(selected);
-    }
-  };
-
   return (
-    <main className="app">
-      <header className="toolbar">
-        <button onClick={() => void pickFolder()}>Open Folder</button>
-        <span className="folder-path">{folderPath ?? "No folder open"}</span>
-        {status === "loaded" && <span className="count">{count} images</span>}
-      </header>
-
-      {status === "loading" && <p className="hint">Scanning…</p>}
-      {status === "error" && <p className="error">{error}</p>}
-      {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
-      {status === "loaded" && count > 0 && (viewMode === "viewer" ? <ImageViewer /> : <GalleryGrid />)}
-    </main>
+    <div className="app">
+      <div className="app-body">
+        <Sidebar />
+        <main className="main-pane">
+          {status === "idle" && (
+            <div className="empty-state">
+              <p>No folder open.</p>
+              <button onClick={() => executeCommand("folder.open", { store: useAppStore })}>
+                Open Folder <kbd>⌘O</kbd>
+              </button>
+            </div>
+          )}
+          {status === "loading" && <p className="hint">Scanning…</p>}
+          {status === "error" && <p className="error">{error}</p>}
+          {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
+          {status === "loaded" &&
+            count > 0 &&
+            (viewMode === "viewer" ? <ImageViewer /> : <GalleryGrid />)}
+        </main>
+      </div>
+      <StatusBar />
+      <CommandPalette />
+    </div>
   );
 }
 
