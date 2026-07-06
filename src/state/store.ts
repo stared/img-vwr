@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import type { FileEntry } from "../ipc";
-import { scanFolder } from "../ipc";
+import { newEpoch, scanFolder } from "../ipc";
 
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -10,10 +10,18 @@ export interface AppState {
   entries: FileEntry[];
   status: FolderStatus;
   error: string | null;
+  /** Folder generation; thumbnail events from older epochs are ignored. */
+  epoch: number;
+  /** path → absolute cache-file path, filled as thumbnail events stream in. */
+  thumbs: Record<string, string>;
+  /** path → error message for thumbnails that failed to generate. */
+  thumbErrors: Record<string, string>;
 }
 
 interface AppActions {
   openFolder: (path: string) => Promise<void>;
+  thumbReady: (path: string, cacheFile: string, epoch: number) => void;
+  thumbFailed: (path: string, error: string, epoch: number) => void;
 }
 
 export const initialState: AppState = {
@@ -21,12 +29,23 @@ export const initialState: AppState = {
   entries: [],
   status: "idle",
   error: null,
+  epoch: 0,
+  thumbs: {},
+  thumbErrors: {},
 };
 
 /* Pure transitions — actions only apply these. */
 
-export function folderLoading(path: string): Partial<AppState> {
-  return { folderPath: path, entries: [], status: "loading", error: null };
+export function folderLoading(path: string, epoch: number): Partial<AppState> {
+  return {
+    folderPath: path,
+    entries: [],
+    status: "loading",
+    error: null,
+    epoch,
+    thumbs: {},
+    thumbErrors: {},
+  };
 }
 
 export function folderLoaded(entries: FileEntry[]): Partial<AppState> {
@@ -37,21 +56,52 @@ export function folderFailed(message: string): Partial<AppState> {
   return { entries: [], status: "error", error: message };
 }
 
+export function withThumb(
+  state: Pick<AppState, "thumbs" | "epoch">,
+  path: string,
+  cacheFile: string,
+  epoch: number,
+): Partial<AppState> | null {
+  if (epoch !== state.epoch) return null;
+  return { thumbs: { ...state.thumbs, [path]: cacheFile } };
+}
+
+export function withThumbError(
+  state: Pick<AppState, "thumbErrors" | "epoch">,
+  path: string,
+  error: string,
+  epoch: number,
+): Partial<AppState> | null {
+  if (epoch !== state.epoch) return null;
+  return { thumbErrors: { ...state.thumbErrors, [path]: error } };
+}
+
 export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   ...initialState,
 
   openFolder: async (path) => {
-    set(folderLoading(path));
+    const epoch = await newEpoch();
+    set(folderLoading(path, epoch));
     try {
       const entries = await scanFolder(path);
       // Ignore a stale response if the user already opened another folder.
-      if (get().folderPath === path) {
+      if (get().epoch === epoch) {
         set(folderLoaded(entries));
       }
     } catch (error) {
-      if (get().folderPath === path) {
+      if (get().epoch === epoch) {
         set(folderFailed(error instanceof Error ? error.message : String(error)));
       }
     }
+  },
+
+  thumbReady: (path, cacheFile, epoch) => {
+    const next = withThumb(get(), path, cacheFile, epoch);
+    if (next) set(next);
+  },
+
+  thumbFailed: (path, error, epoch) => {
+    const next = withThumbError(get(), path, error, epoch);
+    if (next) set(next);
   },
 }));

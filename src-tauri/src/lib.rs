@@ -1,10 +1,23 @@
 mod commands;
+mod events;
+mod services;
 
-use tauri_specta::{collect_commands, Builder};
+use std::sync::Arc;
+
+use tauri::Manager as _;
+use tauri_specta::{collect_commands, collect_events, Builder};
+
+use services::thumbnails::ThumbnailService;
 
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![commands::scan_folder, commands::list_subdirs])
+        .commands(collect_commands![
+            commands::scan_folder,
+            commands::list_subdirs,
+            commands::new_epoch,
+            commands::request_thumbnails,
+        ])
+        .events(collect_events![events::ThumbnailReady, events::ThumbnailFailed])
 }
 
 fn export_bindings(builder: &Builder<tauri::Wry>) {
@@ -34,6 +47,8 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+            let cache_dir = app.path().app_cache_dir()?.join("thumbnails");
+            app.manage(Arc::new(ThumbnailService::new(cache_dir)?));
             Ok(())
         })
         .run(tauri::generate_context!())

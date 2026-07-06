@@ -1,10 +1,32 @@
+import { useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
+import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { events } from "./ipc";
 import { useAppStore } from "./state/store";
 import "./App.css";
 
 function App() {
-  const { folderPath, entries, status, error, openFolder } = useAppStore();
+  const folderPath = useAppStore((s) => s.folderPath);
+  const status = useAppStore((s) => s.status);
+  const error = useAppStore((s) => s.error);
+  const count = useAppStore((s) => s.entries.length);
+  const openFolder = useAppStore((s) => s.openFolder);
+
+  // Stream thumbnail results from Rust into the store.
+  useEffect(() => {
+    const { thumbReady, thumbFailed } = useAppStore.getState();
+    const unlistenReady = events.thumbnailReady.listen(({ payload }) =>
+      thumbReady(payload.path, payload.cacheFile, payload.epoch),
+    );
+    const unlistenFailed = events.thumbnailFailed.listen(({ payload }) =>
+      thumbFailed(payload.path, payload.error, payload.epoch),
+    );
+    return () => {
+      void unlistenReady.then((fn) => fn());
+      void unlistenFailed.then((fn) => fn());
+    };
+  }, []);
 
   const pickFolder = async () => {
     const selected = await open({ directory: true, title: "Open Folder" });
@@ -18,33 +40,15 @@ function App() {
       <header className="toolbar">
         <button onClick={() => void pickFolder()}>Open Folder</button>
         <span className="folder-path">{folderPath ?? "No folder open"}</span>
-        {status === "loaded" && <span className="count">{entries.length} images</span>}
+        {status === "loaded" && <span className="count">{count} images</span>}
       </header>
 
       {status === "loading" && <p className="hint">Scanning…</p>}
       {status === "error" && <p className="error">{error}</p>}
-      {status === "loaded" && entries.length === 0 && (
-        <p className="hint">No images in this folder.</p>
-      )}
-
-      <ul className="file-list">
-        {entries.map((entry) => (
-          <li key={entry.path}>
-            <span className="file-name">{entry.name}</span>
-            <span className="file-meta">
-              {entry.formatHint} · {formatSize(entry.size)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
+      {status === "loaded" && count > 0 && <GalleryGrid />}
     </main>
   );
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default App;

@@ -22,12 +22,25 @@ async listSubdirs(path: string) : Promise<Result<DirEntry[], string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async newEpoch() : Promise<number> {
+    return await TAURI_INVOKE("new_epoch");
+},
+async requestThumbnails(paths: string[], epoch: number) : Promise<void> {
+    await TAURI_INVOKE("request_thumbnails", { paths, epoch });
 }
 }
 
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+thumbnailFailed: ThumbnailFailed,
+thumbnailReady: ThumbnailReady
+}>({
+thumbnailFailed: "thumbnail-failed",
+thumbnailReady: "thumbnail-ready"
+})
 
 /** user-defined constants **/
 
@@ -41,6 +54,13 @@ export type FileEntry = { path: string; name: string; size: number; modifiedMs: 
  * Lowercased extension, e.g. "png".
  */
 formatHint: string }
+export type ThumbnailFailed = { path: string; error: string; epoch: number }
+export type ThumbnailReady = { path: string; 
+/**
+ * Absolute path of the cached WebP (or the original file when no codec
+ * matched and the webview should decode it natively).
+ */
+cacheFile: string; epoch: number }
 
 /** tauri-specta globals **/
 

@@ -1,10 +1,18 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use imgvwr_core::{DirEntry, FileEntry};
+use tauri::{AppHandle, Manager as _, State};
+
+use crate::services::thumbnails::ThumbnailService;
 
 #[tauri::command]
 #[specta::specta]
-pub fn scan_folder(path: PathBuf) -> Result<Vec<FileEntry>, String> {
+pub fn scan_folder(app: AppHandle, path: PathBuf) -> Result<Vec<FileEntry>, String> {
+    // Let the webview load originals from this folder via the asset protocol.
+    app.asset_protocol_scope()
+        .allow_directory(&path, false)
+        .map_err(|e| format!("failed to extend asset scope: {e}"))?;
     imgvwr_core::scan_dir(&path).map_err(|e| format!("failed to scan {}: {e}", path.display()))
 }
 
@@ -13,4 +21,21 @@ pub fn scan_folder(path: PathBuf) -> Result<Vec<FileEntry>, String> {
 pub fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
     imgvwr_core::list_subdirs(&path)
         .map_err(|e| format!("failed to list {}: {e}", path.display()))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn new_epoch(service: State<'_, Arc<ThumbnailService>>) -> u64 {
+    service.bump_epoch()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn request_thumbnails(
+    app: AppHandle,
+    service: State<'_, Arc<ThumbnailService>>,
+    paths: Vec<String>,
+    epoch: u64,
+) {
+    service.request(&app, paths, epoch);
 }
