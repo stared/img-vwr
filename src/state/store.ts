@@ -4,6 +4,7 @@ import type { FileEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
+export type ViewMode = "gallery" | "viewer";
 
 export interface AppState {
   folderPath: string | null;
@@ -16,12 +17,18 @@ export interface AppState {
   thumbs: Record<string, string>;
   /** path → error message for thumbnails that failed to generate. */
   thumbErrors: Record<string, string>;
+  viewMode: ViewMode;
+  /** Index into `entries` of the image shown in viewer mode. */
+  selectedIndex: number;
 }
 
 interface AppActions {
   openFolder: (path: string) => Promise<void>;
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
+  openViewer: (index: number) => void;
+  closeViewer: () => void;
+  navigate: (delta: number) => void;
 }
 
 export const initialState: AppState = {
@@ -32,6 +39,8 @@ export const initialState: AppState = {
   epoch: 0,
   thumbs: {},
   thumbErrors: {},
+  viewMode: "gallery",
+  selectedIndex: 0,
 };
 
 /* Pure transitions — actions only apply these. */
@@ -45,7 +54,19 @@ export function folderLoading(path: string, epoch: number): Partial<AppState> {
     epoch,
     thumbs: {},
     thumbErrors: {},
+    viewMode: "gallery",
+    selectedIndex: 0,
   };
+}
+
+/** Move the viewer selection by `delta`, clamped to the folder bounds. */
+export function movedSelection(
+  state: Pick<AppState, "selectedIndex" | "entries">,
+  delta: number,
+): Partial<AppState> {
+  if (state.entries.length === 0) return {};
+  const index = Math.min(state.entries.length - 1, Math.max(0, state.selectedIndex + delta));
+  return { selectedIndex: index };
 }
 
 export function folderLoaded(entries: FileEntry[]): Partial<AppState> {
@@ -104,4 +125,14 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     const next = withThumbError(get(), path, error, epoch);
     if (next) set(next);
   },
+
+  openViewer: (index) => {
+    if (index >= 0 && index < get().entries.length) {
+      set({ viewMode: "viewer", selectedIndex: index });
+    }
+  },
+
+  closeViewer: () => set({ viewMode: "gallery" }),
+
+  navigate: (delta) => set(movedSelection(get(), delta)),
 }));

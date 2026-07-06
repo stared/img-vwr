@@ -4,15 +4,17 @@ import { useAppStore } from "../../state/store";
 
 interface ThumbCellProps {
   entry: FileEntry;
+  index: number;
   size: number;
 }
 
-export function ThumbCell({ entry, size }: ThumbCellProps) {
+export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const cacheFile = useAppStore((s) => s.thumbs[entry.path]);
   const error = useAppStore((s) => s.thumbErrors[entry.path]);
+  const openViewer = useAppStore((s) => s.openViewer);
 
   return (
-    <figure className="thumb-cell" style={{ width: size }}>
+    <figure className="thumb-cell" style={{ width: size }} onDoubleClick={() => openViewer(index)}>
       <div className="thumb-frame" style={{ height: size }}>
         {cacheFile !== undefined ? (
           <img src={fileUrl(cacheFile)} alt={entry.name} loading="lazy" draggable={false} />

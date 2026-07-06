@@ -23,6 +23,14 @@ async listSubdirs(path: string) : Promise<Result<DirEntry[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_metadata", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async newEpoch() : Promise<number> {
     return await TAURI_INVOKE("new_epoch");
 },
@@ -49,11 +57,18 @@ thumbnailReady: "thumbnail-ready"
 /** user-defined types **/
 
 export type DirEntry = { path: string; name: string }
+export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**
  * Lowercased extension, e.g. "png".
  */
 formatHint: string }
+export type ImageMeta = { 
+/**
+ * None when no Rust decoder knows the format (e.g. AVIF) — the webview
+ * can still measure the image it renders natively.
+ */
+width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null }
 export type ThumbnailFailed = { path: string; error: string; epoch: number }
 export type ThumbnailReady = { path: string; 
 /**

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { ImageViewer } from "./components/viewer/ImageViewer";
 import { events } from "./ipc";
 import { useAppStore } from "./state/store";
 import "./App.css";
@@ -11,6 +12,7 @@ function App() {
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
   const count = useAppStore((s) => s.entries.length);
+  const viewMode = useAppStore((s) => s.viewMode);
   const openFolder = useAppStore((s) => s.openFolder);
 
   // Stream thumbnail results from Rust into the store.
@@ -46,7 +48,7 @@ function App() {
       {status === "loading" && <p className="hint">Scanning…</p>}
       {status === "error" && <p className="error">{error}</p>}
       {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
-      {status === "loaded" && count > 0 && <GalleryGrid />}
+      {status === "loaded" && count > 0 && (viewMode === "viewer" ? <ImageViewer /> : <GalleryGrid />)}
     </main>
   );
 }

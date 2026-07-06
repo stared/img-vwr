@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use imgvwr_core::{DirEntry, FileEntry};
+use imgvwr_core::{DirEntry, FileEntry, ImageMeta};
 use tauri::{AppHandle, Manager as _, State};
 
 use crate::services::thumbnails::ThumbnailService;
@@ -21,6 +21,13 @@ pub fn scan_folder(app: AppHandle, path: PathBuf) -> Result<Vec<FileEntry>, Stri
 pub fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
     imgvwr_core::list_subdirs(&path)
         .map_err(|e| format!("failed to list {}: {e}", path.display()))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
+    imgvwr_core::read_meta(&path)
+        .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
 }
 
 #[tauri::command]

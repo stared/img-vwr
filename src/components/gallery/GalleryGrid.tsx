@@ -49,6 +49,7 @@ export function GalleryGrid() {
     () =>
       virtualRows.map((row) => ({
         row,
+        firstIndex: row.index * columns,
         items: entries.slice(row.index * columns, (row.index + 1) * columns),
       })),
     [virtualRows, entries, columns],
@@ -57,7 +58,7 @@ export function GalleryGrid() {
   return (
     <div ref={scrollRef} className="gallery-scroll">
       <div className="gallery-inner" style={{ height: virtualizer.getTotalSize() }}>
-        {rowEntries.map(({ row, items }) => (
+        {rowEntries.map(({ row, firstIndex, items }) => (
           <div
             key={row.key}
             className="gallery-row"
@@ -67,8 +68,8 @@ export function GalleryGrid() {
               gap: CELL_GAP,
             }}
           >
-            {items.map((entry) => (
-              <ThumbCell key={entry.path} entry={entry} size={CELL_SIZE} />
+            {items.map((entry, i) => (
+              <ThumbCell key={entry.path} entry={entry} index={firstIndex + i} size={CELL_SIZE} />
             ))}
           </div>
         ))}

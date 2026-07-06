@@ -14,6 +14,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             commands::scan_folder,
             commands::list_subdirs,
+            commands::get_metadata,
             commands::new_epoch,
             commands::request_thumbnails,
         ])
