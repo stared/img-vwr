@@ -26,6 +26,8 @@ export interface AppState {
   thumbs: Record<string, string>;
   /** path → error message for thumbnails that failed to generate. */
   thumbErrors: Record<string, string>;
+  /** folder path → direct image count, streamed from background counting. */
+  dirCounts: Record<string, number>;
   viewMode: ViewMode;
   /** Index into `entries` of the selected image (gallery highlight & viewer). */
   selectedIndex: number;
@@ -45,6 +47,7 @@ interface AppActions {
   openFolder: (path: string) => Promise<void>;
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
+  dirCountReady: (path: string, count: number) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -66,6 +69,7 @@ export const initialState: AppState = {
   epoch: 0,
   thumbs: {},
   thumbErrors: {},
+  dirCounts: {},
   viewMode: "gallery",
   selectedIndex: 0,
   sidebarVisible: true,
@@ -182,6 +186,9 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     const next = withThumbError(get(), path, error, epoch);
     if (next) set(next);
   },
+
+  // Counts are keyed by absolute path, so they can't go stale — no epoch guard.
+  dirCountReady: (path, count) => set({ dirCounts: { ...get().dirCounts, [path]: count } }),
 
   openViewer: (index) => {
     if (index >= 0 && index < get().entries.length) {

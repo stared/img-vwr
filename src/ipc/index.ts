@@ -30,6 +30,10 @@ export async function requestThumbnails(paths: string[], epoch: number): Promise
   return commands.requestThumbnails(paths, epoch);
 }
 
+export async function requestDirCounts(paths: string[]): Promise<void> {
+  return commands.requestDirCounts(paths);
+}
+
 /** asset:// URL the webview can load a local file from. */
 export function fileUrl(path: string): string {
   return convertFileSrc(path);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { DirEntry } from "../../ipc";
-import { listSubdirs } from "../../ipc";
+import { listSubdirs, requestDirCounts } from "../../ipc";
 import { useAppStore } from "../../state/store";
 
 /** Lazy one-level-at-a-time folder tree rooted at the opened folder. */
@@ -28,7 +28,7 @@ export function FolderTreePanel() {
         key={folderPath}
         path={folderPath}
         name={baseName(folderPath)}
-        count={rootCount}
+        countOverride={rootCount}
         depth={0}
         initiallyOpen
       />
@@ -39,21 +39,30 @@ export function FolderTreePanel() {
 interface TreeNodeProps {
   path: string;
   name: string;
-  /** Direct image count; undefined = unknown. */
-  count?: number;
+  /** Known-fresh count (the open folder's loaded entries); skips the store lookup. */
+  countOverride?: number;
   depth: number;
   initiallyOpen?: boolean;
 }
 
-function TreeNode({ path, name, count, depth, initiallyOpen = false }: TreeNodeProps) {
+function TreeNode({ path, name, countOverride, depth, initiallyOpen = false }: TreeNodeProps) {
   const folderPath = useAppStore((s) => s.folderPath);
   const openFolder = useAppStore((s) => s.openFolder);
+  const storeCount = useAppStore((s) => s.dirCounts[path]);
   const [expanded, setExpanded] = useState(initiallyOpen);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
 
+  const count = countOverride ?? storeCount;
+
   const load = useCallback(async () => {
     try {
-      setChildren(await listSubdirs(path));
+      const dirs = await listSubdirs(path);
+      setChildren(dirs);
+      // Counts stream in as background events; slow (cloud) folders must
+      // never delay showing the tree itself.
+      if (dirs.length > 0) {
+        void requestDirCounts(dirs.map((d) => d.path));
+      }
     } catch {
       setChildren([]);
     }
@@ -72,17 +81,17 @@ function TreeNode({ path, name, count, depth, initiallyOpen = false }: TreeNodeP
         <button className="tree-label" onClick={() => void openFolder(path)} title={path}>
           {name}
         </button>
-        {count !== undefined && count > 0 && <span className="tree-count">{count}</span>}
+        {count === undefined ? (
+          <span className="tree-count counting" title="counting images…">
+            …
+          </span>
+        ) : (
+          count > 0 && <span className="tree-count">{count}</span>
+        )}
       </div>
       {expanded &&
         children?.map((child) => (
-          <TreeNode
-            key={child.path}
-            path={child.path}
-            name={child.name}
-            count={child.imageCount}
-            depth={depth + 1}
-          />
+          <TreeNode key={child.path} path={child.path} name={child.name} depth={depth + 1} />
         ))}
       {expanded && children?.length === 0 && (
         <span className="tree-empty" style={{ paddingLeft: 20 }}>

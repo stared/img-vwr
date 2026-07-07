@@ -17,8 +17,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_metadata,
             commands::new_epoch,
             commands::request_thumbnails,
+            commands::request_dir_counts,
         ])
-        .events(collect_events![events::ThumbnailReady, events::ThumbnailFailed])
+        .events(collect_events![
+            events::ThumbnailReady,
+            events::ThumbnailFailed,
+            events::DirCountReady
+        ])
 }
 
 #[cfg(any(debug_assertions, test))]

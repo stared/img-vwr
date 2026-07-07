@@ -10,6 +10,15 @@ pub struct ThumbnailReady {
     pub epoch: u64,
 }
 
+/// Direct image count of one folder, computed in the background. Keyed by
+/// absolute path, so it is never stale — no epoch needed.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct DirCountReady {
+    pub path: String,
+    pub image_count: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbnailFailed {

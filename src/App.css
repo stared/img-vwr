@@ -183,6 +183,20 @@ kbd {
   color: var(--text-dim);
 }
 
+.tree-count.counting {
+  animation: counting-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes counting-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
 .tree-row.current > .tree-count {
   color: var(--accent);
 }

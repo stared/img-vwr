@@ -19,18 +19,22 @@ function App() {
 
   useGlobalKeybindings();
 
-  // Stream thumbnail results from Rust into the store.
+  // Stream thumbnail and folder-count results from Rust into the store.
   useEffect(() => {
-    const { thumbReady, thumbFailed } = useAppStore.getState();
-    const unlistenReady = events.thumbnailReady.listen(({ payload }) =>
-      thumbReady(payload.path, payload.cacheFile, payload.epoch),
-    );
-    const unlistenFailed = events.thumbnailFailed.listen(({ payload }) =>
-      thumbFailed(payload.path, payload.error, payload.epoch),
-    );
+    const { thumbReady, thumbFailed, dirCountReady } = useAppStore.getState();
+    const unlisteners = [
+      events.thumbnailReady.listen(({ payload }) =>
+        thumbReady(payload.path, payload.cacheFile, payload.epoch),
+      ),
+      events.thumbnailFailed.listen(({ payload }) =>
+        thumbFailed(payload.path, payload.error, payload.epoch),
+      ),
+      events.dirCountReady.listen(({ payload }) =>
+        dirCountReady(payload.path, payload.imageCount),
+      ),
+    ];
     return () => {
-      void unlistenReady.then((fn) => fn());
-      void unlistenFailed.then((fn) => fn());
+      for (const unlisten of unlisteners) void unlisten.then((fn) => fn());
     };
   }, []);
 

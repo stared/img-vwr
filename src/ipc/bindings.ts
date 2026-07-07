@@ -36,6 +36,14 @@ async newEpoch() : Promise<number> {
 },
 async requestThumbnails(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("request_thumbnails", { paths, epoch });
+},
+/**
+ * Count images per folder off the main thread, emitting one event per
+ * result — cloud-backed folders (Dropbox, iCloud) can take seconds each,
+ * so this must never block the tree display.
+ */
+async requestDirCounts(paths: string[]) : Promise<void> {
+    await TAURI_INVOKE("request_dir_counts", { paths });
 }
 }
 
@@ -43,9 +51,11 @@ async requestThumbnails(paths: string[], epoch: number) : Promise<void> {
 
 
 export const events = __makeEvents__<{
+dirCountReady: DirCountReady,
 thumbnailFailed: ThumbnailFailed,
 thumbnailReady: ThumbnailReady
 }>({
+dirCountReady: "dir-count-ready",
 thumbnailFailed: "thumbnail-failed",
 thumbnailReady: "thumbnail-ready"
 })
@@ -56,11 +66,12 @@ thumbnailReady: "thumbnail-ready"
 
 /** user-defined types **/
 
-export type DirEntry = { path: string; name: string; 
 /**
- * Image files directly inside (non-recursive).
+ * Direct image count of one folder, computed in the background. Keyed by
+ * absolute path, so it is never stale — no epoch needed.
  */
-imageCount: number }
+export type DirCountReady = { path: string; imageCount: number }
+export type DirEntry = { path: string; name: string }
 export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**

@@ -23,6 +23,21 @@ pub fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
         .map_err(|e| format!("failed to list {}: {e}", path.display()))
 }
 
+/// Count images per folder off the main thread, emitting one event per
+/// result — cloud-backed folders (Dropbox, iCloud) can take seconds each,
+/// so this must never block the tree display.
+#[tauri::command]
+#[specta::specta]
+pub fn request_dir_counts(app: AppHandle, paths: Vec<String>) {
+    std::thread::spawn(move || {
+        use tauri_specta::Event as _;
+        for path in paths {
+            let image_count = imgvwr_core::scan::count_images(std::path::Path::new(&path));
+            let _ = crate::events::DirCountReady { path, image_count }.emit(&app);
+        }
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
