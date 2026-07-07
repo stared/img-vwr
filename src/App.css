@@ -253,6 +253,9 @@ kbd {
 }
 
 .thumb-cell figcaption {
+  /* Fixed height — GalleryGrid's ROW_HEIGHT depends on it. */
+  height: 16px;
+  line-height: 16px;
   font-size: 11px;
   color: var(--text-dim);
   overflow: hidden;

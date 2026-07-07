@@ -7,6 +7,12 @@ import { ThumbCell } from "./ThumbCell";
 
 const CELL_SIZE = 168;
 const CELL_GAP = 8;
+/* Must mirror the .thumb-cell CSS: padding, inner gap, fixed caption height. */
+const CELL_PADDING = 4;
+const CELL_INNER_GAP = 4;
+const CAPTION_HEIGHT = 16;
+const ROW_HEIGHT =
+  CELL_SIZE + CELL_INNER_GAP + CAPTION_HEIGHT + 2 * CELL_PADDING + CELL_GAP;
 const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
 
@@ -22,7 +28,7 @@ export function GalleryGrid() {
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => CELL_SIZE + CELL_GAP,
+    estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN_ROWS,
   });
 
