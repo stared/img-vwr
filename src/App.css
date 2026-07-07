@@ -234,6 +234,73 @@ kbd {
   color: var(--text-dim);
 }
 
+.filter-add {
+  position: relative;
+}
+
+.chip-add {
+  color: var(--text-dim);
+  padding: 2px 9px;
+}
+
+.chip-add:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 51;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.menu-section {
+  display: block;
+  padding: 5px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.filter-menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.filter-menu button:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.menu-check {
+  color: var(--text-dim);
+}
+
+.filter-menu button:hover .menu-check {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 /* ---- Gallery ---- */
 
 .gallery-scroll {

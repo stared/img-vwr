@@ -61,15 +61,11 @@ function App() {
               </button>
             </div>
           )}
+          {viewMode === "gallery" && <FilterBar />}
           {status === "loading" && <p className="hint">Scanning…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
-          {status === "loaded" && count > 0 && viewMode === "gallery" && (
-            <>
-              <FilterBar />
-              <GalleryGrid />
-            </>
-          )}
+          {status === "loaded" && count > 0 && viewMode === "gallery" && <GalleryGrid />}
           {status === "loaded" && count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
       </div>
