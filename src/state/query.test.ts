@@ -7,6 +7,7 @@ import {
   withFormatToggled,
   withNameFilter,
   withoutFilters,
+  withoutFormats,
   withSort,
 } from "./query";
 
@@ -64,6 +65,12 @@ describe("query editing", () => {
     expect(applyQuery(ENTRIES, two).map((e) => e.name)).toEqual(["Alps.png"]);
     const none = withFormatToggled(withFormatToggled(two, "gif"), "png");
     expect(none.filters).toEqual([]);
+  });
+
+  it("withoutFormats drops only the format filter", () => {
+    const q = withNameFilter(withFormatToggled(defaultQuery, "png"), "x");
+    const stripped = withoutFormats(q);
+    expect(stripped.filters).toEqual([{ kind: "name", substring: "x" }]);
   });
 
   it("empty name filter removes itself; withoutFilters keeps sort", () => {

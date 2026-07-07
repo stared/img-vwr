@@ -213,8 +213,16 @@ kbd {
   color: var(--text);
 }
 
-.chip-scope {
+.chip-key {
   color: var(--text-dim);
+}
+
+.chip-sort {
+  margin-left: auto;
+}
+
+.chip-sort:hover {
+  border-color: var(--accent);
 }
 
 .chip input {

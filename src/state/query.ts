@@ -117,6 +117,10 @@ export function withoutFilters(query: Query): Query {
   return { ...query, filters: [] };
 }
 
+export function withoutFormats(query: Query): Query {
+  return { ...query, filters: query.filters.filter((f) => f.kind !== "format") };
+}
+
 export function nameFilterText(query: Query): string {
   const f = query.filters.find((f) => f.kind === "name");
   return f?.kind === "name" ? f.substring : "";

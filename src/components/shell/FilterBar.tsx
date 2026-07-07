@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { SortKey } from "../../state/query";
-import { activeFormats, defaultQuery, FORMAT_GROUPS, nameFilterText } from "../../state/query";
+import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
 import { useAppStore } from "../../state/store";
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -11,9 +11,9 @@ const SORT_LABELS: Record<SortKey, string> = {
 };
 
 /**
- * Always-present query bar, Linear-style: the folder path is the first
- * (scope) chip, active filters and sort follow as chips, and "+" adds
- * more as you go.
+ * Always-present query bar. Every chip is an explicit `key: value` clause of
+ * the query — path (the scope), the filters, and the sort, which always
+ * exists and is therefore always shown, Linear-style.
  */
 export function FilterBar() {
   const folderPath = useAppStore((s) => s.folderPath);
@@ -22,8 +22,8 @@ export function FilterBar() {
   const setNameFilter = useAppStore((s) => s.setNameFilter);
   const setFindOpen = useAppStore((s) => s.setFindOpen);
   const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
+  const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
   const sortBy = useAppStore((s) => s.sortBy);
-  const resetSort = useAppStore((s) => s.resetSort);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +32,6 @@ export function FilterBar() {
   const formats = activeFormats(query);
   const showFind = findOpen || nameText !== "";
   const sort = query.sort;
-  const sortIsDefault = sort.key === defaultQuery.sort.key && sort.dir === defaultQuery.sort.dir;
 
   useEffect(() => {
     if (findOpen) inputRef.current?.focus();
@@ -40,18 +39,22 @@ export function FilterBar() {
 
   if (!folderPath) return null;
 
-  const folderName = folderPath.split("/").filter(Boolean).pop() ?? folderPath;
+  // Value part of the path chip: enough of the tail to orient, not the whole path.
+  const shortPath = folderPath.split("/").filter(Boolean).slice(-2).join("/") + "/";
   const closeMenu = () => setMenuOpen(false);
+  const formatLabels = formats
+    .map((id) => FORMAT_GROUPS.find((g) => g.id === id)?.label ?? id)
+    .join(", ");
 
   return (
     <div className="filterbar">
       <span className="chip chip-scope" title={folderPath}>
-        {folderName}
+        <span className="chip-key">path:</span> {shortPath}
       </span>
 
       {showFind && (
         <span className="chip">
-          name:
+          <span className="chip-key">name:</span>
           <input
             ref={inputRef}
             value={nameText}
@@ -71,41 +74,17 @@ export function FilterBar() {
         </span>
       )}
 
-      {formats.map((group) => (
-        <button
-          key={group}
-          className="chip chip-removable"
-          title="remove filter"
-          onClick={() => toggleFormatFilter(group)}
-        >
-          {FORMAT_GROUPS.find((g) => g.id === group)?.label ?? group}
+      {formats.length > 0 && (
+        <button className="chip chip-removable" title="remove type filter" onClick={clearFormatFilter}>
+          <span className="chip-key">type:</span> {formatLabels}
           <span className="chip-x">×</span>
-        </button>
-      ))}
-
-      {!sortIsDefault && (
-        <button
-          className="chip chip-removable"
-          title="click to reverse, × resets to name ↑"
-          onClick={() => sortBy(sort.key)}
-        >
-          {SORT_LABELS[sort.key]} {sort.dir === "asc" ? "↑" : "↓"}
-          <span
-            className="chip-x"
-            onClick={(e) => {
-              e.stopPropagation();
-              resetSort();
-            }}
-          >
-            ×
-          </span>
         </button>
       )}
 
       <div className="filter-add">
         <button
           className="chip chip-add"
-          title="add filter or sort"
+          title="add filter or change sort"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           +
@@ -154,6 +133,16 @@ export function FilterBar() {
           </>
         )}
       </div>
+
+      {/* Sort always exists — right-aligned, never removable, click reverses. */}
+      <button
+        className="chip chip-sort"
+        title="click to reverse direction"
+        onClick={() => sortBy(sort.key)}
+      >
+        <span className="chip-key">sort:</span> {SORT_LABELS[sort.key]}{" "}
+        {sort.dir === "asc" ? "↑" : "↓"}
+      </button>
     </div>
   );
 }

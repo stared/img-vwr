@@ -19,6 +19,7 @@ import {
   withFormatToggled,
   withNameFilter,
   withoutFilters,
+  withoutFormats,
   withSort,
 } from "./query";
 
@@ -66,7 +67,7 @@ interface AppActions {
   closeViewer: () => void;
   navigate: (delta: number) => void;
   sortBy: (key: SortKey) => void;
-  resetSort: () => void;
+  clearFormatFilter: () => void;
   toggleFormatFilter: (group: string) => void;
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
@@ -249,7 +250,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   sortBy: (key) => set(withQuery(get(), withSort(get().query, key))),
 
-  resetSort: () => set(withQuery(get(), { ...get().query, sort: defaultQuery.sort })),
+  clearFormatFilter: () => set(withQuery(get(), withoutFormats(get().query))),
 
   toggleFormatFilter: (group) => set(withQuery(get(), withFormatToggled(get().query, group))),
 
