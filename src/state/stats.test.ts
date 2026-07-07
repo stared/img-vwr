@@ -2,15 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../ipc";
 import type { ImageMeta } from "../ipc/bindings";
+import { effectiveDims, parseExifDate } from "./derived";
 import {
   aspectBuckets,
   cameraCounts,
-  effectiveDims,
   formatBytes,
   formatCounts,
   log2Bins,
   orientationSplit,
-  parseExifDate,
   timeBuckets,
 } from "./stats";
 
@@ -75,34 +74,38 @@ describe("effectiveDims", () => {
 });
 
 describe("formatCounts", () => {
-  it("folds jpg and jpeg into one group and sorts by count", () => {
+  it("folds jpg and jpeg into one group, sorts by count, carries the group id", () => {
     const entries = [
       entry({ formatHint: "jpg" }),
       entry({ formatHint: "jpeg" }),
       entry({ formatHint: "png" }),
     ];
     expect(formatCounts(entries)).toEqual([
-      { label: "JPEG", count: 2 },
-      { label: "PNG", count: 1 },
+      { label: "JPEG", count: 2, value: "jpeg" },
+      { label: "PNG", count: 1, value: "png" },
     ]);
   });
 });
 
 describe("timeBuckets", () => {
-  it("uses day buckets for short spans, with zero days kept", () => {
+  it("uses day buckets for short spans, zero days kept, ranges attached", () => {
     const times = [
       new Date(2024, 2, 1, 10).getTime(),
       new Date(2024, 2, 1, 18).getTime(),
       new Date(2024, 2, 3, 9).getTime(),
     ];
-    expect(timeBuckets(times)).toEqual([
+    const buckets = timeBuckets(times);
+    expect(buckets.map((b) => ({ label: b.label, count: b.count }))).toEqual([
       { label: "2024-03-01", count: 2 },
       { label: "2024-03-02", count: 0 },
       { label: "2024-03-03", count: 1 },
     ]);
+    // Each bucket carries its half-open ms range, usable as a filter.
+    expect(buckets[0]?.from).toBe(new Date(2024, 2, 1).getTime());
+    expect(buckets[0]?.to).toBe(new Date(2024, 2, 2).getTime());
   });
 
-  it("coarsens to months when days would overflow", () => {
+  it("coarsens to months when days would overflow, at 32 buckets", () => {
     const times = [new Date(2024, 0, 5).getTime(), new Date(2024, 3, 20).getTime()];
     const buckets = timeBuckets(times, 32);
     expect(buckets.map((b) => b.label)).toEqual(["2024-01", "2024-02", "2024-03", "2024-04"]);
@@ -136,10 +139,12 @@ describe("cameraCounts", () => {
 
   it("counts tagged cameras, skipping untagged", () => {
     const metas = [withCamera("iPhone 15 Pro"), withCamera("iPhone 15 Pro"), withCamera(null)];
-    expect(cameraCounts(metas)).toEqual([{ label: "iPhone 15 Pro", count: 2 }]);
+    expect(cameraCounts(metas)).toEqual([
+      { label: "iPhone 15 Pro", count: 2, value: "iPhone 15 Pro" },
+    ]);
   });
 
-  it("folds the tail beyond the top-N into other", () => {
+  it("folds the tail beyond the top-N into other, which is not filterable", () => {
     const metas = [
       ...Array.from({ length: 5 }, () => withCamera("A")),
       withCamera("B"),
@@ -147,8 +152,8 @@ describe("cameraCounts", () => {
       withCamera("D"),
     ];
     expect(cameraCounts(metas, 3)).toEqual([
-      { label: "A", count: 5 },
-      { label: "B", count: 1 },
+      { label: "A", count: 5, value: "A" },
+      { label: "B", count: 1, value: "B" },
       { label: "other (2)", count: 2 },
     ]);
   });
@@ -163,9 +168,9 @@ describe("aspectBuckets", () => {
       { width: 1000, height: 313 }, // ~3.2:1 — wider than 2:1
     ]);
     expect(buckets).toEqual([
-      { label: "3:2", count: 2 },
-      { label: "1:1", count: 1 },
-      { label: "wider", count: 1 },
+      { label: "3:2", count: 2, value: "3:2" },
+      { label: "1:1", count: 1, value: "1:1" },
+      { label: "wider", count: 1, value: "wider" },
     ]);
   });
 
@@ -175,16 +180,11 @@ describe("aspectBuckets", () => {
       { width: 1000, height: 320 },
       { width: 3000, height: 2000 },
     ]);
-    expect(buckets).toEqual([
-      { label: "3:2", count: 1 },
-      { label: "wider", count: 2 },
-    ]);
+    expect(buckets.map((b) => b.label)).toEqual(["3:2", "wider"]);
   });
 
   it("labels unsnappable mid-range ratios as other", () => {
-    expect(aspectBuckets([{ width: 1400, height: 1000 }])).toEqual([
-      { label: "other", count: 1 },
-    ]);
+    expect(aspectBuckets([{ width: 1400, height: 1000 }]).map((b) => b.label)).toEqual(["other"]);
   });
 });
 
@@ -202,15 +202,16 @@ describe("orientationSplit", () => {
 });
 
 describe("log2Bins", () => {
-  it("bins per power of two with formatted labels", () => {
+  it("bins per power of two with formatted labels and filterable ranges", () => {
     const histo = log2Bins([1500, 3000, 3500, 10_000], formatBytes);
     // log2: 1500→10, 3000/3500→11, 10000→13; bins for exponents 10..13
-    expect(histo?.bins).toEqual([
+    expect(histo?.bins.map((b) => ({ label: b.label, count: b.count }))).toEqual([
       { label: "1.0 KB–2.0 KB", count: 1 },
       { label: "2.0 KB–4.1 KB", count: 2 },
       { label: "4.1 KB–8.2 KB", count: 0 },
       { label: "8.2 KB–16.4 KB", count: 1 },
     ]);
+    expect(histo?.bins[0]).toMatchObject({ from: 1024, to: 2048 });
     expect(histo?.minLabel).toBe("1.5 KB");
     expect(histo?.maxLabel).toBe("10.0 KB");
   });

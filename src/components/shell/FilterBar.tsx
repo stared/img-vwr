@@ -33,6 +33,9 @@ export function FilterBar() {
   const setFindOpen = useAppStore((s) => s.setFindOpen);
   const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
   const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
+  const toggleCameraFilter = useAppStore((s) => s.toggleCameraFilter);
+  const toggleAspectFilter = useAppStore((s) => s.toggleAspectFilter);
+  const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
   const setSort = useAppStore((s) => s.setSort);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -92,6 +95,50 @@ export function FilterBar() {
           <span className="chip-x">×</span>
         </button>
       )}
+
+      {/* Clauses added by clicking stats buckets; clicking × (or the bucket again) removes them. */}
+      {query.filters.map((filter) => {
+        switch (filter.kind) {
+          case "camera":
+            return (
+              <button
+                key="camera"
+                className="chip chip-removable"
+                title="remove camera filter"
+                onClick={() => toggleCameraFilter(filter.camera)}
+              >
+                <span className="chip-key">camera:</span> {filter.camera}
+                <span className="chip-x">×</span>
+              </button>
+            );
+          case "aspect":
+            return (
+              <button
+                key="aspect"
+                className="chip chip-removable"
+                title="remove aspect filter"
+                onClick={() => toggleAspectFilter(filter.aspect)}
+              >
+                <span className="chip-key">aspect:</span> {filter.aspect}
+                <span className="chip-x">×</span>
+              </button>
+            );
+          case "range":
+            return (
+              <button
+                key={`range-${filter.field}`}
+                className="chip chip-removable"
+                title={`remove ${filter.field} filter`}
+                onClick={() => toggleRangeFilter(filter.field, filter.from, filter.to, filter.label)}
+              >
+                <span className="chip-key">{filter.field}:</span> {filter.label}
+                <span className="chip-x">×</span>
+              </button>
+            );
+          default:
+            return null; // name and format have dedicated chips above
+        }
+      })}
 
       <div className="filter-add">
         <button className="chip chip-add" title="add filter" onClick={() => setMenuOpen(!menuOpen)}>

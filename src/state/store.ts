@@ -12,14 +12,18 @@ import {
 } from "../components/viewer/viewport";
 import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
-import type { Query, Sort, SortKey } from "./query";
+import type { Query, RangeField, Sort, SortKey } from "./query";
 import {
   applyQuery,
   defaultQuery,
+  usesMeta,
+  withAspectToggled,
+  withCameraToggled,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
   withoutFormats,
+  withRangeToggled,
   withSort,
 } from "./query";
 
@@ -75,6 +79,9 @@ interface AppActions {
   setSort: (sort: Sort) => void;
   clearFormatFilter: () => void;
   toggleFormatFilter: (group: string) => void;
+  toggleCameraFilter: (camera: string) => void;
+  toggleAspectFilter: (aspect: string) => void;
+  toggleRangeFilter: (field: RangeField, from: number, to: number, label: string) => void;
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
@@ -155,11 +162,12 @@ export function movedSelection(
  * new filters; otherwise fall back to the top.
  */
 export function withQuery(
-  state: Pick<AppState, "entries" | "query" | "selectedIndex">,
+  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta">,
   query: Query,
 ): Partial<AppState> {
-  const selectedPath = applyQuery(state.entries, state.query)[state.selectedIndex]?.path;
-  const nextVisible = applyQuery(state.entries, query);
+  const selectedPath = applyQuery(state.entries, state.query, state.meta)[state.selectedIndex]
+    ?.path;
+  const nextVisible = applyQuery(state.entries, query, state.meta);
   const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
   return { query, selectedIndex: index >= 0 ? index : 0 };
 }
@@ -258,7 +266,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
 
   openViewer: (index) => {
-    const visibleCount = applyQuery(get().entries, get().query).length;
+    const visibleCount = applyQuery(get().entries, get().query, get().meta).length;
     if (index >= 0 && index < visibleCount) {
       set({
         viewMode: "viewer",
@@ -273,7 +281,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   closeViewer: () => set({ viewMode: "gallery" }),
 
   navigate: (delta) => {
-    const visibleCount = applyQuery(get().entries, get().query).length;
+    const visibleCount = applyQuery(get().entries, get().query, get().meta).length;
     set(movedSelection(get(), visibleCount, delta));
   },
 
@@ -284,6 +292,13 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   clearFormatFilter: () => set(withQuery(get(), withoutFormats(get().query))),
 
   toggleFormatFilter: (group) => set(withQuery(get(), withFormatToggled(get().query, group))),
+
+  toggleCameraFilter: (camera) => set(withQuery(get(), withCameraToggled(get().query, camera))),
+
+  toggleAspectFilter: (aspect) => set(withQuery(get(), withAspectToggled(get().query, aspect))),
+
+  toggleRangeFilter: (field, from, to, label) =>
+    set(withQuery(get(), withRangeToggled(get().query, field, from, to, label))),
 
   setNameFilter: (substring) => set(withQuery(get(), withNameFilter(get().query, substring))),
 
@@ -329,5 +344,12 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 export function useVisibleEntries(): FileEntry[] {
   const entries = useAppStore((s) => s.entries);
   const query = useAppStore((s) => s.query);
-  return useMemo(() => applyQuery(entries, query), [entries, query]);
+  const meta = useAppStore((s) => s.meta);
+  // Only meta-based filters make streaming metadata batches change the
+  // result; otherwise skip re-sorting thousands of entries per batch.
+  const metaDep = usesMeta(query) ? meta : null;
+  return useMemo(
+    () => applyQuery(entries, query, metaDep ?? {}),
+    [entries, query, metaDep],
+  );
 }

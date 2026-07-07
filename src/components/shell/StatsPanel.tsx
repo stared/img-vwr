@@ -2,16 +2,18 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { ImageMeta } from "../../ipc";
 import { requestMeta } from "../../ipc";
-import type { Bucket, Dims, NumericHistogram } from "../../state/stats";
+import type { Dims } from "../../state/derived";
+import { effectiveDims, takenMs } from "../../state/derived";
+import type { RangeField } from "../../state/query";
+import { activeFormats } from "../../state/query";
+import type { Bucket, NumericHistogram } from "../../state/stats";
 import {
   aspectBuckets,
   cameraCounts,
-  effectiveDims,
   formatBytes,
   formatCounts,
   log2Bins,
   orientationSplit,
-  parseExifDate,
   timeBuckets,
 } from "../../state/stats";
 import { useAppStore, useVisibleEntries } from "../../state/store";
@@ -38,21 +40,46 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Clicking a bucket toggles it as a query filter; the active one is marked. */
+interface Selectable {
+  onSelect?: (bucket: Bucket) => void;
+  isActive?: (bucket: Bucket) => boolean;
+}
+
 /** Labelled horizontal bars; bar lengths are relative to the largest bucket. */
-function Histogram({ title, buckets, note }: { title: string; buckets: Bucket[]; note?: string }) {
+function Histogram({
+  title,
+  buckets,
+  note,
+  onSelect,
+  isActive,
+}: {
+  title: string;
+  buckets: Bucket[];
+  note?: string;
+} & Selectable) {
   if (buckets.length === 0 && !note) return null;
   const max = buckets.reduce((m, b) => Math.max(m, b.count), 1);
   return (
     <Section title={title}>
-      {buckets.map((bucket) => (
-        <div key={bucket.label} className="stats-row" title={`${bucket.label}: ${bucket.count}`}>
-          <span className="stats-label">{bucket.label}</span>
-          <span className="stats-bar">
-            <span style={{ width: `${(100 * bucket.count) / max}%` }} />
-          </span>
-          <span className="stats-count">{bucket.count}</span>
-        </div>
-      ))}
+      {buckets.map((bucket) => {
+        const clickable = onSelect !== undefined && bucket.value !== undefined;
+        const Row = clickable ? "button" : "div";
+        return (
+          <Row
+            key={bucket.label}
+            className={`stats-row${isActive?.(bucket) ? " active" : ""}`}
+            title={clickable ? `filter: ${bucket.label}` : `${bucket.label}: ${bucket.count}`}
+            onClick={clickable ? () => onSelect(bucket) : undefined}
+          >
+            <span className="stats-label">{bucket.label}</span>
+            <span className="stats-bar">
+              <span style={{ width: `${(100 * bucket.count) / max}%` }} />
+            </span>
+            <span className="stats-count">{bucket.count}</span>
+          </Row>
+        );
+      })}
       {note && <p className="stats-note">{note}</p>}
     </Section>
   );
@@ -63,11 +90,13 @@ function ColumnChart({
   title,
   histogram,
   note,
+  onSelect,
+  isActive,
 }: {
   title: string;
   histogram: NumericHistogram | null;
   note?: string;
-}) {
+} & Selectable) {
   if (histogram === null && !note) return null;
   return (
     <Section title={title}>
@@ -76,15 +105,20 @@ function ColumnChart({
           const max = histogram.bins.reduce((m, b) => Math.max(m, b.count), 1);
           return (
             <>
-              <div className="stats-histo">
+              <div className={`stats-histo${onSelect ? " selectable" : ""}`}>
                 {histogram.bins.map((bin, i) => (
                   <span
                     key={i}
-                    title={`${bin.label}: ${bin.count}`}
-                    style={{
-                      height: bin.count > 0 ? `${Math.max(4, (100 * bin.count) / max)}%` : 0,
-                    }}
-                  />
+                    className={isActive?.(bin) ? "active" : undefined}
+                    title={onSelect ? `filter: ${bin.label}` : `${bin.label}: ${bin.count}`}
+                    onClick={onSelect && bin.from !== undefined ? () => onSelect(bin) : undefined}
+                  >
+                    <span
+                      style={{
+                        height: bin.count > 0 ? `${Math.max(4, (100 * bin.count) / max)}%` : 0,
+                      }}
+                    />
+                  </span>
                 ))}
               </div>
               <div className="stats-axis">
@@ -100,16 +134,35 @@ function ColumnChart({
 }
 
 /** Ranked label–count list, for long labels (camera models) where bars crowd. */
-function CountList({ title, buckets, note }: { title: string; buckets: Bucket[]; note?: string }) {
+function CountList({
+  title,
+  buckets,
+  note,
+  onSelect,
+  isActive,
+}: {
+  title: string;
+  buckets: Bucket[];
+  note?: string;
+} & Selectable) {
   if (buckets.length === 0 && !note) return null;
   return (
     <Section title={title}>
-      {buckets.map((bucket) => (
-        <div key={bucket.label} className="stats-row list" title={`${bucket.label}: ${bucket.count}`}>
-          <span className="stats-label">{bucket.label}</span>
-          <span className="stats-count">{bucket.count}</span>
-        </div>
-      ))}
+      {buckets.map((bucket) => {
+        const clickable = onSelect !== undefined && bucket.value !== undefined;
+        const Row = clickable ? "button" : "div";
+        return (
+          <Row
+            key={bucket.label}
+            className={`stats-row list${isActive?.(bucket) ? " active" : ""}`}
+            title={clickable ? `filter: ${bucket.label}` : `${bucket.label}: ${bucket.count}`}
+            onClick={clickable ? () => onSelect(bucket) : undefined}
+          >
+            <span className="stats-label">{bucket.label}</span>
+            <span className="stats-count">{bucket.count}</span>
+          </Row>
+        );
+      })}
       {note && <p className="stats-note">{note}</p>}
     </Section>
   );
@@ -127,6 +180,11 @@ export function StatsPanel() {
   const status = useAppStore((s) => s.status);
   const epoch = useAppStore((s) => s.epoch);
   const meta = useAppStore((s) => s.meta);
+  const query = useAppStore((s) => s.query);
+  const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
+  const toggleCameraFilter = useAppStore((s) => s.toggleCameraFilter);
+  const toggleAspectFilter = useAppStore((s) => s.toggleAspectFilter);
+  const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
 
   // One background read per folder generation; results are keyed by path and
   // merged as batches arrive. getState() keeps `meta` out of the deps so
@@ -145,9 +203,7 @@ export function StatsPanel() {
     const dims = metas
       .map(effectiveDims)
       .filter((d): d is Dims => d !== null);
-    const taken = metas
-      .map((m) => (m.exif?.dateTime ? parseExifDate(m.exif.dateTime) : null))
-      .filter((t): t is number => t !== null);
+    const taken = metas.map(takenMs).filter((t): t is number => t !== null);
     return {
       read: metas.length,
       totalBytes: entries.reduce((sum, e) => sum + e.size, 0),
@@ -180,6 +236,25 @@ export function StatsPanel() {
     .join(" · ");
   const reading = stats.read < entries.length;
 
+  // Click-to-filter wiring: each section toggles its own query clause.
+  const selectRange = (field: RangeField) => (b: Bucket) => {
+    if (b.from !== undefined && b.to !== undefined) {
+      toggleRangeFilter(field, b.from, b.to, b.label);
+    }
+  };
+  const rangeActive = (field: RangeField) => (b: Bucket) =>
+    query.filters.some(
+      (f) => f.kind === "range" && f.field === field && f.from === b.from && f.to === b.to,
+    );
+  const formatActive = (b: Bucket) => b.value !== undefined && activeFormats(query).includes(b.value);
+  const cameraActive = (b: Bucket) =>
+    query.filters.some((f) => f.kind === "camera" && f.camera === b.value);
+  const aspectActive = (b: Bucket) =>
+    query.filters.some((f) => f.kind === "aspect" && f.aspect === b.value);
+  const selectValue = (toggle: (value: string) => void) => (b: Bucket) => {
+    if (b.value !== undefined) toggle(b.value);
+  };
+
   return (
     <div className="stats">
       <p className="stats-summary">
@@ -191,21 +266,51 @@ export function StatsPanel() {
           </span>
         )}
       </p>
-      <Histogram title="format" buckets={stats.formats} />
+      <Histogram
+        title="format"
+        buckets={stats.formats}
+        onSelect={selectValue(toggleFormatFilter)}
+        isActive={formatActive}
+      />
       <ColumnChart
         title="taken"
         histogram={stats.taken}
         note={stats.noTaken > 0 ? `no date tag: ${stats.noTaken}` : undefined}
+        onSelect={selectRange("taken")}
+        isActive={rangeActive("taken")}
       />
-      <ColumnChart title="modified" histogram={stats.modified} />
+      <ColumnChart
+        title="modified"
+        histogram={stats.modified}
+        onSelect={selectRange("modified")}
+        isActive={rangeActive("modified")}
+      />
       <CountList
         title="camera"
         buckets={stats.cameras}
         note={stats.noCamera > 0 ? `no camera tag: ${stats.noCamera}` : undefined}
+        onSelect={selectValue(toggleCameraFilter)}
+        isActive={cameraActive}
       />
-      <Histogram title="aspect ratio" buckets={stats.aspects} note={orientationNote || undefined} />
-      <ColumnChart title="longest edge" histogram={stats.edges} />
-      <ColumnChart title="file size" histogram={stats.sizes} />
+      <Histogram
+        title="aspect ratio"
+        buckets={stats.aspects}
+        note={orientationNote || undefined}
+        onSelect={selectValue(toggleAspectFilter)}
+        isActive={aspectActive}
+      />
+      <ColumnChart
+        title="longest edge"
+        histogram={stats.edges}
+        onSelect={selectRange("edge")}
+        isActive={rangeActive("edge")}
+      />
+      <ColumnChart
+        title="file size"
+        histogram={stats.sizes}
+        onSelect={selectRange("size")}
+        isActive={rangeActive("size")}
+      />
     </div>
   );
 }

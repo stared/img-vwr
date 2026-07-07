@@ -1,4 +1,5 @@
-import type { FileEntry } from "../ipc";
+import type { FileEntry, ImageMeta } from "../ipc";
+import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
 
 /**
  * The gallery is a query over the scanned folder — Linear-style: the folder
@@ -15,9 +16,15 @@ export interface Sort {
   dir: SortDir;
 }
 
+/** Numeric per-image quantities a range filter can apply to. */
+export type RangeField = "taken" | "modified" | "size" | "edge";
+
 export type Filter =
   | { kind: "format"; formats: string[] } // any-of, by format group id
-  | { kind: "name"; substring: string };
+  | { kind: "name"; substring: string }
+  | { kind: "camera"; camera: string }
+  | { kind: "aspect"; aspect: string }
+  | { kind: "range"; field: RangeField; from: number; to: number; label: string };
 
 export interface Query {
   filters: Filter[];
@@ -48,7 +55,28 @@ function formatGroupOf(ext: string): string | undefined {
   return FORMAT_GROUPS.find((g) => (g.exts as readonly string[]).includes(ext))?.id;
 }
 
-function matches(entry: FileEntry, filter: Filter): boolean {
+/** The numeric value a range filter compares; null = unknown (never matches). */
+function rangeValue(entry: FileEntry, field: RangeField, meta: ImageMeta | undefined): number | null {
+  switch (field) {
+    case "modified":
+      return entry.modifiedMs;
+    case "size":
+      return entry.size;
+    case "taken":
+      return meta ? takenMs(meta) : null;
+    case "edge": {
+      const dims = meta ? effectiveDims(meta) : null;
+      return dims ? Math.max(dims.width, dims.height) : null;
+    }
+  }
+}
+
+/**
+ * Metadata-based filters (camera, aspect, taken, edge) match only images
+ * whose metadata is already known — results refine as the background read
+ * streams in, rather than waiting on it.
+ */
+function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined): boolean {
   switch (filter.kind) {
     case "format": {
       const group = formatGroupOf(entry.formatHint);
@@ -56,6 +84,16 @@ function matches(entry: FileEntry, filter: Filter): boolean {
     }
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
+    case "camera":
+      return meta?.exif?.camera === filter.camera;
+    case "aspect": {
+      const dims = meta ? effectiveDims(meta) : null;
+      return dims !== null && aspectLabelOf(dims) === filter.aspect;
+    }
+    case "range": {
+      const v = rangeValue(entry, filter.field, meta);
+      return v !== null && v >= filter.from && v < filter.to;
+    }
   }
 }
 
@@ -73,11 +111,25 @@ function compareBy(sort: Sort, a: FileEntry, b: FileEntry): number {
   }
 }
 
-export function applyQuery(entries: FileEntry[], query: Query): FileEntry[] {
+export function applyQuery(
+  entries: FileEntry[],
+  query: Query,
+  meta: Record<string, ImageMeta> = {},
+): FileEntry[] {
   const filtered = query.filters.length
-    ? entries.filter((e) => query.filters.every((f) => matches(e, f)))
+    ? entries.filter((e) => query.filters.every((f) => matches(e, f, meta[e.path])))
     : entries;
   return [...filtered].sort((a, b) => compareBy(query.sort, a, b));
+}
+
+/** True when any filter needs per-image metadata to evaluate. */
+export function usesMeta(query: Query): boolean {
+  return query.filters.some(
+    (f) =>
+      f.kind === "camera" ||
+      f.kind === "aspect" ||
+      (f.kind === "range" && (f.field === "taken" || f.field === "edge")),
+  );
 }
 
 /* Pure query editing helpers — the store actions apply these. */
@@ -110,6 +162,40 @@ export function withNameFilter(query: Query, substring: string): Query {
   return {
     ...query,
     filters: substring ? [...others, { kind: "name", substring }] : others,
+  };
+}
+
+/**
+ * One clause per key: clicking a value sets it, clicking the active value
+ * clears it, clicking another value switches to it.
+ */
+export function withCameraToggled(query: Query, camera: string): Query {
+  const active = query.filters.some((f) => f.kind === "camera" && f.camera === camera);
+  const others = query.filters.filter((f) => f.kind !== "camera");
+  return { ...query, filters: active ? others : [...others, { kind: "camera", camera }] };
+}
+
+export function withAspectToggled(query: Query, aspect: string): Query {
+  const active = query.filters.some((f) => f.kind === "aspect" && f.aspect === aspect);
+  const others = query.filters.filter((f) => f.kind !== "aspect");
+  return { ...query, filters: active ? others : [...others, { kind: "aspect", aspect }] };
+}
+
+/** Range filters are keyed by field — one taken-range, one size-range, etc. */
+export function withRangeToggled(
+  query: Query,
+  field: RangeField,
+  from: number,
+  to: number,
+  label: string,
+): Query {
+  const active = query.filters.some(
+    (f) => f.kind === "range" && f.field === field && f.from === from && f.to === to,
+  );
+  const others = query.filters.filter((f) => !(f.kind === "range" && f.field === field));
+  return {
+    ...query,
+    filters: active ? others : [...others, { kind: "range", field, from, to, label }],
   };
 }
 

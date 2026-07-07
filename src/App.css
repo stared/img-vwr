@@ -263,11 +263,26 @@ kbd {
   grid-template-columns: 68px 1fr 36px;
   gap: 8px;
   align-items: center;
+  width: 100%;
   line-height: 18px;
+  text-align: left;
 }
 
 .stats-row.list {
   grid-template-columns: 1fr 36px;
+}
+
+button.stats-row:hover .stats-label {
+  color: var(--text);
+}
+
+.stats-row.active .stats-label,
+.stats-row.active .stats-count {
+  color: var(--accent);
+}
+
+.stats-row.active .stats-bar > span {
+  background: var(--accent);
 }
 
 .stats-label {
@@ -297,20 +312,35 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* Bins are full-height click targets; the inner span is the visible bar. */
 .stats-histo {
   display: flex;
-  align-items: flex-end;
   gap: 1px;
   height: 56px;
 }
 
 .stats-histo > span {
   flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.stats-histo > span > span {
+  width: 100%;
   border-radius: 1px;
   background: rgba(255, 255, 255, 0.22);
 }
 
-.stats-histo > span:hover {
+.stats-histo.selectable > span {
+  cursor: pointer;
+}
+
+.stats-histo.selectable > span:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.stats-histo.selectable > span:hover > span,
+.stats-histo > span.active > span {
   background: var(--accent);
 }
 
@@ -333,6 +363,7 @@ kbd {
 
 .filterbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 8px 12px 2px;

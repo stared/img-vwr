@@ -1,5 +1,7 @@
 import type { FileEntry } from "../ipc";
 import type { ImageMeta } from "../ipc/bindings";
+import type { Dims } from "./derived";
+import { aspectLabelOf } from "./derived";
 import { FORMAT_GROUPS } from "./query";
 
 /**
@@ -11,50 +13,28 @@ import { FORMAT_GROUPS } from "./query";
 export interface Bucket {
   label: string;
   count: number;
-}
-
-export interface Dims {
-  width: number;
-  height: number;
-}
-
-/** Parse an EXIF datetime ("2023:05:12 14:33:21", also "-" separators) → ms, or null. */
-export function parseExifDate(value: string): number | null {
-  const m = /^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(value.trim());
-  if (!m) return null;
-  const [, y, mo, d, h, mi, s] = m;
-  const t = new Date(
-    Number(y),
-    Number(mo) - 1,
-    Number(d),
-    Number(h),
-    Number(mi),
-    Number(s),
-  ).getTime();
-  return Number.isFinite(t) && Number(y) > 0 ? t : null;
-}
-
-/** Display dimensions: EXIF orientations 5–8 mean the pixels are stored rotated. */
-export function effectiveDims(meta: ImageMeta): Dims | null {
-  if (meta.width === null || meta.height === null) return null;
-  const swapped = (meta.exif?.orientation ?? 1) >= 5;
-  return swapped
-    ? { width: meta.height, height: meta.width }
-    : { width: meta.width, height: meta.height };
+  /** The filterable value behind this bucket; absent for fold-ups like "other (3)". */
+  value?: string;
+  /** Half-open numeric range [from, to) behind a histogram bin. */
+  from?: number;
+  to?: number;
 }
 
 /** Count per format group (jpg/jpeg fold into JPEG), most common first. */
 export function formatCounts(entries: readonly FileEntry[]): Bucket[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { label: string; count: number }>();
   for (const entry of entries) {
     const group = FORMAT_GROUPS.find((g) =>
       (g.exts as readonly string[]).includes(entry.formatHint),
     );
+    const id = group?.id ?? entry.formatHint;
     const label = group?.label ?? entry.formatHint.toUpperCase();
-    counts.set(label, (counts.get(label) ?? 0) + 1);
+    const slot = counts.get(id) ?? { label, count: 0 };
+    slot.count += 1;
+    counts.set(id, slot);
   }
   return [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
+    .map(([id, { label, count }]) => ({ label, count, value: id }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -117,7 +97,12 @@ export function timeBuckets(timesMs: readonly number[], maxBuckets = 32): Bucket
       cursor.getTime() <= max;
       cursor = bucketNext(unit, cursor)
     ) {
-      buckets.push({ label: bucketLabel(unit, cursor), count: 0 });
+      buckets.push({
+        label: bucketLabel(unit, cursor),
+        count: 0,
+        from: cursor.getTime(),
+        to: bucketNext(unit, cursor).getTime(),
+      });
       if (buckets.length > maxBuckets && unit !== "year") break;
     }
     if (buckets.length > maxBuckets && unit !== "year") continue;
@@ -141,28 +126,16 @@ export function cameraCounts(metas: readonly ImageMeta[], top = 8): Bucket[] {
     if (camera) counts.set(camera, (counts.get(camera) ?? 0) + 1);
   }
   const sorted = [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
+    .map(([label, count]) => ({ label, count, value: label }))
     .sort((a, b) => b.count - a.count);
   if (sorted.length <= top) return sorted;
   const rest = sorted.slice(top - 1);
   return [
     ...sorted.slice(0, top - 1),
+    // Fold-up bucket: no single value to filter on, so no `value`.
     { label: `other (${rest.length})`, count: rest.reduce((sum, b) => sum + b.count, 0) },
   ];
 }
-
-const NAMED_RATIOS = [
-  { label: "1:1", value: 1 },
-  { label: "5:4", value: 5 / 4 },
-  { label: "4:3", value: 4 / 3 },
-  { label: "3:2", value: 3 / 2 },
-  { label: "16:10", value: 16 / 10 },
-  { label: "16:9", value: 16 / 9 },
-  { label: "2:1", value: 2 },
-] as const;
-
-/** Relative tolerance for snapping a measured ratio to a named one. */
-const RATIO_TOLERANCE = 0.04;
 
 /**
  * Nearest named ratio of long/short edge. Named ratios sort by count (most
@@ -170,25 +143,17 @@ const RATIO_TOLERANCE = 0.04;
  */
 export function aspectBuckets(dims: readonly Dims[]): Bucket[] {
   const counts = new Map<string, number>();
-  for (const { width, height } of dims) {
-    if (width <= 0 || height <= 0) continue;
-    const ratio = Math.max(width, height) / Math.min(width, height);
-    let best: { label: string; error: number } | null = null;
-    for (const named of NAMED_RATIOS) {
-      const error = Math.abs(ratio - named.value) / named.value;
-      if (error <= RATIO_TOLERANCE && (best === null || error < best.error)) {
-        best = { label: named.label, error };
-      }
-    }
-    const label = best?.label ?? (ratio > 2 ? "wider" : "other");
-    counts.set(label, (counts.get(label) ?? 0) + 1);
+  for (const d of dims) {
+    const label = aspectLabelOf(d);
+    if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  const named = NAMED_RATIOS.map((r) => r.label)
-    .map((label) => ({ label, count: counts.get(label) ?? 0 }))
-    .filter((b) => b.count > 0)
+  const catchAlls = ["wider", "other"];
+  const named = [...counts.entries()]
+    .filter(([label]) => !catchAlls.includes(label))
+    .map(([label, count]) => ({ label, count, value: label }))
     .sort((a, b) => b.count - a.count);
-  const rest = (["wider", "other"] as const)
-    .map((label) => ({ label, count: counts.get(label) ?? 0 }))
+  const rest = catchAlls
+    .map((label) => ({ label, count: counts.get(label) ?? 0, value: label }))
     .filter((b) => b.count > 0);
   return [...named, ...rest];
 }
@@ -240,6 +205,8 @@ export function log2Bins(
   const bins = Array.from({ length: binCount }, (_, i) => ({
     label: `${fmt(edge(lo + i))}–${fmt(edge(lo + i + 1))}`,
     count: 0,
+    from: edge(lo + i),
+    to: edge(lo + i + 1),
   }));
   for (const v of valid) {
     const bin = bins[Math.min(binCount - 1, slot(v) - lo)];
