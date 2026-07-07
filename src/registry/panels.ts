@@ -8,8 +8,6 @@ import type { ComponentType } from "react";
 export interface Panel {
   id: string;
   title: string;
-  /** Small glyph shown in the panel header. */
-  icon: string;
   component: ComponentType;
 }
 

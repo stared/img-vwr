@@ -9,10 +9,7 @@ export function Sidebar() {
     <aside className="sidebar">
       {allPanels().map((panel) => (
         <section key={panel.id} className="sidebar-panel">
-          <header>
-            <span className="panel-icon">{panel.icon}</span>
-            {panel.title}
-          </header>
+          <header>{panel.title}</header>
           <panel.component />
         </section>
       ))}
