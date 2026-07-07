@@ -2,20 +2,28 @@ import { useEffect, useMemo } from "react";
 
 import type { ImageMeta } from "../../ipc";
 import { requestMeta } from "../../ipc";
-import type { Bucket, Dims } from "../../state/stats";
+import type { Bucket, Dims, NumericHistogram } from "../../state/stats";
 import {
   aspectBuckets,
   cameraCounts,
-  edgeBuckets,
   effectiveDims,
   formatBytes,
   formatCounts,
+  linearBins,
+  log2Bins,
   orientationSplit,
   parseExifDate,
-  sizeBuckets,
   timeBuckets,
 } from "../../state/stats";
 import { useAppStore, useVisibleEntries } from "../../state/store";
+
+/** Time buckets are already contiguous bins; the first/last labels are the axis. */
+function toTimeHistogram(buckets: Bucket[]): NumericHistogram | null {
+  const first = buckets[0];
+  const last = buckets[buckets.length - 1];
+  if (!first || !last) return null;
+  return { bins: buckets, minLabel: first.label, maxLabel: last.label };
+}
 
 /** Labelled horizontal bars; bar lengths are relative to the largest bucket. */
 function Histogram({ title, buckets, note }: { title: string; buckets: Bucket[]; note?: string }) {
@@ -33,6 +41,48 @@ function Histogram({ title, buckets, note }: { title: string; buckets: Bucket[];
           <span className="stats-count">{bucket.count}</span>
         </div>
       ))}
+      {note && <p className="stats-note">{note}</p>}
+    </section>
+  );
+}
+
+/** A proper histogram: contiguous vertical bins with the data range as axis labels. */
+function ColumnChart({
+  title,
+  histogram,
+  note,
+}: {
+  title: string;
+  histogram: NumericHistogram | null;
+  note?: string;
+}) {
+  if (histogram === null && !note) return null;
+  return (
+    <section className="stats-section">
+      <h3>{title}</h3>
+      {histogram &&
+        (() => {
+          const max = histogram.bins.reduce((m, b) => Math.max(m, b.count), 1);
+          return (
+            <>
+              <div className="stats-histo">
+                {histogram.bins.map((bin, i) => (
+                  <span
+                    key={i}
+                    title={`${bin.label}: ${bin.count}`}
+                    style={{
+                      height: bin.count > 0 ? `${Math.max(4, (100 * bin.count) / max)}%` : 0,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="stats-axis">
+                <span>{histogram.minLabel}</span>
+                <span>{histogram.maxLabel}</span>
+              </div>
+            </>
+          );
+        })()}
       {note && <p className="stats-note">{note}</p>}
     </section>
   );
@@ -92,15 +142,15 @@ export function StatsPanel() {
       read: metas.length,
       totalBytes: entries.reduce((sum, e) => sum + e.size, 0),
       formats: formatCounts(entries),
-      taken: timeBuckets(taken),
+      taken: toTimeHistogram(timeBuckets(taken, 48)),
       noTaken: metas.length - taken.length,
-      modified: timeBuckets(entries.map((e) => e.modifiedMs)),
+      modified: toTimeHistogram(timeBuckets(entries.map((e) => e.modifiedMs), 48)),
       cameras: cameraCounts(metas),
       noCamera: metas.filter((m) => !m.exif?.camera).length,
       orientation: orientationSplit(dims),
       aspects: aspectBuckets(dims),
-      edges: edgeBuckets(dims),
-      sizes: sizeBuckets(entries.map((e) => e.size)),
+      edges: linearBins(dims.map((d) => Math.max(d.width, d.height))),
+      sizes: log2Bins(entries.map((e) => e.size), formatBytes),
     };
   }, [entries, meta]);
 
@@ -130,20 +180,20 @@ export function StatsPanel() {
         )}
       </p>
       <Histogram title="format" buckets={stats.formats} />
-      <Histogram
+      <ColumnChart
         title="taken"
-        buckets={stats.taken}
+        histogram={stats.taken}
         note={stats.noTaken > 0 ? `no date tag: ${stats.noTaken}` : undefined}
       />
-      <Histogram title="modified" buckets={stats.modified} />
+      <ColumnChart title="modified" histogram={stats.modified} />
       <CountList
         title="camera"
         buckets={stats.cameras}
         note={stats.noCamera > 0 ? `no camera tag: ${stats.noCamera}` : undefined}
       />
       <Histogram title="aspect ratio" buckets={stats.aspects} note={orientationNote || undefined} />
-      <Histogram title="longest edge" buckets={stats.edges} />
-      <Histogram title="file size" buckets={stats.sizes} />
+      <ColumnChart title="longest edge" histogram={stats.edges} />
+      <ColumnChart title="file size" histogram={stats.sizes} />
     </div>
   );
 }

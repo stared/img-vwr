@@ -282,6 +282,32 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+.stats-histo {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 56px;
+}
+
+.stats-histo > span {
+  flex: 1;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.stats-histo > span:hover {
+  background: var(--accent);
+}
+
+.stats-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .stats-note {
   padding-top: 3px;
   font-size: 11px;

@@ -202,39 +202,77 @@ export function orientationSplit(dims: readonly Dims[]): OrientationSplit {
   return split;
 }
 
-const EDGE_LIMITS = [256, 512, 1024, 2048, 4096, 8192] as const;
-
-/** Longest-edge histogram in power-of-two steps; zero buckets dropped. */
-export function edgeBuckets(dims: readonly Dims[]): Bucket[] {
-  const labels = [...EDGE_LIMITS.map((l) => `≤${l}`), `>${EDGE_LIMITS[EDGE_LIMITS.length - 1]}`];
-  const counts = labels.map((label) => ({ label, count: 0 }));
-  for (const { width, height } of dims) {
-    const edge = Math.max(width, height);
-    const i = EDGE_LIMITS.findIndex((limit) => edge <= limit);
-    const bucket = counts[i === -1 ? counts.length - 1 : i];
-    if (bucket) bucket.count += 1;
-  }
-  return counts.filter((b) => b.count > 0);
+/** A binned distribution: contiguous bins (zeros kept) plus data min/max for the axis. */
+export interface NumericHistogram {
+  bins: Bucket[];
+  minLabel: string;
+  maxLabel: string;
 }
 
-const SIZE_STEPS = [
-  { label: "<100 KB", max: 100_000 },
-  { label: "<500 KB", max: 500_000 },
-  { label: "<1 MB", max: 1_000_000 },
-  { label: "<5 MB", max: 5_000_000 },
-  { label: "<20 MB", max: 20_000_000 },
-  { label: "≥20 MB", max: Infinity },
-] as const;
-
-/** File-size histogram over fixed steps; zero buckets dropped. */
-export function sizeBuckets(sizes: readonly number[]): Bucket[] {
-  const counts = SIZE_STEPS.map(({ label }) => ({ label, count: 0 }));
-  for (const size of sizes) {
-    const i = SIZE_STEPS.findIndex((step) => size < step.max);
-    const bucket = counts[i === -1 ? counts.length - 1 : i];
-    if (bucket) bucket.count += 1;
+/** Smallest "nice" step (1/2/5 × 10^k) that is ≥ raw. */
+function niceStep(raw: number): number {
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  for (const mult of [1, 2, 5]) {
+    if (raw <= mult * pow) return mult * pow;
   }
-  return counts.filter((b) => b.count > 0);
+  return 10 * pow;
+}
+
+/** Uniform bins with a nice width covering the data range; bin labels are ranges. */
+export function linearBins(
+  values: readonly number[],
+  maxBins = 24,
+  fmt: (n: number) => string = String,
+): NumericHistogram | null {
+  const valid = values.filter((v) => Number.isFinite(v));
+  if (valid.length === 0) return null;
+  let min = valid[0] ?? 0;
+  let max = min;
+  for (const v of valid) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  if (min === max) {
+    return { bins: [{ label: fmt(min), count: valid.length }], minLabel: fmt(min), maxLabel: fmt(max) };
+  }
+  const width = niceStep((max - min) / maxBins);
+  const start = Math.floor(min / width) * width;
+  const binCount = Math.floor((max - start) / width) + 1;
+  const bins = Array.from({ length: binCount }, (_, i) => ({
+    label: `${fmt(start + i * width)}–${fmt(start + (i + 1) * width)}`,
+    count: 0,
+  }));
+  for (const v of valid) {
+    const bin = bins[Math.min(binCount - 1, Math.floor((v - start) / width))];
+    if (bin) bin.count += 1;
+  }
+  return { bins, minLabel: fmt(min), maxLabel: fmt(max) };
+}
+
+/** Bins doubling in width (one per power of two) — for heavy-tailed values like file sizes. */
+export function log2Bins(
+  values: readonly number[],
+  fmt: (n: number) => string = String,
+): NumericHistogram | null {
+  const valid = values.filter((v) => v > 0);
+  if (valid.length === 0) return null;
+  let min = valid[0] ?? 1;
+  let max = min;
+  for (const v of valid) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const lo = Math.floor(Math.log2(min));
+  const binCount = Math.floor(Math.log2(max)) - lo + 1;
+  const bins = Array.from({ length: binCount }, (_, i) => ({
+    label: `${fmt(2 ** (lo + i))}–${fmt(2 ** (lo + i + 1))}`,
+    count: 0,
+  }));
+  for (const v of valid) {
+    const bin = bins[Math.min(binCount - 1, Math.floor(Math.log2(v)) - lo)];
+    if (bin) bin.count += 1;
+  }
+  return { bins, minLabel: fmt(min), maxLabel: fmt(max) };
 }
 
 /** "1.4 MB"-style human size (decimal units, one decimal below 100). */

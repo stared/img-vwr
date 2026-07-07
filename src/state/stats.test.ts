@@ -5,13 +5,13 @@ import type { ImageMeta } from "../ipc/bindings";
 import {
   aspectBuckets,
   cameraCounts,
-  edgeBuckets,
   effectiveDims,
   formatBytes,
   formatCounts,
+  linearBins,
+  log2Bins,
   orientationSplit,
   parseExifDate,
-  sizeBuckets,
   timeBuckets,
 } from "./stats";
 
@@ -190,28 +190,46 @@ describe("orientationSplit", () => {
   });
 });
 
-describe("edgeBuckets", () => {
-  it("buckets by the longest edge on power-of-two boundaries", () => {
-    const buckets = edgeBuckets([
-      { width: 1024, height: 768 }, // exactly ≤1024
-      { width: 768, height: 1025 }, // long edge is height, next bucket
-      { width: 20000, height: 10 },
+describe("linearBins", () => {
+  it("covers the data range with nice-width contiguous bins, zeros kept", () => {
+    const histo = linearBins([100, 110, 480], 4);
+    expect(histo).not.toBeNull();
+    // range 380 / 4 bins → raw 95 → nice width 100, starting at 100
+    expect(histo?.bins).toEqual([
+      { label: "100–200", count: 2 },
+      { label: "200–300", count: 0 },
+      { label: "300–400", count: 0 },
+      { label: "400–500", count: 1 },
     ]);
-    expect(buckets).toEqual([
-      { label: "≤1024", count: 1 },
-      { label: "≤2048", count: 1 },
-      { label: ">8192", count: 1 },
-    ]);
+    expect(histo?.minLabel).toBe("100");
+    expect(histo?.maxLabel).toBe("480");
+  });
+
+  it("collapses identical values to a single bin", () => {
+    expect(linearBins([2048, 2048, 2048])?.bins).toEqual([{ label: "2048", count: 3 }]);
+  });
+
+  it("returns null on empty input", () => {
+    expect(linearBins([])).toBeNull();
   });
 });
 
-describe("sizeBuckets", () => {
-  it("buckets sizes and drops empty steps", () => {
-    expect(sizeBuckets([50_000, 2_000_000, 2_500_000, 99_000_000])).toEqual([
-      { label: "<100 KB", count: 1 },
-      { label: "<5 MB", count: 2 },
-      { label: "≥20 MB", count: 1 },
+describe("log2Bins", () => {
+  it("bins per power of two with formatted labels", () => {
+    const histo = log2Bins([1500, 3000, 3500, 10_000], formatBytes);
+    // log2: 1500→10, 3000/3500→11, 10000→13; bins for exponents 10..13
+    expect(histo?.bins).toEqual([
+      { label: "1.0 KB–2.0 KB", count: 1 },
+      { label: "2.0 KB–4.1 KB", count: 2 },
+      { label: "4.1 KB–8.2 KB", count: 0 },
+      { label: "8.2 KB–16.4 KB", count: 1 },
     ]);
+    expect(histo?.minLabel).toBe("1.5 KB");
+    expect(histo?.maxLabel).toBe("10.0 KB");
+  });
+
+  it("ignores non-positive values and returns null when nothing remains", () => {
+    expect(log2Bins([0, -5])).toBeNull();
   });
 });
 
