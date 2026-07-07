@@ -217,12 +217,18 @@ kbd {
   color: var(--text-dim);
 }
 
-.chip-sort {
+.sort-control {
+  position: relative;
   margin-left: auto;
 }
 
 .chip-sort:hover {
   border-color: var(--accent);
+}
+
+.sort-menu {
+  left: auto;
+  right: 0;
 }
 
 .chip input {

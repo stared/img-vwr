@@ -26,6 +26,7 @@ export function FilterBar() {
   const sortBy = useAppStore((s) => s.sortBy);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const nameText = nameFilterText(query);
@@ -42,6 +43,7 @@ export function FilterBar() {
   // Value part of the path chip: enough of the tail to orient, not the whole path.
   const shortPath = folderPath.split("/").filter(Boolean).slice(-2).join("/") + "/";
   const closeMenu = () => setMenuOpen(false);
+  const closeSortMenu = () => setSortMenuOpen(false);
   const formatLabels = formats
     .map((id) => FORMAT_GROUPS.find((g) => g.id === id)?.label ?? id)
     .join(", ");
@@ -82,11 +84,7 @@ export function FilterBar() {
       )}
 
       <div className="filter-add">
-        <button
-          className="chip chip-add"
-          title="add filter or change sort"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
+        <button className="chip chip-add" title="add filter" onClick={() => setMenuOpen(!menuOpen)}>
           +
         </button>
         {menuOpen && (
@@ -114,13 +112,32 @@ export function FilterBar() {
                   {formats.includes(g.id) && <span className="menu-check">✓</span>}
                 </button>
               ))}
-              <span className="menu-section">Sort</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Sort always exists — right-aligned, never removable. Its chip is the
+          sort control: pick a key; picking the active key reverses direction. */}
+      <div className="sort-control">
+        <button
+          className="chip chip-sort"
+          title="change sort (picking the active key reverses it)"
+          onClick={() => setSortMenuOpen(!sortMenuOpen)}
+        >
+          <span className="chip-key">sort:</span> {SORT_LABELS[sort.key]}{" "}
+          {sort.dir === "asc" ? "↑" : "↓"}
+        </button>
+        {sortMenuOpen && (
+          <>
+            <div className="menu-backdrop" onClick={closeSortMenu} />
+            <div className="filter-menu sort-menu">
               {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
                 <button
                   key={key}
                   onClick={() => {
                     sortBy(key);
-                    closeMenu();
+                    closeSortMenu();
                   }}
                 >
                   {SORT_LABELS[key]}
@@ -133,16 +150,6 @@ export function FilterBar() {
           </>
         )}
       </div>
-
-      {/* Sort always exists — right-aligned, never removable, click reverses. */}
-      <button
-        className="chip chip-sort"
-        title="click to reverse direction"
-        onClick={() => sortBy(sort.key)}
-      >
-        <span className="chip-key">sort:</span> {SORT_LABELS[sort.key]}{" "}
-        {sort.dir === "asc" ? "↑" : "↓"}
-      </button>
     </div>
   );
 }
