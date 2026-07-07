@@ -48,9 +48,18 @@ pub fn run() {
     #[cfg(debug_assertions)]
     export_bindings(&builder);
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+
+    // MCP bridge (AI-driven testing: screenshots, DOM, IPC monitoring) — dev only.
+    #[cfg(debug_assertions)]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    app_builder
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
