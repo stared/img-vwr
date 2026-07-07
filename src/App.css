@@ -102,11 +102,27 @@ kbd {
   overflow-y: auto;
 }
 
+.sidebar.collapsed {
+  width: 26px;
+  padding-top: 8px;
+  text-align: center;
+}
+
+.sidebar-toggle {
+  padding: 0 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.sidebar-toggle:hover {
+  color: var(--text);
+}
+
 .sidebar-panel header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px 6px;
+  justify-content: space-between;
+  padding: 10px 6px 6px 12px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
