@@ -8,7 +8,6 @@ import {
   effectiveDims,
   formatBytes,
   formatCounts,
-  linearBins,
   log2Bins,
   orientationSplit,
   parseExifDate,
@@ -156,7 +155,7 @@ describe("cameraCounts", () => {
 });
 
 describe("aspectBuckets", () => {
-  it("snaps to named ratios regardless of orientation", () => {
+  it("snaps to named ratios regardless of orientation, most common first", () => {
     const buckets = aspectBuckets([
       { width: 3000, height: 2000 },
       { width: 2000, height: 3000 },
@@ -164,9 +163,21 @@ describe("aspectBuckets", () => {
       { width: 1000, height: 313 }, // ~3.2:1 — wider than 2:1
     ]);
     expect(buckets).toEqual([
-      { label: "1:1", count: 1 },
       { label: "3:2", count: 2 },
+      { label: "1:1", count: 1 },
       { label: "wider", count: 1 },
+    ]);
+  });
+
+  it("keeps the catch-alls last even when they dominate", () => {
+    const buckets = aspectBuckets([
+      { width: 1000, height: 313 },
+      { width: 1000, height: 320 },
+      { width: 3000, height: 2000 },
+    ]);
+    expect(buckets).toEqual([
+      { label: "3:2", count: 1 },
+      { label: "wider", count: 2 },
     ]);
   });
 
@@ -190,30 +201,6 @@ describe("orientationSplit", () => {
   });
 });
 
-describe("linearBins", () => {
-  it("covers the data range with nice-width contiguous bins, zeros kept", () => {
-    const histo = linearBins([100, 110, 480], 4);
-    expect(histo).not.toBeNull();
-    // range 380 / 4 bins → raw 95 → nice width 100, starting at 100
-    expect(histo?.bins).toEqual([
-      { label: "100–200", count: 2 },
-      { label: "200–300", count: 0 },
-      { label: "300–400", count: 0 },
-      { label: "400–500", count: 1 },
-    ]);
-    expect(histo?.minLabel).toBe("100");
-    expect(histo?.maxLabel).toBe("480");
-  });
-
-  it("collapses identical values to a single bin", () => {
-    expect(linearBins([2048, 2048, 2048])?.bins).toEqual([{ label: "2048", count: 3 }]);
-  });
-
-  it("returns null on empty input", () => {
-    expect(linearBins([])).toBeNull();
-  });
-});
-
 describe("log2Bins", () => {
   it("bins per power of two with formatted labels", () => {
     const histo = log2Bins([1500, 3000, 3500, 10_000], formatBytes);
@@ -230,6 +217,15 @@ describe("log2Bins", () => {
 
   it("ignores non-positive values and returns null when nothing remains", () => {
     expect(log2Bins([0, -5])).toBeNull();
+  });
+
+  it("supports finer resolution via binsPerOctave", () => {
+    const round = (n: number) => String(Math.round(n));
+    // 3024 and 4032 (common photo edges) share one bin at 1/octave...
+    expect(log2Bins([3024, 4032], round, 1)?.bins).toHaveLength(1);
+    // ...but land in adjacent separate bins at 3/octave.
+    const fine = log2Bins([3024, 4032], round, 3);
+    expect(fine?.bins.map((b) => b.count)).toEqual([1, 1]);
   });
 });
 

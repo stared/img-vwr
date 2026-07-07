@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { ImageMeta } from "../../ipc";
 import { requestMeta } from "../../ipc";
@@ -9,7 +9,6 @@ import {
   effectiveDims,
   formatBytes,
   formatCounts,
-  linearBins,
   log2Bins,
   orientationSplit,
   parseExifDate,
@@ -25,13 +24,26 @@ function toTimeHistogram(buckets: Bucket[]): NumericHistogram | null {
   return { bins: buckets, minLabel: first.label, maxLabel: last.label };
 }
 
+/** Lightroom-style panel section: separator line + header that collapses its body. */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className="stats-section">
+      <button className="stats-section-header" onClick={() => setOpen(!open)}>
+        <span className="stats-disclosure">{open ? "▾" : "▸"}</span>
+        {title}
+      </button>
+      {open && children}
+    </section>
+  );
+}
+
 /** Labelled horizontal bars; bar lengths are relative to the largest bucket. */
 function Histogram({ title, buckets, note }: { title: string; buckets: Bucket[]; note?: string }) {
   if (buckets.length === 0 && !note) return null;
   const max = buckets.reduce((m, b) => Math.max(m, b.count), 1);
   return (
-    <section className="stats-section">
-      <h3>{title}</h3>
+    <Section title={title}>
       {buckets.map((bucket) => (
         <div key={bucket.label} className="stats-row" title={`${bucket.label}: ${bucket.count}`}>
           <span className="stats-label">{bucket.label}</span>
@@ -42,7 +54,7 @@ function Histogram({ title, buckets, note }: { title: string; buckets: Bucket[];
         </div>
       ))}
       {note && <p className="stats-note">{note}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -58,8 +70,7 @@ function ColumnChart({
 }) {
   if (histogram === null && !note) return null;
   return (
-    <section className="stats-section">
-      <h3>{title}</h3>
+    <Section title={title}>
       {histogram &&
         (() => {
           const max = histogram.bins.reduce((m, b) => Math.max(m, b.count), 1);
@@ -84,7 +95,7 @@ function ColumnChart({
           );
         })()}
       {note && <p className="stats-note">{note}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -92,8 +103,7 @@ function ColumnChart({
 function CountList({ title, buckets, note }: { title: string; buckets: Bucket[]; note?: string }) {
   if (buckets.length === 0 && !note) return null;
   return (
-    <section className="stats-section">
-      <h3>{title}</h3>
+    <Section title={title}>
       {buckets.map((bucket) => (
         <div key={bucket.label} className="stats-row list" title={`${bucket.label}: ${bucket.count}`}>
           <span className="stats-label">{bucket.label}</span>
@@ -101,7 +111,7 @@ function CountList({ title, buckets, note }: { title: string; buckets: Bucket[];
         </div>
       ))}
       {note && <p className="stats-note">{note}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -149,7 +159,9 @@ export function StatsPanel() {
       noCamera: metas.filter((m) => !m.exif?.camera).length,
       orientation: orientationSplit(dims),
       aspects: aspectBuckets(dims),
-      edges: linearBins(dims.map((d) => Math.max(d.width, d.height))),
+      // Log scale: pixel dimensions cluster in octaves (1k, 2k, 4k…);
+      // 3 bins per octave keeps e.g. 3024 and 4032 distinguishable.
+      edges: log2Bins(dims.map((d) => Math.max(d.width, d.height)), (n) => String(Math.round(n)), 3),
       sizes: log2Bins(entries.map((e) => e.size), formatBytes),
     };
   }, [entries, meta]);

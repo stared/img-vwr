@@ -231,16 +231,31 @@ kbd {
 }
 
 .stats-section {
-  padding-top: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
-.stats-section h3 {
-  padding-bottom: 4px;
+.stats-section-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 0 6px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--text-dim);
+}
+
+.stats-section-header:hover {
+  color: var(--text);
+}
+
+.stats-disclosure {
+  width: 10px;
+  font-size: 9px;
 }
 
 .stats-row {

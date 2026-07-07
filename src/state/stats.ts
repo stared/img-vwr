@@ -164,7 +164,10 @@ const NAMED_RATIOS = [
 /** Relative tolerance for snapping a measured ratio to a named one. */
 const RATIO_TOLERANCE = 0.04;
 
-/** Nearest named ratio of long/short edge, or "other"; ordered square → widest. */
+/**
+ * Nearest named ratio of long/short edge. Named ratios sort by count (most
+ * common first); the catch-alls "wider" and "other" always trail.
+ */
 export function aspectBuckets(dims: readonly Dims[]): Bucket[] {
   const counts = new Map<string, number>();
   for (const { width, height } of dims) {
@@ -180,10 +183,14 @@ export function aspectBuckets(dims: readonly Dims[]): Bucket[] {
     const label = best?.label ?? (ratio > 2 ? "wider" : "other");
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  const order = [...NAMED_RATIOS.map((r) => r.label), "wider", "other"];
-  return order
+  const named = NAMED_RATIOS.map((r) => r.label)
+    .map((label) => ({ label, count: counts.get(label) ?? 0 }))
+    .filter((b) => b.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const rest = (["wider", "other"] as const)
     .map((label) => ({ label, count: counts.get(label) ?? 0 }))
     .filter((b) => b.count > 0);
+  return [...named, ...rest];
 }
 
 export interface OrientationSplit {
@@ -209,50 +216,14 @@ export interface NumericHistogram {
   maxLabel: string;
 }
 
-/** Smallest "nice" step (1/2/5 × 10^k) that is ≥ raw. */
-function niceStep(raw: number): number {
-  const pow = 10 ** Math.floor(Math.log10(raw));
-  for (const mult of [1, 2, 5]) {
-    if (raw <= mult * pow) return mult * pow;
-  }
-  return 10 * pow;
-}
-
-/** Uniform bins with a nice width covering the data range; bin labels are ranges. */
-export function linearBins(
-  values: readonly number[],
-  maxBins = 24,
-  fmt: (n: number) => string = String,
-): NumericHistogram | null {
-  const valid = values.filter((v) => Number.isFinite(v));
-  if (valid.length === 0) return null;
-  let min = valid[0] ?? 0;
-  let max = min;
-  for (const v of valid) {
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  if (min === max) {
-    return { bins: [{ label: fmt(min), count: valid.length }], minLabel: fmt(min), maxLabel: fmt(max) };
-  }
-  const width = niceStep((max - min) / maxBins);
-  const start = Math.floor(min / width) * width;
-  const binCount = Math.floor((max - start) / width) + 1;
-  const bins = Array.from({ length: binCount }, (_, i) => ({
-    label: `${fmt(start + i * width)}–${fmt(start + (i + 1) * width)}`,
-    count: 0,
-  }));
-  for (const v of valid) {
-    const bin = bins[Math.min(binCount - 1, Math.floor((v - start) / width))];
-    if (bin) bin.count += 1;
-  }
-  return { bins, minLabel: fmt(min), maxLabel: fmt(max) };
-}
-
-/** Bins doubling in width (one per power of two) — for heavy-tailed values like file sizes. */
+/**
+ * Log-scale bins — for heavy-tailed values like file sizes or pixel edges.
+ * `binsPerOctave` sets the resolution: 1 = bins doubling in width.
+ */
 export function log2Bins(
   values: readonly number[],
   fmt: (n: number) => string = String,
+  binsPerOctave = 1,
 ): NumericHistogram | null {
   const valid = values.filter((v) => v > 0);
   if (valid.length === 0) return null;
@@ -262,14 +233,16 @@ export function log2Bins(
     if (v < min) min = v;
     if (v > max) max = v;
   }
-  const lo = Math.floor(Math.log2(min));
-  const binCount = Math.floor(Math.log2(max)) - lo + 1;
+  const slot = (v: number) => Math.floor(Math.log2(v) * binsPerOctave);
+  const edge = (s: number) => 2 ** (s / binsPerOctave);
+  const lo = slot(min);
+  const binCount = slot(max) - lo + 1;
   const bins = Array.from({ length: binCount }, (_, i) => ({
-    label: `${fmt(2 ** (lo + i))}–${fmt(2 ** (lo + i + 1))}`,
+    label: `${fmt(edge(lo + i))}–${fmt(edge(lo + i + 1))}`,
     count: 0,
   }));
   for (const v of valid) {
-    const bin = bins[Math.min(binCount - 1, Math.floor(Math.log2(v)) - lo)];
+    const bin = bins[Math.min(binCount - 1, slot(v) - lo)];
     if (bin) bin.count += 1;
   }
   return { bins, minLabel: fmt(min), maxLabel: fmt(max) };
