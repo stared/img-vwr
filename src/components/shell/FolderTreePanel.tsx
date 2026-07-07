@@ -21,7 +21,9 @@ export function FolderTreePanel() {
           ↰ ..
         </button>
       )}
-      <TreeNode path={folderPath} name={baseName(folderPath)} depth={0} initiallyOpen />
+      {/* Keyed by path: a folder change must remount the root so its lazily
+          fetched children don't leak into the new folder's tree. */}
+      <TreeNode key={folderPath} path={folderPath} name={baseName(folderPath)} depth={0} initiallyOpen />
     </div>
   );
 }
