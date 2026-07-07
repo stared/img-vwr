@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { FilterBar } from "./components/shell/FilterBar";
+import { DEFAULT_START_FOLDER } from "./config";
 import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
@@ -19,6 +20,14 @@ function App() {
   const viewMode = useAppStore((s) => s.viewMode);
 
   useGlobalKeybindings();
+
+  // Start in the default folder (testing convenience; see config.ts).
+  useEffect(() => {
+    const { status, openFolder } = useAppStore.getState();
+    if (DEFAULT_START_FOLDER && status === "idle") {
+      void openFolder(DEFAULT_START_FOLDER);
+    }
+  }, []);
 
   // Stream thumbnail and folder-count results from Rust into the store.
   useEffect(() => {
