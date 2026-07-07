@@ -5,10 +5,14 @@ import type { ComponentType } from "react";
  * sidebar renders whatever is here, which is the future plugin UI seam.
  */
 
+export type PanelSide = "left" | "right";
+
 export interface Panel {
   id: string;
   title: string;
   component: ComponentType;
+  /** Which shell edge hosts the panel; defaults to the left sidebar. */
+  side?: PanelSide;
 }
 
 const registry = new Map<string, Panel>();
@@ -20,6 +24,6 @@ export function registerPanel(panel: Panel): void {
   registry.set(panel.id, panel);
 }
 
-export function allPanels(): Panel[] {
-  return [...registry.values()];
+export function allPanels(side: PanelSide = "left"): Panel[] {
+  return [...registry.values()].filter((p) => (p.side ?? "left") === side);
 }

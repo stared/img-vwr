@@ -38,6 +38,7 @@ export const defaultKeybindings: ReadonlyMap<string, string> = new Map([
   ["mod+p", "palette.open"],
   ["mod+o", "folder.open"],
   ["mod+b", "sidebar.toggle"],
+  ["mod+i", "stats.toggle"],
   ["f", "filter.find"],
   ["mod+f", "filter.find"],
   ["arrowright", "image.next"],

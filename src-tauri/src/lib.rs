@@ -18,11 +18,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::new_epoch,
             commands::request_thumbnails,
             commands::request_dir_counts,
+            commands::request_meta,
         ])
         .events(collect_events![
             events::ThumbnailReady,
             events::ThumbnailFailed,
-            events::DirCountReady
+            events::DirCountReady,
+            events::MetaBatchReady
         ])
 }
 

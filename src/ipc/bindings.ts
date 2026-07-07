@@ -44,6 +44,14 @@ async requestThumbnails(paths: string[], epoch: number) : Promise<void> {
  */
 async requestDirCounts(paths: string[]) : Promise<void> {
     await TAURI_INVOKE("request_dir_counts", { paths });
+},
+/**
+ * Read per-image metadata (dimensions, EXIF) for the stats panel off the
+ * main thread, emitting batched events. Sequential on one thread — gentle
+ * on cloud-backed folders — and epoch-guarded so a folder change stops it.
+ */
+async requestMeta(paths: string[], epoch: number) : Promise<void> {
+    await TAURI_INVOKE("request_meta", { paths, epoch });
 }
 }
 
@@ -52,10 +60,12 @@ async requestDirCounts(paths: string[]) : Promise<void> {
 
 export const events = __makeEvents__<{
 dirCountReady: DirCountReady,
+metaBatchReady: MetaBatchReady,
 thumbnailFailed: ThumbnailFailed,
 thumbnailReady: ThumbnailReady
 }>({
 dirCountReady: "dir-count-ready",
+metaBatchReady: "meta-batch-ready",
 thumbnailFailed: "thumbnail-failed",
 thumbnailReady: "thumbnail-ready"
 })
@@ -84,6 +94,11 @@ export type ImageMeta = {
  * can still measure the image it renders natively.
  */
 width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null }
+/**
+ * A batch of per-image metadata read in the background for the stats panel.
+ */
+export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
+export type MetaEntry = { path: string; meta: ImageMeta }
 export type ThumbnailFailed = { path: string; error: string; epoch: number }
 export type ThumbnailReady = { path: string; 
 /**

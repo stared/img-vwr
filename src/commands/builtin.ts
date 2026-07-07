@@ -41,6 +41,13 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "stats.toggle",
+    title: "Toggle Statistics",
+    keywords: ["histogram", "exif", "panel"],
+    run: ({ store }) => store.getState().toggleStats(),
+  });
+
+  registerCommand({
     id: "viewer.open",
     title: "Open Image",
     keywords: ["view", "show"],

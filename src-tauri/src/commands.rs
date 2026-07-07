@@ -38,6 +38,40 @@ pub fn request_dir_counts(app: AppHandle, paths: Vec<String>) {
     });
 }
 
+/// Read per-image metadata (dimensions, EXIF) for the stats panel off the
+/// main thread, emitting batched events. Sequential on one thread — gentle
+/// on cloud-backed folders — and epoch-guarded so a folder change stops it.
+#[tauri::command]
+#[specta::specta]
+pub fn request_meta(
+    app: AppHandle,
+    service: State<'_, Arc<ThumbnailService>>,
+    paths: Vec<String>,
+    epoch: u64,
+) {
+    let service = Arc::clone(&service);
+    std::thread::spawn(move || {
+        use tauri_specta::Event as _;
+        const BATCH: usize = 32;
+        let mut items = Vec::with_capacity(BATCH);
+        for path in paths {
+            if service.is_stale(epoch) {
+                return;
+            }
+            if let Ok(meta) = imgvwr_core::read_meta(std::path::Path::new(&path)) {
+                items.push(crate::events::MetaEntry { path, meta });
+            }
+            if items.len() >= BATCH {
+                let batch = std::mem::take(&mut items);
+                let _ = crate::events::MetaBatchReady { items: batch, epoch }.emit(&app);
+            }
+        }
+        if !items.is_empty() {
+            let _ = crate::events::MetaBatchReady { items, epoch }.emit(&app);
+        }
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {

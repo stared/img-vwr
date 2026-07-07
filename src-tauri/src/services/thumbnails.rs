@@ -44,7 +44,7 @@ impl ThumbnailService {
         self.epoch.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    fn is_stale(&self, epoch: u64) -> bool {
+    pub fn is_stale(&self, epoch: u64) -> bool {
         self.epoch.load(Ordering::SeqCst) != epoch
     }
 

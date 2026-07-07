@@ -10,7 +10,7 @@ import {
   zoomAtPoint,
   type Point,
 } from "../components/viewer/viewport";
-import type { FileEntry } from "../ipc";
+import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import type { Query, Sort, SortKey } from "./query";
 import {
@@ -39,6 +39,9 @@ export interface AppState {
   thumbErrors: Record<string, string>;
   /** folder path → direct image count, streamed from background counting. */
   dirCounts: Record<string, number>;
+  /** path → per-image metadata, streamed in batches for the stats panel. */
+  meta: Record<string, ImageMeta>;
+  statsVisible: boolean;
   viewMode: ViewMode;
   /** Index into the VISIBLE (query-applied) list of the selected image. */
   selectedIndex: number;
@@ -63,6 +66,8 @@ interface AppActions {
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
   dirCountReady: (path: string, count: number) => void;
+  metaBatchReady: (items: MetaEntry[], epoch: number) => void;
+  toggleStats: () => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -92,6 +97,8 @@ export const initialState: AppState = {
   thumbs: {},
   thumbErrors: {},
   dirCounts: {},
+  meta: {},
+  statsVisible: true,
   viewMode: "gallery",
   selectedIndex: 0,
   query: defaultQuery,
@@ -115,6 +122,7 @@ export function folderLoading(path: string, epoch: number): Partial<AppState> {
     epoch,
     thumbs: {},
     thumbErrors: {},
+    meta: {},
     viewMode: "gallery",
     selectedIndex: 0,
     viewerView: null,
@@ -176,6 +184,19 @@ export function withThumbError(
   return { thumbErrors: { ...state.thumbErrors, [path]: error } };
 }
 
+export function withMetaBatch(
+  state: Pick<AppState, "meta" | "epoch">,
+  items: MetaEntry[],
+  epoch: number,
+): Partial<AppState> | null {
+  if (epoch !== state.epoch || items.length === 0) return null;
+  const meta = { ...state.meta };
+  for (const item of items) {
+    meta[item.path] = item.meta;
+  }
+  return { meta };
+}
+
 type ViewerState = Pick<AppState, "viewerView" | "viewerImg" | "viewerWin">;
 
 export function zoomedBy(state: ViewerState, factor: number, cursor?: Point): Partial<AppState> {
@@ -228,6 +249,13 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   // Counts are keyed by absolute path, so they can't go stale — no epoch guard.
   dirCountReady: (path, count) => set({ dirCounts: { ...get().dirCounts, [path]: count } }),
+
+  metaBatchReady: (items, epoch) => {
+    const next = withMetaBatch(get(), items, epoch);
+    if (next) set(next);
+  },
+
+  toggleStats: () => set({ statsVisible: !get().statsVisible }),
 
   openViewer: (index) => {
     const visibleCount = applyQuery(get().entries, get().query).length;

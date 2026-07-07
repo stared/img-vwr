@@ -4,6 +4,7 @@ import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { FilterBar } from "./components/shell/FilterBar";
 import { DEFAULT_START_FOLDER } from "./config";
+import { RightSidebar } from "./components/shell/RightSidebar";
 import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
@@ -29,9 +30,9 @@ function App() {
     }
   }, []);
 
-  // Stream thumbnail and folder-count results from Rust into the store.
+  // Stream thumbnail, folder-count and metadata results from Rust into the store.
   useEffect(() => {
-    const { thumbReady, thumbFailed, dirCountReady } = useAppStore.getState();
+    const { thumbReady, thumbFailed, dirCountReady, metaBatchReady } = useAppStore.getState();
     const unlisteners = [
       events.thumbnailReady.listen(({ payload }) =>
         thumbReady(payload.path, payload.cacheFile, payload.epoch),
@@ -41,6 +42,9 @@ function App() {
       ),
       events.dirCountReady.listen(({ payload }) =>
         dirCountReady(payload.path, payload.imageCount),
+      ),
+      events.metaBatchReady.listen(({ payload }) =>
+        metaBatchReady(payload.items, payload.epoch),
       ),
     ];
     return () => {
@@ -68,6 +72,7 @@ function App() {
           {status === "loaded" && count > 0 && viewMode === "gallery" && <GalleryGrid />}
           {status === "loaded" && count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
+        <RightSidebar />
       </div>
       <StatusBar />
       <CommandPalette />

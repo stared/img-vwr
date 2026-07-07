@@ -1,10 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { commands, events } from "./bindings";
-import type { DirEntry, FileEntry, Result } from "./bindings";
+import type { DirEntry, FileEntry, ImageMeta, MetaEntry, Result } from "./bindings";
 
 export { events };
-export type { DirEntry, FileEntry };
+export type { DirEntry, FileEntry, ImageMeta, MetaEntry };
 
 /** Unwrap a specta Result, throwing on the error branch. */
 function unwrap<T>(result: Result<T, string>): T {
@@ -32,6 +32,10 @@ export async function requestThumbnails(paths: string[], epoch: number): Promise
 
 export async function requestDirCounts(paths: string[]): Promise<void> {
   return commands.requestDirCounts(paths);
+}
+
+export async function requestMeta(paths: string[], epoch: number): Promise<void> {
+  return commands.requestMeta(paths, epoch);
 }
 
 /** asset:// URL the webview can load a local file from. */

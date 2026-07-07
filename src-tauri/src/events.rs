@@ -1,3 +1,4 @@
+use imgvwr_core::ImageMeta;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
@@ -24,5 +25,20 @@ pub struct DirCountReady {
 pub struct ThumbnailFailed {
     pub path: String,
     pub error: String,
+    pub epoch: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MetaEntry {
+    pub path: String,
+    pub meta: ImageMeta,
+}
+
+/// A batch of per-image metadata read in the background for the stats panel.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct MetaBatchReady {
+    pub items: Vec<MetaEntry>,
     pub epoch: u64,
 }

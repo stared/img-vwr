@@ -208,6 +208,86 @@ kbd {
   color: var(--accent);
 }
 
+/* ---- Statistics panel ---- */
+
+/* :not(.collapsed) keeps the .sidebar.collapsed rail width winning here —
+   this block comes later in the cascade at equal specificity. */
+.sidebar.right:not(.collapsed) {
+  width: 250px;
+}
+
+.stats {
+  padding: 0 12px 14px;
+  font-size: 12px;
+}
+
+.stats-summary {
+  padding-bottom: 4px;
+  color: var(--text);
+}
+
+.stats-progress {
+  color: var(--text-dim);
+}
+
+.stats-section {
+  padding-top: 12px;
+}
+
+.stats-section h3 {
+  padding-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 68px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+  line-height: 18px;
+}
+
+.stats-row.list {
+  grid-template-columns: 1fr 36px;
+}
+
+.stats-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-bar {
+  height: 8px;
+}
+
+.stats-bar > span {
+  display: block;
+  height: 100%;
+  min-width: 1px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.stats-count {
+  text-align: right;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-note {
+  padding-top: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 /* ---- Filter bar ---- */
 
 .filterbar {
