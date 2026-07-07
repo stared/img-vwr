@@ -15,7 +15,6 @@ const CRUMB_SEGMENTS = 2;
 export function FolderTreePanel() {
   const folderPath = useAppStore((s) => s.folderPath);
   const openFolder = useAppStore((s) => s.openFolder);
-  const rootCount = useAppStore((s) => (s.status === "loaded" ? s.entries.length : undefined));
   const dirCounts = useAppStore((s) => s.dirCounts);
 
   const [subdirs, setSubdirs] = useState<DirEntry[] | null>(null);
@@ -73,9 +72,6 @@ export function FolderTreePanel() {
           ) : (
             <span key={pathTo(i)} className="crumb-current">
               {segment}
-              {rootCount !== undefined && rootCount > 0 && (
-                <span className="tree-count">{rootCount}</span>
-              )}
             </span>
           ),
         )}
