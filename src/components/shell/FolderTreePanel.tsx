@@ -8,6 +8,7 @@ import { useAppStore } from "../../state/store";
 export function FolderTreePanel() {
   const folderPath = useAppStore((s) => s.folderPath);
   const openFolder = useAppStore((s) => s.openFolder);
+  const rootCount = useAppStore((s) => (s.status === "loaded" ? s.entries.length : undefined));
 
   if (!folderPath) {
     return <p className="panel-hint">Open a folder to browse.</p>;
@@ -23,7 +24,14 @@ export function FolderTreePanel() {
       )}
       {/* Keyed by path: a folder change must remount the root so its lazily
           fetched children don't leak into the new folder's tree. */}
-      <TreeNode key={folderPath} path={folderPath} name={baseName(folderPath)} depth={0} initiallyOpen />
+      <TreeNode
+        key={folderPath}
+        path={folderPath}
+        name={baseName(folderPath)}
+        count={rootCount}
+        depth={0}
+        initiallyOpen
+      />
     </div>
   );
 }
@@ -31,11 +39,13 @@ export function FolderTreePanel() {
 interface TreeNodeProps {
   path: string;
   name: string;
+  /** Direct image count; undefined = unknown. */
+  count?: number;
   depth: number;
   initiallyOpen?: boolean;
 }
 
-function TreeNode({ path, name, depth, initiallyOpen = false }: TreeNodeProps) {
+function TreeNode({ path, name, count, depth, initiallyOpen = false }: TreeNodeProps) {
   const folderPath = useAppStore((s) => s.folderPath);
   const openFolder = useAppStore((s) => s.openFolder);
   const [expanded, setExpanded] = useState(initiallyOpen);
@@ -62,10 +72,17 @@ function TreeNode({ path, name, depth, initiallyOpen = false }: TreeNodeProps) {
         <button className="tree-label" onClick={() => void openFolder(path)} title={path}>
           {name}
         </button>
+        {count !== undefined && count > 0 && <span className="tree-count">{count}</span>}
       </div>
       {expanded &&
         children?.map((child) => (
-          <TreeNode key={child.path} path={child.path} name={child.name} depth={depth + 1} />
+          <TreeNode
+            key={child.path}
+            path={child.path}
+            name={child.name}
+            count={child.imageCount}
+            depth={depth + 1}
+          />
         ))}
       {expanded && children?.length === 0 && (
         <span className="tree-empty" style={{ paddingLeft: 20 }}>

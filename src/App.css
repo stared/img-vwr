@@ -175,6 +175,18 @@ kbd {
   color: var(--text-dim);
 }
 
+.tree-count {
+  flex-shrink: 0;
+  padding: 0 6px 0 4px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.tree-row.current > .tree-count {
+  color: var(--accent);
+}
+
 /* ---- Gallery ---- */
 
 .gallery-scroll {

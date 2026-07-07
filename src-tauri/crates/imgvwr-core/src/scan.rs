@@ -22,6 +22,8 @@ pub struct FileEntry {
 pub struct DirEntry {
     pub path: String,
     pub name: String,
+    /// Image files directly inside (non-recursive).
+    pub image_count: u32,
 }
 
 /// True for files the gallery should show: known image extension, not hidden.
@@ -111,7 +113,21 @@ pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     Ok(entries)
 }
 
-/// Non-hidden subdirectories of `dir`, natural-sorted (lazy sidebar tree, one level).
+/// Count image files directly inside `dir`. Cheap: filename filter plus the
+/// dirent file type — no per-file stat. Unreadable dirs count as 0.
+pub fn count_images(dir: &Path) -> u32 {
+    match std::fs::read_dir(dir) {
+        Ok(read) => read
+            .filter_map(|entry| entry.ok())
+            .filter(|e| e.file_name().to_str().is_some_and(is_image_candidate))
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .count() as u32,
+        Err(_) => 0,
+    }
+}
+
+/// Non-hidden subdirectories of `dir` with their direct image counts,
+/// natural-sorted (lazy sidebar tree, one level).
 pub fn list_subdirs(dir: &Path) -> std::io::Result<Vec<DirEntry>> {
     let mut dirs: Vec<DirEntry> = std::fs::read_dir(dir)?
         .filter_map(|entry| {
@@ -120,8 +136,10 @@ pub fn list_subdirs(dir: &Path) -> std::io::Result<Vec<DirEntry>> {
             if name.starts_with('.') || !entry.metadata().ok()?.is_dir() {
                 return None;
             }
+            let path = entry.path();
             Some(DirEntry {
-                path: entry.path().to_str()?.to_owned(),
+                image_count: count_images(&path),
+                path: path.to_str()?.to_owned(),
                 name,
             })
         })
@@ -190,5 +208,28 @@ mod tests {
             .map(|e| e.name)
             .collect();
         assert_eq!(names, vec!["alpha", "zeta"]);
+    }
+
+    #[test]
+    fn subdirs_carry_direct_image_counts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let full = tmp.path().join("full");
+        let nested_only = tmp.path().join("nested_only");
+        std::fs::create_dir(&full).unwrap();
+        std::fs::create_dir(&nested_only).unwrap();
+        std::fs::create_dir(nested_only.join("deeper")).unwrap();
+
+        for name in ["a.png", "b.jpg", ".hidden.png", "skip.txt"] {
+            std::fs::write(full.join(name), b"x").unwrap();
+        }
+        // Images below the direct level must not count (non-recursive).
+        std::fs::write(nested_only.join("deeper").join("deep.png"), b"x").unwrap();
+
+        let counts: Vec<(String, u32)> = list_subdirs(tmp.path())
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.name, e.image_count))
+            .collect();
+        assert_eq!(counts, vec![("full".into(), 2), ("nested_only".into(), 0)]);
     }
 }

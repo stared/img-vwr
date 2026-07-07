@@ -56,7 +56,11 @@ thumbnailReady: "thumbnail-ready"
 
 /** user-defined types **/
 
-export type DirEntry = { path: string; name: string }
+export type DirEntry = { path: string; name: string; 
+/**
+ * Image files directly inside (non-recursive).
+ */
+imageCount: number }
 export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**
