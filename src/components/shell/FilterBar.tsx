@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { SortKey } from "../../state/query";
+import type { Sort, SortKey } from "../../state/query";
 import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
 import { useAppStore } from "../../state/store";
 
@@ -9,6 +9,16 @@ const SORT_LABELS: Record<SortKey, string> = {
   modified: "modified",
   size: "size",
 };
+
+/** Every complete sort choice, each key led by its most useful direction. */
+const SORT_OPTIONS: { sort: Sort; hint: string }[] = [
+  { sort: { key: "name", dir: "asc" }, hint: "A→Z" },
+  { sort: { key: "name", dir: "desc" }, hint: "Z→A" },
+  { sort: { key: "modified", dir: "desc" }, hint: "newest" },
+  { sort: { key: "modified", dir: "asc" }, hint: "oldest" },
+  { sort: { key: "size", dir: "desc" }, hint: "largest" },
+  { sort: { key: "size", dir: "asc" }, hint: "smallest" },
+];
 
 /**
  * Always-present query bar. Every chip is an explicit `key: value` clause of
@@ -23,7 +33,7 @@ export function FilterBar() {
   const setFindOpen = useAppStore((s) => s.setFindOpen);
   const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
   const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
-  const sortBy = useAppStore((s) => s.sortBy);
+  const setSort = useAppStore((s) => s.setSort);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -118,11 +128,11 @@ export function FilterBar() {
       </div>
 
       {/* Sort always exists — right-aligned, never removable. Its chip is the
-          sort control: pick a key; picking the active key reverses direction. */}
+          sort control: every menu row is a complete key+direction choice. */}
       <div className="sort-control">
         <button
           className="chip chip-sort"
-          title="change sort (picking the active key reverses it)"
+          title="change sort"
           onClick={() => setSortMenuOpen(!sortMenuOpen)}
         >
           <span className="chip-key">sort:</span> {SORT_LABELS[sort.key]}{" "}
@@ -132,20 +142,24 @@ export function FilterBar() {
           <>
             <div className="menu-backdrop" onClick={closeSortMenu} />
             <div className="filter-menu sort-menu">
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    sortBy(key);
-                    closeSortMenu();
-                  }}
-                >
-                  {SORT_LABELS[key]}
-                  {sort.key === key && (
-                    <span className="menu-check">{sort.dir === "asc" ? "↑" : "↓"}</span>
-                  )}
-                </button>
-              ))}
+              {SORT_OPTIONS.map(({ sort: option, hint }) => {
+                const active = option.key === sort.key && option.dir === sort.dir;
+                return (
+                  <button
+                    key={`${option.key}-${option.dir}`}
+                    onClick={() => {
+                      setSort(option);
+                      closeSortMenu();
+                    }}
+                  >
+                    <span>
+                      {SORT_LABELS[option.key]} {option.dir === "asc" ? "↑" : "↓"}
+                    </span>
+                    <span className="menu-hint">{hint}</span>
+                    <span className="menu-check">{active ? "✓" : ""}</span>
+                  </button>
+                );
+              })}
             </div>
           </>
         )}

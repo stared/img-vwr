@@ -226,9 +226,10 @@ kbd {
   border-color: var(--accent);
 }
 
-.sort-menu {
+.filter-menu.sort-menu {
   left: auto;
   right: 0;
+  min-width: 200px;
 }
 
 .chip input {
@@ -300,6 +301,7 @@ kbd {
   border-radius: 5px;
   font-size: 12px;
   text-align: left;
+  white-space: nowrap;
 }
 
 .filter-menu button:hover {
@@ -307,8 +309,16 @@ kbd {
   color: white;
 }
 
+.menu-hint {
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 .menu-check {
   color: var(--text-dim);
+  min-width: 12px;
 }
 
 .filter-menu button:hover .menu-check {

@@ -12,7 +12,7 @@ import {
 } from "../components/viewer/viewport";
 import type { FileEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
-import type { Query, SortKey } from "./query";
+import type { Query, Sort, SortKey } from "./query";
 import {
   applyQuery,
   defaultQuery,
@@ -67,6 +67,7 @@ interface AppActions {
   closeViewer: () => void;
   navigate: (delta: number) => void;
   sortBy: (key: SortKey) => void;
+  setSort: (sort: Sort) => void;
   clearFormatFilter: () => void;
   toggleFormatFilter: (group: string) => void;
   setNameFilter: (substring: string) => void;
@@ -249,6 +250,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   sortBy: (key) => set(withQuery(get(), withSort(get().query, key))),
+
+  setSort: (sort) => set(withQuery(get(), { ...get().query, sort })),
 
   clearFormatFilter: () => set(withQuery(get(), withoutFormats(get().query))),
 
