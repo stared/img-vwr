@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { requestThumbnails } from "../../ipc";
-import { useAppStore } from "../../state/store";
+import { useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
 const CELL_SIZE = 168;
@@ -17,7 +17,7 @@ const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
 
 export function GalleryGrid() {
-  const entries = useAppStore((s) => s.entries);
+  const entries = useVisibleEntries();
   const epoch = useAppStore((s) => s.epoch);
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = useContainerWidth(scrollRef);

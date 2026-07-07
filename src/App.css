@@ -191,6 +191,49 @@ kbd {
   color: var(--accent);
 }
 
+/* ---- Filter bar ---- */
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.chip-scope {
+  color: var(--text-dim);
+}
+
+.chip input {
+  width: 130px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.chip-removable:hover {
+  border-color: var(--danger);
+}
+
+.chip-x {
+  color: var(--text-dim);
+}
+
 /* ---- Gallery ---- */
 
 .gallery-scroll {

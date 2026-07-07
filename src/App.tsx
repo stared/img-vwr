@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { CommandPalette } from "./components/shell/CommandPalette";
+import { FilterBar } from "./components/shell/FilterBar";
 import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
@@ -54,9 +55,13 @@ function App() {
           {status === "loading" && <p className="hint">Scanning…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images in this folder.</p>}
-          {status === "loaded" &&
-            count > 0 &&
-            (viewMode === "viewer" ? <ImageViewer /> : <GalleryGrid />)}
+          {status === "loaded" && count > 0 && viewMode === "gallery" && (
+            <>
+              <FilterBar />
+              <GalleryGrid />
+            </>
+          )}
+          {status === "loaded" && count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
       </div>
       <StatusBar />

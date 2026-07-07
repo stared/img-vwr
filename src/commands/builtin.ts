@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { registerCommand, type CommandContext } from "../registry/commands";
+import { FORMAT_GROUPS, type SortKey } from "../state/query";
 
 const ZOOM_STEP = 1.25;
 
@@ -97,5 +98,45 @@ export function registerBuiltinCommands(): void {
     keywords: ["actual size", "pixel"],
     when: inViewer,
     run: ({ store }) => store.getState().viewerZoomActual(),
+  });
+
+  const sortTitles: Record<SortKey, string> = {
+    name: "Sort by Name",
+    modified: "Sort by Date Modified",
+    size: "Sort by Size",
+  };
+  for (const key of ["name", "modified", "size"] as const) {
+    registerCommand({
+      id: `sort.${key}`,
+      title: sortTitles[key],
+      keywords: ["order", "invoke again to reverse"],
+      when: hasImages,
+      run: ({ store }) => store.getState().sortBy(key),
+    });
+  }
+
+  registerCommand({
+    id: "filter.find",
+    title: "Find by Name…",
+    keywords: ["search", "filter"],
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    run: ({ store }) => store.getState().setFindOpen(true),
+  });
+
+  for (const group of FORMAT_GROUPS) {
+    registerCommand({
+      id: `filter.format.${group.id}`,
+      title: `Filter: ${group.label}`,
+      keywords: ["type", "format", "toggle"],
+      when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+      run: ({ store }) => store.getState().toggleFormatFilter(group.id),
+    });
+  }
+
+  registerCommand({
+    id: "filter.clear",
+    title: "Clear Filters",
+    when: ({ store }) => store.getState().query.filters.length > 0,
+    run: ({ store }) => store.getState().clearFilters(),
   });
 }

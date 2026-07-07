@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 
 import { fileUrl } from "../../ipc";
-import { useAppStore } from "../../state/store";
+import { useAppStore, useVisibleEntries } from "../../state/store";
 
 const ZOOM_WHEEL_SENSITIVITY = 0.0022;
 
 export function ImageViewer() {
-  const entries = useAppStore((s) => s.entries);
+  const entries = useVisibleEntries();
   const index = useAppStore((s) => s.selectedIndex);
   const view = useAppStore((s) => s.viewerView);
   const imageLoaded = useAppStore((s) => s.viewerImageLoaded);

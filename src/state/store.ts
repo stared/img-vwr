@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 
 import type { Size, Viewport } from "../components/viewer/viewport";
@@ -11,6 +12,15 @@ import {
 } from "../components/viewer/viewport";
 import type { FileEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
+import type { Query, SortKey } from "./query";
+import {
+  applyQuery,
+  defaultQuery,
+  withFormatToggled,
+  withNameFilter,
+  withoutFilters,
+  withSort,
+} from "./query";
 
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 export type ViewMode = "gallery" | "viewer";
@@ -29,8 +39,12 @@ export interface AppState {
   /** folder path → direct image count, streamed from background counting. */
   dirCounts: Record<string, number>;
   viewMode: ViewMode;
-  /** Index into `entries` of the selected image (gallery highlight & viewer). */
+  /** Index into the VISIBLE (query-applied) list of the selected image. */
   selectedIndex: number;
+  /** Filters + sort applied to the scanned folder; survives folder changes. */
+  query: Query;
+  /** Find-by-name input visibility (the filter bar shows while editing). */
+  findOpen: boolean;
   sidebarVisible: boolean;
   paletteOpen: boolean;
   /** Viewer transform; null until the current image has loaded. */
@@ -51,6 +65,11 @@ interface AppActions {
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
+  sortBy: (key: SortKey) => void;
+  toggleFormatFilter: (group: string) => void;
+  setNameFilter: (substring: string) => void;
+  clearFilters: () => void;
+  setFindOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setPaletteOpen: (open: boolean) => void;
   viewerImageLoaded: (size: Size) => void;
@@ -72,6 +91,8 @@ export const initialState: AppState = {
   dirCounts: {},
   viewMode: "gallery",
   selectedIndex: 0,
+  query: defaultQuery,
+  findOpen: false,
   sidebarVisible: true,
   paletteOpen: false,
   viewerView: null,
@@ -106,15 +127,30 @@ export function folderFailed(message: string): Partial<AppState> {
   return { entries: [], status: "error", error: message };
 }
 
-/** Move the selection by `delta`, clamped; leaving the image resets the viewport. */
+/** Move the selection by `delta` within `count` items; a real move resets the viewport. */
 export function movedSelection(
-  state: Pick<AppState, "selectedIndex" | "entries">,
+  state: Pick<AppState, "selectedIndex">,
+  count: number,
   delta: number,
 ): Partial<AppState> {
-  if (state.entries.length === 0) return {};
-  const index = Math.min(state.entries.length - 1, Math.max(0, state.selectedIndex + delta));
+  if (count === 0) return {};
+  const index = Math.min(count - 1, Math.max(0, state.selectedIndex + delta));
   if (index === state.selectedIndex) return {};
   return { selectedIndex: index, viewerView: null, viewerImg: null, viewerFitted: true };
+}
+
+/**
+ * Change the query while keeping the same image selected if it survives the
+ * new filters; otherwise fall back to the top.
+ */
+export function withQuery(
+  state: Pick<AppState, "entries" | "query" | "selectedIndex">,
+  query: Query,
+): Partial<AppState> {
+  const selectedPath = applyQuery(state.entries, state.query)[state.selectedIndex]?.path;
+  const nextVisible = applyQuery(state.entries, query);
+  const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
+  return { query, selectedIndex: index >= 0 ? index : 0 };
 }
 
 export function withThumb(
@@ -191,7 +227,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   dirCountReady: (path, count) => set({ dirCounts: { ...get().dirCounts, [path]: count } }),
 
   openViewer: (index) => {
-    if (index >= 0 && index < get().entries.length) {
+    const visibleCount = applyQuery(get().entries, get().query).length;
+    if (index >= 0 && index < visibleCount) {
       set({
         viewMode: "viewer",
         selectedIndex: index,
@@ -204,7 +241,20 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   closeViewer: () => set({ viewMode: "gallery" }),
 
-  navigate: (delta) => set(movedSelection(get(), delta)),
+  navigate: (delta) => {
+    const visibleCount = applyQuery(get().entries, get().query).length;
+    set(movedSelection(get(), visibleCount, delta));
+  },
+
+  sortBy: (key) => set(withQuery(get(), withSort(get().query, key))),
+
+  toggleFormatFilter: (group) => set(withQuery(get(), withFormatToggled(get().query, group))),
+
+  setNameFilter: (substring) => set(withQuery(get(), withNameFilter(get().query, substring))),
+
+  clearFilters: () => set({ ...withQuery(get(), withoutFilters(get().query)), findOpen: false }),
+
+  setFindOpen: (open) => set({ findOpen: open }),
 
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 
@@ -239,3 +289,10 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     if (viewerImg) set({ viewerView: actualSize(viewerImg, viewerWin), viewerFitted: false });
   },
 }));
+
+/** The gallery/viewer's working set: folder entries with filters + sort applied. */
+export function useVisibleEntries(): FileEntry[] {
+  const entries = useAppStore((s) => s.entries);
+  const query = useAppStore((s) => s.query);
+  return useMemo(() => applyQuery(entries, query), [entries, query]);
+}
