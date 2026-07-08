@@ -18,12 +18,15 @@ import {
   applyQuery,
   defaultQuery,
   usesMeta,
+  withAspectSet,
   withAspectToggled,
+  withCameraSet,
   withCameraToggled,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
   withoutFormats,
+  withRangeSet,
   withRangeToggled,
   withSort,
 } from "./query";
@@ -64,6 +67,8 @@ export interface AppState {
   findOpen: boolean;
   sidebarVisible: boolean;
   paletteOpen: boolean;
+  /** Command id the palette should open in argument-collect mode for. */
+  palettePrompt: string | null;
   /** Viewer transform; null until the current image has loaded. */
   viewerView: Viewport | null;
   /** Natural size of the loaded viewer image. */
@@ -93,11 +98,16 @@ interface AppActions {
   toggleCameraFilter: (camera: string) => void;
   toggleAspectFilter: (aspect: string) => void;
   toggleRangeFilter: (field: RangeField, from: number, to: number, label: string) => void;
+  setCameraFilter: (camera: string) => void;
+  setAspectFilter: (aspect: string) => void;
+  setRangeFilter: (field: RangeField, from: number, to: number, label: string) => void;
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setPaletteOpen: (open: boolean) => void;
+  /** Open the palette directly in a command's argument input. */
+  promptCommand: (commandId: string) => void;
   viewerImageLoaded: (size: Size) => void;
   viewerWinResized: (size: Size) => void;
   viewerZoom: (factor: number, cursor?: Point) => void;
@@ -124,6 +134,7 @@ export const initialState: AppState = {
   findOpen: false,
   sidebarVisible: true,
   paletteOpen: false,
+  palettePrompt: null,
   viewerView: null,
   viewerImg: null,
   viewerWin: { width: 0, height: 0 },
@@ -345,6 +356,13 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   toggleRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeToggled(get().query, field, from, to, label))),
 
+  setCameraFilter: (camera) => set(withQuery(get(), withCameraSet(get().query, camera))),
+
+  setAspectFilter: (aspect) => set(withQuery(get(), withAspectSet(get().query, aspect))),
+
+  setRangeFilter: (field, from, to, label) =>
+    set(withQuery(get(), withRangeSet(get().query, field, from, to, label))),
+
   setNameFilter: (substring) => set(withQuery(get(), withNameFilter(get().query, substring))),
 
   clearFilters: () => set({ ...withQuery(get(), withoutFilters(get().query)), findOpen: false }),
@@ -353,7 +371,9 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 
-  setPaletteOpen: (open) => set({ paletteOpen: open }),
+  setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
+
+  promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
 
   viewerImageLoaded: (size) =>
     set({

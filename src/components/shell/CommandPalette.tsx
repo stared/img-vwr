@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   executeCommand,
+  getCommand,
   searchCommands,
   type Command,
   type CommandContext,
@@ -11,6 +12,7 @@ import { useAppStore } from "../../state/store";
 
 export function CommandPalette() {
   const paletteOpen = useAppStore((s) => s.paletteOpen);
+  const palettePrompt = useAppStore((s) => s.palettePrompt);
   const setPaletteOpen = useAppStore((s) => s.setPaletteOpen);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -31,10 +33,11 @@ export function CommandPalette() {
     if (paletteOpen) {
       setQuery("");
       setCursor(0);
-      setPending(null);
+      // promptCommand() opens straight into a command's argument input.
+      setPending(palettePrompt ? (getCommand(palettePrompt) ?? null) : null);
       inputRef.current?.focus();
     }
-  }, [paletteOpen]);
+  }, [paletteOpen, palettePrompt]);
 
   if (!paletteOpen) return null;
 

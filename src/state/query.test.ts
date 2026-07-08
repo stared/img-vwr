@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 import type { FileEntry, ImageMeta } from "../ipc";
 import {
   applyQuery,
+  dateInputValue,
   defaultQuery,
+  rangeFromInput,
   usesMeta,
   withAspectToggled,
+  withCameraSet,
   withCameraToggled,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
   withoutFormats,
+  withRangeSet,
   withRangeToggled,
   withSort,
 } from "./query";
@@ -159,11 +163,66 @@ describe("query editing", () => {
     expect(cleared.filters).toEqual([{ kind: "range", field: "taken", from: 5, to: 10, label: "then" }]);
   });
 
+  it("set variants replace their clause without ever clearing", () => {
+    const one = withCameraSet(defaultQuery, "A");
+    expect(withCameraSet(one, "A").filters).toEqual([{ kind: "camera", camera: "A" }]);
+    expect(withCameraSet(one, "B").filters).toEqual([{ kind: "camera", camera: "B" }]);
+    const sized = withRangeSet(defaultQuery, "size", 0, 100, "small");
+    const resized = withRangeSet(sized, "size", 0, 100, "small");
+    expect(resized.filters).toHaveLength(1);
+  });
+
   it("empty name filter removes itself; withoutFilters keeps sort", () => {
     const q = withNameFilter(withSort(defaultQuery, "size"), "");
     expect(q.filters).toEqual([]);
     const cleared = withoutFilters(withNameFilter(q, "x"));
     expect(cleared.filters).toEqual([]);
     expect(cleared.sort.key).toBe("size");
+  });
+});
+
+describe("rangeFromInput", () => {
+  it("dates are day-granular and inclusive at both operators", () => {
+    const day = new Date(2024, 2, 5).getTime();
+    const next = new Date(2024, 2, 6).getTime();
+    expect(rangeFromInput("taken", ">=", "2024-03-05")).toEqual({
+      from: day,
+      to: Infinity,
+      label: "≥ 2024-03-05",
+    });
+    expect(rangeFromInput("taken", "<=", "2024-03-05")).toEqual({
+      from: -Infinity,
+      to: next,
+      label: "≤ 2024-03-05",
+    });
+    expect(rangeFromInput("modified", "=", "2024-03-05")).toEqual({
+      from: day,
+      to: next,
+      label: "= 2024-03-05",
+    });
+  });
+
+  it("sizes are decimal megabytes, edges whole pixels", () => {
+    expect(rangeFromInput("size", ">=", "2.5")).toEqual({
+      from: 2_500_000,
+      to: Infinity,
+      label: "≥ 2.5 MB",
+    });
+    expect(rangeFromInput("edge", "=", "4032")).toEqual({
+      from: 4032,
+      to: 4033,
+      label: "= 4032 px",
+    });
+    expect(rangeFromInput("edge", "<=", "1000")?.to).toBe(1001);
+  });
+
+  it("rejects unparsable input", () => {
+    expect(rangeFromInput("taken", ">=", "yesterday")).toBeNull();
+    expect(rangeFromInput("size", ">=", "")).toBeNull();
+    expect(rangeFromInput("edge", ">=", "-5")).toBeNull();
+  });
+
+  it("dateInputValue round-trips a local day", () => {
+    expect(dateInputValue(new Date(2024, 2, 5).getTime())).toBe("2024-03-05");
   });
 });

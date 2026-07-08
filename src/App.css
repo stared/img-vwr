@@ -555,12 +555,43 @@ button.stats-row:hover .stats-label {
   outline: none;
 }
 
-.chip-removable:hover {
+/* Editable chips: the body opens an editor, only the × removes. */
+.chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.chip-edit {
+  padding: 0;
+}
+
+.chip-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  color: var(--text);
+}
+
+.chip-removable .chip-body {
+  padding-right: 3px;
+}
+
+.chip-edit:hover {
+  border-color: var(--accent);
+}
+
+.chip-edit:has(.chip-x:hover) {
   border-color: var(--danger);
 }
 
 .chip-x {
+  padding: 2px 7px 2px 4px;
   color: var(--text-dim);
+}
+
+.chip-x:hover {
+  color: var(--danger);
 }
 
 .filter-add {
@@ -575,6 +606,83 @@ button.stats-row:hover .stats-label {
 .chip-add:hover {
   color: var(--text);
   border-color: var(--accent);
+}
+
+/* Range editor inside a filter menu: operator row, value, apply. */
+.range-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  min-width: 170px;
+}
+
+.range-ops {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-menu .range-ops button {
+  width: auto;
+  flex: 1;
+  justify-content: center;
+  border: 1px solid var(--border);
+}
+
+.filter-menu .range-ops button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.range-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-value input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  color-scheme: dark;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.range-value input:focus {
+  border-color: var(--accent);
+}
+
+.range-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.filter-menu .range-apply {
+  justify-content: center;
+  background: var(--accent);
+  color: white;
+}
+
+.filter-menu .range-apply:disabled {
+  opacity: 0.4;
+}
+
+.filter-menu .menu-back {
+  color: var(--text-dim);
+}
+
+.menu-empty {
+  display: block;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .menu-backdrop {

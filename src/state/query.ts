@@ -199,6 +199,79 @@ export function withRangeToggled(
   };
 }
 
+/* Set variants — editing an existing chip replaces its clause, never clears. */
+
+export function withCameraSet(query: Query, camera: string): Query {
+  const others = query.filters.filter((f) => f.kind !== "camera");
+  return { ...query, filters: [...others, { kind: "camera", camera }] };
+}
+
+export function withAspectSet(query: Query, aspect: string): Query {
+  const others = query.filters.filter((f) => f.kind !== "aspect");
+  return { ...query, filters: [...others, { kind: "aspect", aspect }] };
+}
+
+export function withRangeSet(
+  query: Query,
+  field: RangeField,
+  from: number,
+  to: number,
+  label: string,
+): Query {
+  const others = query.filters.filter((f) => !(f.kind === "range" && f.field === field));
+  return { ...query, filters: [...others, { kind: "range", field, from, to, label }] };
+}
+
+export type RangeOp = "<=" | "=" | ">=";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Local ms → "YYYY-MM-DD", for prefilling date inputs. */
+export function dateInputValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Operator + typed value → half-open [from, to) range with a chip label.
+ * Dates are day-granular ("≤" includes the named day); sizes are megabytes;
+ * edges are pixels. Null when the input doesn't parse.
+ */
+export function rangeFromInput(
+  field: RangeField,
+  op: RangeOp,
+  raw: string,
+): { from: number; to: number; label: string } | null {
+  const label = (value: string) => `${op === "<=" ? "≤" : op === ">=" ? "≥" : "="} ${value}`;
+  if (field === "taken" || field === "modified") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+    if (!m) return null;
+    const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+    if (!Number.isFinite(day)) return null;
+    const next = day + DAY_MS;
+    const text = label(raw.trim());
+    if (op === ">=") return { from: day, to: Infinity, label: text };
+    if (op === "<=") return { from: -Infinity, to: next, label: text };
+    return { from: day, to: next, label: text };
+  }
+  const value = Number(raw.trim());
+  if (!Number.isFinite(value) || value < 0 || raw.trim() === "") return null;
+  if (field === "size") {
+    const bytes = value * 1e6; // decimal MB, matching formatBytes
+    const text = label(`${raw.trim()} MB`);
+    if (op === ">=") return { from: bytes, to: Infinity, label: text };
+    if (op === "<=") return { from: -Infinity, to: bytes + 1, label: text };
+    return { from: bytes, to: bytes + 1e6, label: text }; // within that megabyte
+  }
+  // edge: whole pixels
+  const px = Math.round(value);
+  const text = label(`${px} px`);
+  if (op === ">=") return { from: px, to: Infinity, label: text };
+  if (op === "<=") return { from: -Infinity, to: px + 1, label: text };
+  return { from: px, to: px + 1, label: text };
+}
+
 export function withoutFilters(query: Query): Query {
   return { ...query, filters: [] };
 }
