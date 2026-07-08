@@ -5,7 +5,7 @@ import App from "./App";
 import { registerBuiltinCommands } from "./commands/builtin";
 import { registerSourceCommands } from "./commands/sources";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
-import { FolderIcon } from "./components/shell/icons";
+import { FolderIcon, SOURCE_ICONS } from "./components/shell/icons";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
@@ -24,7 +24,7 @@ for (const source of allSources()) {
     id: `source-${source.id}`,
     title: source.sidebarTitle,
     component: makeSourcePanel(source),
-    icon: source.glyph,
+    icon: SOURCE_ICONS[source.id] ?? source.glyph,
   });
 }
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
