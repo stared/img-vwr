@@ -661,30 +661,17 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
-/* Range editor inside a filter menu: operator row, value, apply. */
+/* Value + apply for a range filter; appears under the operator rows once
+   one is picked. */
 .range-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 4px;
   min-width: 170px;
-}
-
-.range-ops {
-  display: flex;
-  gap: 4px;
-}
-
-.filter-menu .range-ops button {
-  width: auto;
-  flex: 1;
-  justify-content: center;
-  border: 1px solid var(--border);
-}
-
-.filter-menu .range-ops button.active {
-  border-color: var(--accent);
-  color: var(--accent);
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
 .range-value {

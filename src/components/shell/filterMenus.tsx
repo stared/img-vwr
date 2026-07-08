@@ -110,12 +110,20 @@ function opsFor(field: RangeField): RangeOp[] {
   return field === "size" ? ["<=", ">="] : ["<=", "=", ">="];
 }
 
+/** What each operator means for this field, in words. */
+function opHint(field: RangeField, op: RangeOp): string {
+  if (field === "taken" || field === "modified") {
+    return op === "<=" ? "on or before" : op === "=" ? "on" : "on or after";
+  }
+  return op === "<=" ? "at most" : op === "=" ? "exactly" : "at least";
+}
+
 /** Best-effort prefill when editing an existing range chip. */
 function initialInput(
   field: RangeField,
   current: { from: number; to: number } | undefined,
-): { op: RangeOp; value: string } {
-  if (!current) return { op: ">=", value: "" };
+): { op: RangeOp | null; value: string } {
+  if (!current) return { op: null, value: "" };
   const isDate = field === "taken" || field === "modified";
   if (current.from === -Infinity) {
     const v = isDate
@@ -134,17 +142,20 @@ function initialInput(
   return { op, value: v };
 }
 
-/** Operator + value editor for one range field; Apply sets the clause. */
+/**
+ * Range editor for one field. The operators are ordinary menu rows — picking
+ * one reveals the value input; only then does the setting form appear.
+ */
 export function RangeMenuForm({ field, close }: { field: RangeField; close: () => void }) {
   const query = useAppStore((s) => s.query);
   const setRangeFilter = useAppStore((s) => s.setRangeFilter);
   const current = query.filters.find((f) => f.kind === "range" && f.field === field);
   const initial = initialInput(field, current?.kind === "range" ? current : undefined);
-  const [op, setOp] = useState<RangeOp>(initial.op);
+  const [op, setOp] = useState<RangeOp | null>(initial.op);
   const [value, setValue] = useState(initial.value);
 
   const isDate = field === "taken" || field === "modified";
-  const range = rangeFromInput(field, op, value);
+  const range = op === null ? null : rangeFromInput(field, op, value);
 
   const apply = () => {
     if (!range) return;
@@ -153,40 +164,39 @@ export function RangeMenuForm({ field, close }: { field: RangeField; close: () =
   };
 
   return (
-    <form
-      className="range-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        apply();
-      }}
-    >
-      <div className="range-ops">
-        {opsFor(field).map((o) => (
-          <button
-            key={o}
-            type="button"
-            className={op === o ? "active" : ""}
-            onClick={() => setOp(o)}
-          >
-            {OP_SYMBOL[o]}
+    <>
+      {opsFor(field).map((o) => (
+        <button key={o} onClick={() => setOp(o)}>
+          {OP_SYMBOL[o]}
+          <span className="menu-hint">{opHint(field, o)}</span>
+          <span className="menu-check">{op === o ? "✓" : ""}</span>
+        </button>
+      ))}
+      {op !== null && (
+        <form
+          className="range-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            apply();
+          }}
+        >
+          <div className="range-value">
+            <input
+              type={isDate ? "date" : "number"}
+              step="any"
+              min="0"
+              value={value}
+              autoFocus
+              onChange={(e) => setValue(e.target.value)}
+            />
+            {field === "size" && <span className="range-unit">MB</span>}
+            {field === "edge" && <span className="range-unit">px</span>}
+          </div>
+          <button type="submit" className="range-apply" disabled={range === null}>
+            Apply
           </button>
-        ))}
-      </div>
-      <div className="range-value">
-        <input
-          type={isDate ? "date" : "number"}
-          step="any"
-          min="0"
-          value={value}
-          autoFocus
-          onChange={(e) => setValue(e.target.value)}
-        />
-        {field === "size" && <span className="range-unit">MB</span>}
-        {field === "edge" && <span className="range-unit">px</span>}
-      </div>
-      <button type="submit" className="range-apply" disabled={range === null}>
-        Apply
-      </button>
-    </form>
+        </form>
+      )}
+    </>
   );
 }
