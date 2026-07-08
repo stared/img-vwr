@@ -15,9 +15,11 @@ export interface Command {
   title: string;
   /** Extra palette search terms. */
   keywords?: string[];
+  /** If set, the palette collects a text argument before running. */
+  input?: { placeholder: string };
   /** Shown in the palette next to the title (derived from keybindings). */
   when?: (ctx: CommandContext) => boolean;
-  run: (ctx: CommandContext) => void | Promise<void>;
+  run: (ctx: CommandContext, arg?: string) => void | Promise<void>;
 }
 
 const registry = new Map<string, Command>();
@@ -38,12 +40,12 @@ export function allCommands(): Command[] {
 }
 
 /** Runs the command if it exists and its `when` guard passes. */
-export function executeCommand(id: string, ctx: CommandContext): boolean {
+export function executeCommand(id: string, ctx: CommandContext, arg?: string): boolean {
   const command = registry.get(id);
   if (!command || (command.when && !command.when(ctx))) {
     return false;
   }
-  void command.run(ctx);
+  void command.run(ctx, arg);
   return true;
 }
 

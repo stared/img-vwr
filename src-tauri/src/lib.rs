@@ -53,6 +53,7 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init());
 
     // MCP bridge (AI-driven testing: screenshots, DOM, IPC monitoring) — dev only.

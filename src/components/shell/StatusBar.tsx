@@ -1,7 +1,7 @@
 import { useAppStore, useVisibleEntries } from "../../state/store";
 
 export function StatusBar() {
-  const folderPath = useAppStore((s) => s.folderPath);
+  const scope = useAppStore((s) => s.scope);
   const total = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
   const index = useAppStore((s) => s.selectedIndex);
@@ -15,8 +15,12 @@ export function StatusBar() {
 
   return (
     <footer className="statusbar">
-      <span className="status-path" title={folderPath ?? undefined}>
-        {folderPath ?? "No folder open"}
+      <span className="status-path" title={scope?.kind === "source" ? scope.arg : scope?.path}>
+        {scope === null
+          ? "No folder open"
+          : scope.kind === "folder"
+            ? scope.path
+            : `${scope.sourceId} · ${scope.label}`}
       </span>
       <span className="status-right">
         {viewMode === "viewer" && entry ? (

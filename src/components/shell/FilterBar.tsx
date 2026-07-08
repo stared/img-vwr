@@ -26,7 +26,7 @@ const SORT_OPTIONS: { sort: Sort; hint: string }[] = [
  * exists and is therefore always shown, Linear-style.
  */
 export function FilterBar() {
-  const folderPath = useAppStore((s) => s.folderPath);
+  const scope = useAppStore((s) => s.scope);
   const query = useAppStore((s) => s.query);
   const findOpen = useAppStore((s) => s.findOpen);
   const setNameFilter = useAppStore((s) => s.setNameFilter);
@@ -51,10 +51,15 @@ export function FilterBar() {
     if (findOpen) inputRef.current?.focus();
   }, [findOpen]);
 
-  if (!folderPath) return null;
+  if (!scope) return null;
 
-  // Value part of the path chip: enough of the tail to orient, not the whole path.
-  const shortPath = folderPath.split("/").filter(Boolean).slice(-2).join("/") + "/";
+  // Value part of the scope chip: enough of the tail to orient, not the whole path.
+  const scopeKey = scope.kind === "folder" ? "path" : scope.sourceId;
+  const scopeValue =
+    scope.kind === "folder"
+      ? scope.path.split("/").filter(Boolean).slice(-2).join("/") + "/"
+      : scope.label;
+  const scopeTitle = scope.kind === "folder" ? scope.path : scope.arg;
   const closeMenu = () => setMenuOpen(false);
   const closeSortMenu = () => setSortMenuOpen(false);
   const formatLabels = formats
@@ -63,8 +68,8 @@ export function FilterBar() {
 
   return (
     <div className="filterbar">
-      <span className="chip chip-scope" title={folderPath}>
-        <span className="chip-key">path:</span> {shortPath}
+      <span className="chip chip-scope" title={scopeTitle}>
+        <span className="chip-key">{scopeKey}:</span> {scopeValue}
       </span>
 
       {showFind && (

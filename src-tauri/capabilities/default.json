@@ -6,6 +6,13 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "dialog:default"
+    "dialog:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://www.reddit.com/*" },
+        { "url": "https://commons.wikimedia.org/*" }
+      ]
+    }
   ]
 }

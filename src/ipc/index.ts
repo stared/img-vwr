@@ -38,7 +38,11 @@ export async function requestMeta(paths: string[], epoch: number): Promise<void>
   return commands.requestMeta(paths, epoch);
 }
 
-/** asset:// URL the webview can load a local file from. */
+/**
+ * URL the webview can load an image from: remote-source entries already
+ * carry https URLs; local paths go through the asset protocol.
+ */
 export function fileUrl(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return convertFileSrc(path);
 }

@@ -13,7 +13,7 @@ const CRUMB_SEGMENTS = 2;
  * the list, so there is no in-place tree expansion to manage.
  */
 export function FolderTreePanel() {
-  const folderPath = useAppStore((s) => s.folderPath);
+  const folderPath = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.path : null));
   const openFolder = useAppStore((s) => s.openFolder);
   const dirCounts = useAppStore((s) => s.dirCounts);
 

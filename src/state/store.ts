@@ -12,6 +12,7 @@ import {
 } from "../components/viewer/viewport";
 import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
+import { getSource, type SourceItem } from "../registry/sources";
 import type { Query, RangeField, Sort, SortKey } from "./query";
 import {
   applyQuery,
@@ -30,8 +31,13 @@ import {
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 export type ViewMode = "gallery" | "viewer";
 
+/** What the gallery is a query over: a local folder or a remote source. */
+export type Scope =
+  | { kind: "folder"; path: string }
+  | { kind: "source"; sourceId: string; arg: string; label: string };
+
 export interface AppState {
-  folderPath: string | null;
+  scope: Scope | null;
   entries: FileEntry[];
   status: FolderStatus;
   error: string | null;
@@ -67,6 +73,7 @@ export interface AppState {
 
 interface AppActions {
   openFolder: (path: string) => Promise<void>;
+  openSource: (sourceId: string, arg: string) => Promise<void>;
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
   dirCountReady: (path: string, count: number) => void;
@@ -96,7 +103,7 @@ interface AppActions {
 }
 
 export const initialState: AppState = {
-  folderPath: null,
+  scope: null,
   entries: [],
   status: "idle",
   error: null,
@@ -120,9 +127,9 @@ export const initialState: AppState = {
 
 /* Pure transitions — actions only apply these. */
 
-export function folderLoading(path: string, epoch: number): Partial<AppState> {
+export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
   return {
-    folderPath: path,
+    scope,
     entries: [],
     status: "loading",
     error: null,
@@ -141,7 +148,21 @@ export function folderLoaded(entries: FileEntry[]): Partial<AppState> {
   return { entries, status: "loaded" };
 }
 
-export function folderFailed(message: string): Partial<AppState> {
+/**
+ * A remote source arrives with thumbnails and metadata already known —
+ * prefilling them means the background Rust readers have nothing to do.
+ */
+export function sourceLoaded(items: SourceItem[]): Partial<AppState> {
+  const thumbs: Record<string, string> = {};
+  const meta: Record<string, ImageMeta> = {};
+  for (const item of items) {
+    thumbs[item.entry.path] = item.thumbUrl;
+    meta[item.entry.path] = item.meta;
+  }
+  return { entries: items.map((i) => i.entry), thumbs, meta, status: "loaded" };
+}
+
+export function scopeFailed(message: string): Partial<AppState> {
   return { entries: [], status: "error", error: message };
 }
 
@@ -231,16 +252,33 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   openFolder: async (path) => {
     const epoch = await newEpoch();
-    set(folderLoading(path, epoch));
+    set(scopeLoading({ kind: "folder", path }, epoch));
     try {
       const entries = await scanFolder(path);
-      // Ignore a stale response if the user already opened another folder.
+      // Ignore a stale response if the user already opened another scope.
       if (get().epoch === epoch) {
         set(folderLoaded(entries));
       }
     } catch (error) {
       if (get().epoch === epoch) {
-        set(folderFailed(error instanceof Error ? error.message : String(error)));
+        set(scopeFailed(error instanceof Error ? error.message : String(error)));
+      }
+    }
+  },
+
+  openSource: async (sourceId, arg) => {
+    const source = getSource(sourceId);
+    if (!source) return;
+    const epoch = await newEpoch();
+    set(scopeLoading({ kind: "source", sourceId, arg, label: source.label(arg) }, epoch));
+    try {
+      const items = await source.fetch(arg);
+      if (get().epoch === epoch) {
+        set(sourceLoaded(items));
+      }
+    } catch (error) {
+      if (get().epoch === epoch) {
+        set(scopeFailed(error instanceof Error ? error.message : String(error)));
       }
     }
   },

@@ -177,6 +177,7 @@ function CountList({
 export function StatsPanel() {
   const entries = useVisibleEntries();
   const allEntries = useAppStore((s) => s.entries);
+  const remote = useAppStore((s) => s.scope?.kind === "source");
   const status = useAppStore((s) => s.status);
   const epoch = useAppStore((s) => s.epoch);
   const meta = useAppStore((s) => s.meta);
@@ -189,12 +190,13 @@ export function StatsPanel() {
   // One background read per folder generation; results are keyed by path and
   // merged as batches arrive. getState() keeps `meta` out of the deps so
   // arriving batches don't re-fire requests for paths already in flight.
+  // Remote sources arrive with metadata prefilled — nothing to read locally.
   useEffect(() => {
-    if (status !== "loaded" || allEntries.length === 0) return;
+    if (status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
     const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
     if (missing.length > 0) void requestMeta(missing, epoch);
-  }, [status, allEntries, epoch]);
+  }, [status, remote, allEntries, epoch]);
 
   const stats = useMemo(() => {
     const metas = entries
@@ -259,7 +261,9 @@ export function StatsPanel() {
     <div className="stats">
       <Section title="summary">
         <p className="stats-summary">
-          {entries.length} images · {formatBytes(stats.totalBytes)}
+          {entries.length} images
+          {/* Some sources (Reddit) don't report file sizes at all. */}
+          {stats.totalBytes > 0 && <> · {formatBytes(stats.totalBytes)}</>}
           {reading && (
             <span className="stats-progress">
               {" "}
