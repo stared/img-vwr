@@ -107,6 +107,7 @@ export const commonsSource: ImageSource = {
   id: "commons",
   title: "Open Wikimedia Commons…",
   sidebarTitle: "Wikimedia Commons",
+  glyph: "W",
   placeholder: "search, or Category:…",
   label: (arg) => arg.trim(),
   fetch: async (arg) => {

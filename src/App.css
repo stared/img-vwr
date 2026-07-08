@@ -96,14 +96,67 @@ kbd {
 
 /* ---- Sidebar ---- */
 
-/* VS Code-style: sections stack; the `fill` section takes the remaining
-   height and scrolls internally, so sections below it stay visible. */
+/* VS Code-style activity bar: a narrow icon strip that picks ONE panel. */
+.activitybar {
+  display: flex;
+  flex-direction: column;
+  width: 40px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  border-right: 1px solid var(--border);
+}
+
+.activitybar button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.activitybar button:hover {
+  color: var(--text);
+}
+
+.activitybar button.active {
+  color: var(--text);
+}
+
+.activitybar button.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  background: var(--accent);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
   width: 230px;
   flex-shrink: 0;
   overflow: hidden;
+}
+
+/* The activity bar picked one panel; its title heads the whole sidebar. */
+.sidebar-title {
+  padding: 10px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.sidebar > .panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar.collapsed {

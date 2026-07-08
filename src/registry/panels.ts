@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 /**
  * Sidebar panel registry — v1 registers only the folder tree, but the
@@ -11,6 +11,8 @@ export interface Panel {
   id: string;
   title: string;
   component: ComponentType;
+  /** Activity-bar glyph; left panels are chosen one-at-a-time by icon. */
+  icon?: ReactNode;
   /** Which shell edge hosts the panel; defaults to the left sidebar. */
   side?: PanelSide;
   /** Take the remaining sidebar height and scroll internally. */

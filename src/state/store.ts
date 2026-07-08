@@ -66,6 +66,8 @@ export interface AppState {
   /** Find-by-name input visibility (the filter bar shows while editing). */
   findOpen: boolean;
   sidebarVisible: boolean;
+  /** Which left panel the activity bar has selected (one at a time). */
+  activePanelId: string;
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
@@ -105,6 +107,8 @@ interface AppActions {
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  /** VS Code semantics: re-selecting the active icon collapses the sidebar. */
+  setActivePanel: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
@@ -133,6 +137,7 @@ export const initialState: AppState = {
   query: defaultQuery,
   findOpen: false,
   sidebarVisible: true,
+  activePanelId: "folders",
   paletteOpen: false,
   palettePrompt: null,
   viewerView: null,
@@ -370,6 +375,15 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setFindOpen: (open) => set({ findOpen: open }),
 
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
+
+  setActivePanel: (id) => {
+    const { activePanelId, sidebarVisible } = get();
+    if (id === activePanelId && sidebarVisible) {
+      set({ sidebarVisible: false });
+    } else {
+      set({ activePanelId: id, sidebarVisible: true });
+    }
+  },
 
   setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
 

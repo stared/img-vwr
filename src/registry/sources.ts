@@ -22,6 +22,8 @@ export interface ImageSource {
   title: string;
   /** Sidebar panel title, e.g. "Reddit". */
   sidebarTitle: string;
+  /** Short activity-bar glyph, e.g. "r/". */
+  glyph: string;
   /** Hint shown in the palette's argument input. */
   placeholder: string;
   /** Scope-chip value for an argument, e.g. "r/EarthPorn". */
