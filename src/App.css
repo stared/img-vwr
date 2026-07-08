@@ -96,10 +96,14 @@ kbd {
 
 /* ---- Sidebar ---- */
 
+/* VS Code-style: sections stack; the `fill` section takes the remaining
+   height and scrolls internally, so sections below it stay visible. */
 .sidebar {
+  display: flex;
+  flex-direction: column;
   width: 230px;
   flex-shrink: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar.collapsed {
@@ -118,11 +122,34 @@ kbd {
   color: var(--text);
 }
 
+.sidebar-panel {
+  min-height: 0;
+}
+
+.sidebar-panel.fill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-panel.fill > .panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .sidebar-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 6px 6px 12px;
+  padding: 6px 6px 4px 8px;
+}
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -130,10 +157,66 @@ kbd {
   color: var(--text-dim);
 }
 
+.panel-toggle:hover {
+  color: var(--text);
+}
+
+.panel-disclosure {
+  width: 10px;
+  font-size: 9px;
+}
+
 .panel-hint {
   padding: 4px 12px;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.panel-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.panel-action {
+  margin: 0 12px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--accent);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.panel-action:hover {
+  filter: brightness(1.1);
+}
+
+.panel-action kbd {
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+/* Source panels: one input, Enter loads the source as the scope. */
+.source-form {
+  padding: 2px 12px 10px;
+}
+
+.source-form input {
+  width: 100%;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.source-form input:focus {
+  border-color: var(--accent);
 }
 
 .folder-tree {

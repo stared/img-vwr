@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { DirEntry } from "../../ipc";
 import { listSubdirs, requestDirCounts } from "../../ipc";
+import { executeCommand } from "../../registry/commands";
 import { useAppStore } from "../../state/store";
 
 /** How many trailing path segments the breadcrumb shows. */
@@ -41,8 +42,19 @@ export function FolderTreePanel() {
     };
   }, [folderPath]);
 
+  // VS Code-style: the explorer itself offers to open a folder.
   if (!folderPath) {
-    return <p className="panel-hint">Open a folder to browse.</p>;
+    return (
+      <div className="panel-empty">
+        <p className="panel-hint">No folder open.</p>
+        <button
+          className="panel-action"
+          onClick={() => executeCommand("folder.open", { store: useAppStore })}
+        >
+          Open Folder <kbd>⌘O</kbd>
+        </button>
+      </div>
+    );
   }
 
   const segments = folderPath.split("/").filter(Boolean);

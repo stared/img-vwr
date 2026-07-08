@@ -11,7 +11,6 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { events } from "./ipc";
-import { executeCommand } from "./registry/commands";
 import { useAppStore } from "./state/store";
 import "./App.css";
 
@@ -60,12 +59,7 @@ function App() {
         <Sidebar />
         <main className="main-pane">
           {status === "idle" && (
-            <div className="empty-state">
-              <p>No folder open.</p>
-              <button onClick={() => executeCommand("folder.open", { store: useAppStore })}>
-                Open Folder <kbd>⌘O</kbd>
-              </button>
-            </div>
+            <p className="hint">Open a folder or a source from the sidebar, or press ⌘K.</p>
           )}
           {viewMode === "gallery" && <FilterBar />}
           {status === "loading" && <p className="hint">Loading…</p>}

@@ -1,5 +1,6 @@
 import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
+import { PanelSection } from "./PanelSection";
 
 export function Sidebar() {
   const visible = useAppStore((s) => s.sidebarVisible);
@@ -18,17 +19,17 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       {allPanels().map((panel, i) => (
-        <section key={panel.id} className="sidebar-panel">
-          <header>
-            <span>{panel.title}</span>
-            {i === 0 && (
+        <PanelSection
+          key={panel.id}
+          panel={panel}
+          action={
+            i === 0 ? (
               <button className="sidebar-toggle" title="Hide sidebar (⌘B)" onClick={toggleSidebar}>
                 «
               </button>
-            )}
-          </header>
-          <panel.component />
-        </section>
+            ) : undefined
+          }
+        />
       ))}
     </aside>
   );

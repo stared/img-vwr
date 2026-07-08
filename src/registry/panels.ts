@@ -13,6 +13,8 @@ export interface Panel {
   component: ComponentType;
   /** Which shell edge hosts the panel; defaults to the left sidebar. */
   side?: PanelSide;
+  /** Take the remaining sidebar height and scroll internally. */
+  fill?: boolean;
 }
 
 const registry = new Map<string, Panel>();

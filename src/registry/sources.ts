@@ -20,6 +20,8 @@ export interface ImageSource {
   id: string;
   /** Palette command title, e.g. "Open Reddit Subreddit…". */
   title: string;
+  /** Sidebar panel title, e.g. "Reddit". */
+  sidebarTitle: string;
   /** Hint shown in the palette's argument input. */
   placeholder: string;
   /** Scope-chip value for an argument, e.g. "r/EarthPorn". */

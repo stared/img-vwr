@@ -78,6 +78,7 @@ export function parseRedditFeed(xml: string): SourceItem[] {
 export const redditSource: ImageSource = {
   id: "reddit",
   title: "Open Reddit Subreddit…",
+  sidebarTitle: "Reddit",
   placeholder: "subreddit, e.g. EarthPorn",
   label: (arg) => `r/${subredditOf(arg)}`,
   fetch: async (arg) => {

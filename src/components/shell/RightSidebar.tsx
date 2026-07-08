@@ -1,5 +1,6 @@
 import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
+import { PanelSection } from "./PanelSection";
 
 /** Right-edge counterpart of the sidebar; hosts panels registered with side "right". */
 export function RightSidebar() {
@@ -22,17 +23,21 @@ export function RightSidebar() {
   return (
     <aside className="sidebar right">
       {panels.map((panel, i) => (
-        <section key={panel.id} className="sidebar-panel">
-          <header>
-            <span>{panel.title}</span>
-            {i === 0 && (
-              <button className="sidebar-toggle" title="Hide statistics (⌘I)" onClick={toggleStats}>
+        <PanelSection
+          key={panel.id}
+          panel={panel}
+          action={
+            i === 0 ? (
+              <button
+                className="sidebar-toggle"
+                title="Hide statistics (⌘I)"
+                onClick={toggleStats}
+              >
                 »
               </button>
-            )}
-          </header>
-          <panel.component />
-        </section>
+            ) : undefined
+          }
+        />
       ))}
     </aside>
   );
