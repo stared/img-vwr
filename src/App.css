@@ -365,6 +365,59 @@ button.stats-row:hover .stats-label {
   color: var(--text-dim);
 }
 
+/* ---- Map gallery ---- */
+
+.map-gallery {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.map-canvas {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+}
+
+/* Invert the OSM raster tiles into the app's dark theme. Applied per tile:
+   WebKit drops filters on the 3D-transformed tile pane. */
+.map-canvas img.leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.4);
+}
+
+.map-marker img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.map-marker .map-dot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.map-note {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 1000; /* above leaflet panes */
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
 /* ---- Filter bar ---- */
 
 .filterbar {
@@ -390,11 +443,16 @@ button.stats-row:hover .stats-label {
   color: var(--text-dim);
 }
 
-.sort-control {
-  position: relative;
+/* View + sort form the right-aligned "how it renders" group. */
+.chip-view {
   margin-left: auto;
 }
 
+.sort-control {
+  position: relative;
+}
+
+.chip-view:hover,
 .chip-sort:hover {
   border-color: var(--accent);
 }

@@ -70,7 +70,7 @@ describe("applyQuery", () => {
   it("camera filter matches only images whose metadata is known", () => {
     const meta = {
       "/p/beach2.jpg": imageMeta({
-        exif: { orientation: 1, dateTime: null, camera: "iPhone SE" },
+        exif: { orientation: 1, dateTime: null, camera: "iPhone SE", gpsLat: null, gpsLon: null },
       }),
     };
     const query = withCameraToggled(defaultQuery, "iPhone SE");
@@ -85,7 +85,7 @@ describe("applyQuery", () => {
       "/p/Alps.png": imageMeta({
         width: 4000,
         height: 3000,
-        exif: { orientation: 6, dateTime: null, camera: null }, // rotated, still 4:3
+        exif: { orientation: 6, dateTime: null, camera: null, gpsLat: null, gpsLon: null }, // rotated, still 4:3
       }),
       "/p/zoo.webp": imageMeta({ width: 3000, height: 2000 }), // 3:2
     };

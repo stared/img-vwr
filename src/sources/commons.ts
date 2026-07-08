@@ -62,6 +62,12 @@ function plainText(value: string | undefined): string | null {
   return text ? text : null;
 }
 
+/** extmetadata GPS values are decimal-degree strings. */
+function coordinate(value: string | undefined, max: number): number | null {
+  const degrees = Number(plainText(value));
+  return Number.isFinite(degrees) && degrees !== 0 && Math.abs(degrees) <= max ? degrees : null;
+}
+
 export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
   const items: SourceItem[] = [];
   for (const page of response.query?.pages ?? []) {
@@ -70,6 +76,8 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
     const format = urlExtension(info.url);
     const modifiedMs = Date.parse(info.timestamp);
     const dateTime = plainText(info.extmetadata?.["DateTimeOriginal"]?.value);
+    const gpsLat = coordinate(info.extmetadata?.["GPSLatitude"]?.value, 90);
+    const gpsLon = coordinate(info.extmetadata?.["GPSLongitude"]?.value, 180);
     items.push({
       entry: {
         path: info.url,
@@ -85,7 +93,10 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
         format,
         fileSize: info.size,
         modifiedMs,
-        exif: dateTime ? { orientation: 1, dateTime, camera: null } : null,
+        exif:
+          dateTime !== null || gpsLat !== null
+            ? { orientation: 1, dateTime, camera: null, gpsLat, gpsLon }
+            : null,
       },
     });
   }

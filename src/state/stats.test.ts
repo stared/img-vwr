@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../ipc";
 import type { ImageMeta } from "../ipc/bindings";
-import { effectiveDims, parseExifDate } from "./derived";
+import { effectiveDims, gpsOf, parseExifDate } from "./derived";
 import {
   aspectBuckets,
   cameraCounts,
@@ -63,13 +63,29 @@ describe("effectiveDims", () => {
     const rotated = meta({
       width: 300,
       height: 200,
-      exif: { orientation: 6, dateTime: null, camera: null },
+      exif: { orientation: 6, dateTime: null, camera: null, gpsLat: null, gpsLon: null },
     });
     expect(effectiveDims(rotated)).toEqual({ width: 200, height: 300 });
   });
 
   it("returns null when dimensions are unknown", () => {
     expect(effectiveDims(meta({ width: null, height: null }))).toBeNull();
+  });
+});
+
+describe("gpsOf", () => {
+  const withGps = (gpsLat: number | null, gpsLon: number | null) =>
+    meta({ exif: { orientation: 1, dateTime: null, camera: null, gpsLat, gpsLon } });
+
+  it("returns coordinates only when both are present", () => {
+    expect(gpsOf(withGps(50.06, 19.94))).toEqual({ lat: 50.06, lon: 19.94 });
+    expect(gpsOf(withGps(50.06, null))).toBeNull();
+    expect(gpsOf(meta({}))).toBeNull();
+    expect(gpsOf(undefined)).toBeNull();
+  });
+
+  it("rejects the (0, 0) no-fix marker", () => {
+    expect(gpsOf(withGps(0, 0))).toBeNull();
   });
 });
 
@@ -135,7 +151,7 @@ describe("timeBuckets", () => {
 
 describe("cameraCounts", () => {
   const withCamera = (camera: string | null) =>
-    meta({ exif: { orientation: 1, dateTime: null, camera } });
+    meta({ exif: { orientation: 1, dateTime: null, camera, gpsLat: null, gpsLon: null } });
 
   it("counts tagged cameras, skipping untagged", () => {
     const metas = [withCamera("iPhone 15 Pro"), withCamera("iPhone 15 Pro"), withCamera(null)];

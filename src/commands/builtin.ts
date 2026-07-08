@@ -48,6 +48,17 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "gallery.map",
+    title: "Toggle Map View",
+    keywords: ["geo", "gps", "location", "grid"],
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    run: ({ store }) => {
+      const { galleryLayout, setGalleryLayout } = store.getState();
+      setGalleryLayout(galleryLayout === "grid" ? "map" : "grid");
+    },
+  });
+
+  registerCommand({
     id: "viewer.open",
     title: "Open Image",
     keywords: ["view", "show"],

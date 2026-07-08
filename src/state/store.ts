@@ -30,6 +30,7 @@ import {
 
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 export type ViewMode = "gallery" | "viewer";
+export type GalleryLayout = "grid" | "map";
 
 /** What the gallery is a query over: a local folder or a remote source. */
 export type Scope =
@@ -53,6 +54,8 @@ export interface AppState {
   meta: Record<string, ImageMeta>;
   statsVisible: boolean;
   viewMode: ViewMode;
+  /** How the gallery renders the visible entries; map plots geolocated ones. */
+  galleryLayout: GalleryLayout;
   /** Index into the VISIBLE (query-applied) list of the selected image. */
   selectedIndex: number;
   /** Filters + sort applied to the scanned folder; survives folder changes. */
@@ -79,6 +82,7 @@ interface AppActions {
   dirCountReady: (path: string, count: number) => void;
   metaBatchReady: (items: MetaEntry[], epoch: number) => void;
   toggleStats: () => void;
+  setGalleryLayout: (layout: GalleryLayout) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -114,6 +118,7 @@ export const initialState: AppState = {
   meta: {},
   statsVisible: true,
   viewMode: "gallery",
+  galleryLayout: "grid",
   selectedIndex: 0,
   query: defaultQuery,
   findOpen: false,
@@ -302,6 +307,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
+
+  setGalleryLayout: (layout) => set({ galleryLayout: layout }),
 
   openViewer: (index) => {
     const visibleCount = applyQuery(get().entries, get().query, get().meta).length;

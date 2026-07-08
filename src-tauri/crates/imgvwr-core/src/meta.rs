@@ -4,15 +4,18 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExifSubset {
     pub orientation: u32,
     pub date_time: Option<String>,
     pub camera: Option<String>,
+    /// Decimal degrees; positive = north/east.
+    pub gps_lat: Option<f64>,
+    pub gps_lon: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageMeta {
     /// None when no Rust decoder knows the format (e.g. AVIF) — the webview
@@ -75,7 +78,41 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
             .unwrap_or(1),
         date_time: field_string(exif::Tag::DateTimeOriginal).or_else(|| field_string(exif::Tag::DateTime)),
         camera: field_string(exif::Tag::Model),
+        gps_lat: gps_coord(&data, exif::Tag::GPSLatitude, exif::Tag::GPSLatitudeRef, 90.0),
+        gps_lon: gps_coord(&data, exif::Tag::GPSLongitude, exif::Tag::GPSLongitudeRef, 180.0),
     })
+}
+
+/// One GPS coordinate as decimal degrees, negative for S/W. None when the
+/// tags are missing or the value is malformed (zero denominators, out of range).
+fn gps_coord(data: &exif::Exif, value_tag: exif::Tag, ref_tag: exif::Tag, max: f64) -> Option<f64> {
+    let field = data.get_field(value_tag, exif::In::PRIMARY)?;
+    let dms = match &field.value {
+        exif::Value::Rational(parts) => parts.as_slice(),
+        _ => return None,
+    };
+    let reference = data
+        .get_field(ref_tag, exif::In::PRIMARY)
+        .map(|f| f.display_value().to_string())
+        .unwrap_or_default();
+    dms_to_degrees(dms, &reference, max)
+}
+
+fn dms_to_degrees(dms: &[exif::Rational], reference: &str, max: f64) -> Option<f64> {
+    let part = |i: usize| dms.get(i).map(|r| r.to_f64()).unwrap_or(0.0);
+    if dms.is_empty() {
+        return None;
+    }
+    let degrees = part(0) + part(1) / 60.0 + part(2) / 3600.0;
+    if !degrees.is_finite() || degrees > max {
+        return None;
+    }
+    let sign = if reference.contains('S') || reference.contains('W') {
+        -1.0
+    } else {
+        1.0
+    };
+    Some(sign * degrees)
 }
 
 #[cfg(test)]
@@ -92,6 +129,19 @@ mod tests {
         assert_eq!((meta.width, meta.height), (Some(320), Some(200)));
         assert_eq!(meta.format, "png");
         assert!(meta.file_size > 0);
+    }
+
+    #[test]
+    fn dms_conversion_signs_and_validation() {
+        let r = |num: u32, denom: u32| exif::Rational { num, denom };
+        let krakow = [r(50, 1), r(3, 1), r(4140, 100)];
+        let lat = dms_to_degrees(&krakow, "N", 90.0).unwrap();
+        assert!((lat - 50.0615).abs() < 1e-4);
+        assert!(dms_to_degrees(&krakow, "S", 90.0).unwrap() < 0.0);
+        // Zero denominator → infinite degrees → rejected, as is out-of-range.
+        assert_eq!(dms_to_degrees(&[r(1, 0)], "N", 90.0), None);
+        assert_eq!(dms_to_degrees(&[r(91, 1)], "N", 90.0), None);
+        assert_eq!(dms_to_degrees(&[], "N", 90.0), None);
     }
 
     #[test]

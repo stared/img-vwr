@@ -10,6 +10,21 @@ export interface Dims {
   height: number;
 }
 
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+}
+
+/** GPS position of an image, when its EXIF (or source API) provides one. */
+export function gpsOf(meta: ImageMeta | undefined): GeoPoint | null {
+  const lat = meta?.exif?.gpsLat;
+  const lon = meta?.exif?.gpsLon;
+  if (lat === null || lat === undefined || lon === null || lon === undefined) return null;
+  // Exact (0, 0) is Null Island — cameras write it as "no fix", never as a photo spot.
+  if (lat === 0 && lon === 0) return null;
+  return { lat, lon };
+}
+
 /** Parse an EXIF datetime ("2023:05:12 14:33:21", also "-" separators) → ms, or null. */
 export function parseExifDate(value: string): number | null {
   const m = /^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(value.trim());

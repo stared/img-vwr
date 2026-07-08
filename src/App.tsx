@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { MapGallery } from "./components/gallery/MapGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { FilterBar } from "./components/shell/FilterBar";
 import { DEFAULT_START_FOLDER } from "./config";
@@ -19,6 +20,7 @@ function App() {
   const error = useAppStore((s) => s.error);
   const count = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
+  const galleryLayout = useAppStore((s) => s.galleryLayout);
 
   useGlobalKeybindings();
 
@@ -69,7 +71,9 @@ function App() {
           {status === "loading" && <p className="hint">Loading…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images found.</p>}
-          {status === "loaded" && count > 0 && viewMode === "gallery" && <GalleryGrid />}
+          {status === "loaded" && count > 0 && viewMode === "gallery" && (
+            galleryLayout === "map" ? <MapGallery /> : <GalleryGrid />
+          )}
           {status === "loaded" && count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
         <RightSidebar />

@@ -82,7 +82,11 @@ thumbnailReady: "thumbnail-ready"
  */
 export type DirCountReady = { path: string; imageCount: number }
 export type DirEntry = { path: string; name: string }
-export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null }
+export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; 
+/**
+ * Decimal degrees; positive = north/east.
+ */
+gpsLat: number | null; gpsLon: number | null }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**
  * Lowercased extension, e.g. "png".

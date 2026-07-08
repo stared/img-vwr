@@ -37,6 +37,8 @@ export function FilterBar() {
   const toggleAspectFilter = useAppStore((s) => s.toggleAspectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
   const setSort = useAppStore((s) => s.setSort);
+  const galleryLayout = useAppStore((s) => s.galleryLayout);
+  const setGalleryLayout = useAppStore((s) => s.setGalleryLayout);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -178,6 +180,16 @@ export function FilterBar() {
           </>
         )}
       </div>
+
+      {/* View is part of how the query renders — grid, or a map of the
+          geolocated results. Clicking flips between the two. */}
+      <button
+        className="chip chip-view"
+        title={galleryLayout === "grid" ? "show on a map" : "back to the grid"}
+        onClick={() => setGalleryLayout(galleryLayout === "grid" ? "map" : "grid")}
+      >
+        <span className="chip-key">view:</span> {galleryLayout}
+      </button>
 
       {/* Sort always exists — right-aligned, never removable. Its chip is the
           sort control: every menu row is a complete key+direction choice. */}
