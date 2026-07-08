@@ -226,6 +226,12 @@ kbd {
   color: var(--text);
 }
 
+/* The panel header already separates the first section from the title. */
+.stats-section:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
 .stats-progress {
   color: var(--text-dim);
 }
@@ -353,9 +359,9 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
+/* Same type as the rows around it — only the dim color marks it as a note. */
 .stats-note {
   padding-top: 3px;
-  font-size: 11px;
   color: var(--text-dim);
 }
 

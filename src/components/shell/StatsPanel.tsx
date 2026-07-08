@@ -257,15 +257,17 @@ export function StatsPanel() {
 
   return (
     <div className="stats">
-      <p className="stats-summary">
-        {entries.length} images · {formatBytes(stats.totalBytes)}
-        {reading && (
-          <span className="stats-progress">
-            {" "}
-            · reading {stats.read}/{entries.length}…
-          </span>
-        )}
-      </p>
+      <Section title="summary">
+        <p className="stats-summary">
+          {entries.length} images · {formatBytes(stats.totalBytes)}
+          {reading && (
+            <span className="stats-progress">
+              {" "}
+              · reading {stats.read}/{entries.length}…
+            </span>
+          )}
+        </p>
+      </Section>
       <Histogram
         title="format"
         buckets={stats.formats}
