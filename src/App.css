@@ -911,15 +911,15 @@ button.stats-row:hover .stats-label {
 
 /* ---- Command palette ---- */
 
-/* VS Code-style quick input: dropped from the top edge, no screen dimming —
-   the backdrop is only a click-away target. */
+/* VS Code-style quick input: attached flush to the top edge (square top
+   corners, no gap), no screen dimming — the backdrop is only a click-away
+   target. */
 .palette-backdrop {
   position: fixed;
   inset: 0;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 8px;
   z-index: 100;
 }
 
@@ -927,7 +927,8 @@ button.stats-row:hover .stats-label {
   width: min(560px, 90vw);
   background: var(--bg-overlay);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
