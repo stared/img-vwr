@@ -1,20 +1,20 @@
-import { Folder, Globe, Rss } from "lucide-react";
+import { IconBrandReddit, IconBrandWikipedia, IconFolder } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
 /**
- * Activity-bar icons: all Lucide, all stroke — one visual style. Sources
- * get simple evocative glyphs rather than busy brand logos (the tooltip
- * names them): Reddit is read as a feed, Commons is the world's media.
+ * Activity-bar icons come from ONE library: Tabler — a stroke set that,
+ * unlike Lucide, also ships brand icons drawn to the same grid and weight,
+ * so UI glyphs and source logos stay visually consistent.
  */
 
-const ICON = { size: 18, strokeWidth: 1.7 } as const;
+const ICON = { size: 18, stroke: 1.7 } as const;
 
 export function FolderIcon() {
-  return <Folder {...ICON} />;
+  return <IconFolder {...ICON} />;
 }
 
 /** Icon per source id; sources without one fall back to their text glyph. */
 export const SOURCE_ICONS: Record<string, ReactNode> = {
-  reddit: <Rss {...ICON} />,
-  commons: <Globe {...ICON} />,
+  reddit: <IconBrandReddit {...ICON} />,
+  commons: <IconBrandWikipedia {...ICON} />,
 };
