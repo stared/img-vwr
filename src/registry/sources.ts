@@ -1,5 +1,7 @@
 import type { FileEntry, ImageMeta } from "../ipc";
 import type { Sort } from "../state/query";
+import type { Scope } from "../state/store";
+import { registerFilterField, type FilterField } from "./filters";
 import { registerSort, type SortProvider } from "./sorts";
 
 /**
@@ -41,6 +43,11 @@ export interface ImageSource {
    * API's own order is usually the point of opening it.
    */
   defaultSort?: Sort;
+  /**
+   * Filter fields that only exist on this source's collections (e.g. a
+   * license on Commons). Registered scoped to this source.
+   */
+  filters?: FilterField[];
 }
 
 const registry = new Map<string, ImageSource>();
@@ -50,13 +57,13 @@ export function registerSource(source: ImageSource): void {
     throw new Error(`source already registered: ${source.id}`);
   }
   registry.set(source.id, source);
+  const ownScope = (scope: Scope | null) =>
+    scope?.kind === "source" && scope.sourceId === source.id;
   for (const sort of source.sorts ?? []) {
-    registerSort({
-      ...sort,
-      appliesTo:
-        sort.appliesTo ??
-        ((scope) => scope?.kind === "source" && scope.sourceId === source.id),
-    });
+    registerSort({ ...sort, appliesTo: sort.appliesTo ?? ownScope });
+  }
+  for (const field of source.filters ?? []) {
+    registerFilterField({ ...field, appliesTo: field.appliesTo ?? ownScope });
   }
 }
 

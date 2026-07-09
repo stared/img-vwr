@@ -14,21 +14,19 @@ import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import { getSort } from "../registry/sorts";
 import { getSource, type SourceItem } from "../registry/sources";
-import type { Query, RangeField, Sort } from "./query";
+import type { Query, Sort } from "./query";
 import {
   applyQuery,
   defaultQuery,
   usesMeta,
-  withAspectSet,
-  withAspectToggled,
-  withCameraSet,
-  withCameraToggled,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
   withoutFormats,
   withRangeSet,
   withRangeToggled,
+  withSelectSet,
+  withSelectToggled,
   withSort,
 } from "./query";
 
@@ -98,12 +96,10 @@ interface AppActions {
   setSort: (sort: Sort) => void;
   clearFormatFilter: () => void;
   toggleFormatFilter: (group: string) => void;
-  toggleCameraFilter: (camera: string) => void;
-  toggleAspectFilter: (aspect: string) => void;
-  toggleRangeFilter: (field: RangeField, from: number, to: number, label: string) => void;
-  setCameraFilter: (camera: string) => void;
-  setAspectFilter: (aspect: string) => void;
-  setRangeFilter: (field: RangeField, from: number, to: number, label: string) => void;
+  toggleSelectFilter: (field: string, value: string) => void;
+  toggleRangeFilter: (field: string, from: number, to: number, label: string) => void;
+  setSelectFilter: (field: string, value: string) => void;
+  setRangeFilter: (field: string, from: number, to: number, label: string) => void;
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
@@ -382,16 +378,13 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   toggleFormatFilter: (group) => set(withQuery(get(), withFormatToggled(get().query, group))),
 
-  toggleCameraFilter: (camera) => set(withQuery(get(), withCameraToggled(get().query, camera))),
-
-  toggleAspectFilter: (aspect) => set(withQuery(get(), withAspectToggled(get().query, aspect))),
+  toggleSelectFilter: (field, value) =>
+    set(withQuery(get(), withSelectToggled(get().query, field, value))),
 
   toggleRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeToggled(get().query, field, from, to, label))),
 
-  setCameraFilter: (camera) => set(withQuery(get(), withCameraSet(get().query, camera))),
-
-  setAspectFilter: (aspect) => set(withQuery(get(), withAspectSet(get().query, aspect))),
+  setSelectFilter: (field, value) => set(withQuery(get(), withSelectSet(get().query, field, value))),
 
   setRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeSet(get().query, field, from, to, label))),

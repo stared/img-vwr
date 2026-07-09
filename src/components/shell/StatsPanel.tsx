@@ -4,7 +4,6 @@ import type { ImageMeta } from "../../ipc";
 import { requestMeta } from "../../ipc";
 import type { Dims } from "../../state/derived";
 import { effectiveDims, takenMs } from "../../state/derived";
-import type { RangeField } from "../../state/query";
 import { activeFormats } from "../../state/query";
 import type { Bucket, NumericHistogram } from "../../state/stats";
 import {
@@ -183,8 +182,7 @@ export function StatsPanel() {
   const meta = useAppStore((s) => s.meta);
   const query = useAppStore((s) => s.query);
   const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
-  const toggleCameraFilter = useAppStore((s) => s.toggleCameraFilter);
-  const toggleAspectFilter = useAppStore((s) => s.toggleAspectFilter);
+  const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
 
   // One background read per folder generation; results are keyed by path and
@@ -238,23 +236,22 @@ export function StatsPanel() {
     .join(" · ");
   const reading = stats.read < entries.length;
 
-  // Click-to-filter wiring: each section toggles its own query clause.
-  const selectRange = (field: RangeField) => (b: Bucket) => {
+  // Click-to-filter wiring: each section toggles its own query clause,
+  // keyed by the registered filter field it corresponds to.
+  const selectRange = (field: string) => (b: Bucket) => {
     if (b.from !== undefined && b.to !== undefined) {
       toggleRangeFilter(field, b.from, b.to, b.label);
     }
   };
-  const rangeActive = (field: RangeField) => (b: Bucket) =>
+  const rangeActive = (field: string) => (b: Bucket) =>
     query.filters.some(
       (f) => f.kind === "range" && f.field === field && f.from === b.from && f.to === b.to,
     );
   const formatActive = (b: Bucket) => b.value !== undefined && activeFormats(query).includes(b.value);
-  const cameraActive = (b: Bucket) =>
-    query.filters.some((f) => f.kind === "camera" && f.camera === b.value);
-  const aspectActive = (b: Bucket) =>
-    query.filters.some((f) => f.kind === "aspect" && f.aspect === b.value);
-  const selectValue = (toggle: (value: string) => void) => (b: Bucket) => {
-    if (b.value !== undefined) toggle(b.value);
+  const selectActive = (field: string) => (b: Bucket) =>
+    query.filters.some((f) => f.kind === "select" && f.field === field && f.value === b.value);
+  const selectValue = (field: string) => (b: Bucket) => {
+    if (b.value !== undefined) toggleSelectFilter(field, b.value);
   };
 
   return (
@@ -275,7 +272,9 @@ export function StatsPanel() {
       <Histogram
         title="format"
         buckets={stats.formats}
-        onSelect={selectValue(toggleFormatFilter)}
+        onSelect={(b) => {
+          if (b.value !== undefined) toggleFormatFilter(b.value);
+        }}
         isActive={formatActive}
       />
       <ColumnChart
@@ -295,15 +294,15 @@ export function StatsPanel() {
         title="camera"
         buckets={stats.cameras}
         note={stats.noCamera > 0 ? `no camera tag: ${stats.noCamera}` : undefined}
-        onSelect={selectValue(toggleCameraFilter)}
-        isActive={cameraActive}
+        onSelect={selectValue("camera")}
+        isActive={selectActive("camera")}
       />
       <Histogram
         title="aspect ratio"
         buckets={stats.aspects}
         note={orientationNote || undefined}
-        onSelect={selectValue(toggleAspectFilter)}
-        isActive={aspectActive}
+        onSelect={selectValue("aspect")}
+        isActive={selectActive("aspect")}
       />
       <ColumnChart
         title="longest edge"

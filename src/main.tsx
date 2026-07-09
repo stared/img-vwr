@@ -11,12 +11,14 @@ import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
 import { allPanels, registerPanel } from "./registry/panels";
 import { allSources, registerSource } from "./registry/sources";
+import { registerBuiltinFilterFields } from "./filters/builtin";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
 import { registerBuiltinSorts } from "./sorts/builtin";
 
 registerBuiltinCommands();
 registerBuiltinSorts();
+registerBuiltinFilterFields();
 // Sources bring their own scope-specific sorts, so they register first;
 // the sort commands then cover built-ins and source sorts alike.
 registerSource(redditSource);

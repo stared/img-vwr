@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
+import { filterFieldsFor, getFilterField, type FilterField } from "../../registry/filters";
 import { getSort, sortsFor, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
-import type { RangeField, Sort } from "../../state/query";
+import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
 import type { Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
-import { AspectMenuItems, CameraMenuItems, FormatMenuItems, RangeMenuForm } from "./filterMenus";
+import { FormatMenuItems } from "./filterMenus";
 
 /**
  * Every complete sort choice the current scope offers, from the sort
@@ -25,12 +26,13 @@ function sortOptions(scope: Scope | null): { sort: Sort; label: string; hint: st
   });
 }
 
-const RANGE_FIELDS: { field: RangeField; label: string }[] = [
-  { field: "taken", label: "taken" },
-  { field: "modified", label: "modified" },
-  { field: "size", label: "size" },
-  { field: "edge", label: "longest edge" },
-];
+const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
+
+/** Right-side hint in the "+" menu: the field's operators, or a submenu mark. */
+function fieldHint(field: FilterField): string {
+  if (field.range) return field.range.ops.map((op) => OP_SYMBOL[op]).join(" ");
+  return field.pick ? "" : "›";
+}
 
 /**
  * A chip whose body opens an editor dropdown; only the × removes the clause.
@@ -116,22 +118,18 @@ function ScopeChip({ scope }: { scope: Scope }) {
   );
 }
 
-type AddSub = null | "format" | "camera" | "aspect" | RangeField;
-
-/** The "+" menu: every filterable field, one level deep. */
-function AddFilterMenu() {
-  const setFindOpen = useAppStore((s) => s.setFindOpen);
+/** The "+" menu: every registered filter field the scope offers, one level deep. */
+function AddFilterMenu({ scope }: { scope: Scope }) {
   const [open, setOpen] = useState(false);
-  const [sub, setSub] = useState<AddSub>(null);
+  const [subId, setSubId] = useState<string | null>(null);
   const close = () => {
     setOpen(false);
-    setSub(null);
+    setSubId(null);
   };
 
-  const subLabel =
-    sub === "format" || sub === "camera" || sub === "aspect"
-      ? sub
-      : RANGE_FIELDS.find((r) => r.field === sub)?.label;
+  const fields = filterFieldsFor(scope);
+  const sub = subId === null ? undefined : fields.find((f) => f.id === subId);
+  const SubMenu = sub?.Menu;
 
   return (
     <div className="filter-add">
@@ -142,43 +140,31 @@ function AddFilterMenu() {
         <>
           <div className="menu-backdrop" onClick={close} />
           <div className="filter-menu">
-            {sub === null ? (
+            {sub === undefined ? (
               <>
                 <span className="menu-section">Filter by</span>
-                <button
-                  onClick={() => {
-                    setFindOpen(true);
-                    close();
-                  }}
-                >
-                  name…
-                </button>
-                <button onClick={() => setSub("format")}>
-                  format <span className="menu-hint">›</span>
-                </button>
-                <button onClick={() => setSub("camera")}>
-                  camera <span className="menu-hint">›</span>
-                </button>
-                <button onClick={() => setSub("aspect")}>
-                  aspect <span className="menu-hint">›</span>
-                </button>
-                {RANGE_FIELDS.map(({ field, label }) => (
-                  <button key={field} onClick={() => setSub(field)}>
-                    {label} <span className="menu-hint">≤ = ≥</span>
+                {fields.map((field) => (
+                  <button
+                    key={field.id}
+                    onClick={() => {
+                      if (field.pick) {
+                        field.pick();
+                        close();
+                      } else {
+                        setSubId(field.id);
+                      }
+                    }}
+                  >
+                    {field.label} <span className="menu-hint">{fieldHint(field)}</span>
                   </button>
                 ))}
               </>
             ) : (
               <>
-                <button className="menu-back" onClick={() => setSub(null)}>
-                  ‹ {subLabel}
+                <button className="menu-back" onClick={() => setSubId(null)}>
+                  ‹ {sub.label}
                 </button>
-                {sub === "format" && <FormatMenuItems />}
-                {sub === "camera" && <CameraMenuItems close={close} />}
-                {sub === "aspect" && <AspectMenuItems close={close} />}
-                {sub !== "format" && sub !== "camera" && sub !== "aspect" && (
-                  <RangeMenuForm field={sub} close={close} />
-                )}
+                {SubMenu && <SubMenu close={close} />}
               </>
             )}
           </div>
@@ -200,8 +186,7 @@ export function FilterBar() {
   const setNameFilter = useAppStore((s) => s.setNameFilter);
   const setFindOpen = useAppStore((s) => s.setFindOpen);
   const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
-  const toggleCameraFilter = useAppStore((s) => s.toggleCameraFilter);
-  const toggleAspectFilter = useAppStore((s) => s.toggleAspectFilter);
+  const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
   const setSort = useAppStore((s) => s.setSort);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
@@ -262,45 +247,27 @@ export function FilterBar() {
       )}
 
       {query.filters.map((filter) => {
-        switch (filter.kind) {
-          case "camera":
-            return (
-              <EditableChip
-                key="camera"
-                chipKey="camera"
-                value={filter.camera}
-                onRemove={() => toggleCameraFilter(filter.camera)}
-                renderMenu={(close) => <CameraMenuItems close={close} />}
-              />
-            );
-          case "aspect":
-            return (
-              <EditableChip
-                key="aspect"
-                chipKey="aspect"
-                value={filter.aspect}
-                onRemove={() => toggleAspectFilter(filter.aspect)}
-                renderMenu={(close) => <AspectMenuItems close={close} />}
-              />
-            );
-          case "range":
-            return (
-              <EditableChip
-                key={`range-${filter.field}`}
-                chipKey={filter.field}
-                value={filter.label}
-                onRemove={() =>
-                  toggleRangeFilter(filter.field, filter.from, filter.to, filter.label)
-                }
-                renderMenu={(close) => <RangeMenuForm field={filter.field} close={close} />}
-              />
-            );
-          default:
-            return null; // name and format have dedicated chips above
+        // Field-keyed clauses: the chip's edit menu is the field's own menu.
+        if (filter.kind !== "select" && filter.kind !== "range") {
+          return null; // name and format have dedicated chips above
         }
+        const FieldMenu = getFilterField(filter.field)?.Menu;
+        return (
+          <EditableChip
+            key={`${filter.kind}-${filter.field}`}
+            chipKey={filter.field}
+            value={filter.kind === "select" ? filter.value : filter.label}
+            onRemove={() =>
+              filter.kind === "select"
+                ? toggleSelectFilter(filter.field, filter.value)
+                : toggleRangeFilter(filter.field, filter.from, filter.to, filter.label)
+            }
+            renderMenu={(close) => (FieldMenu ? <FieldMenu close={close} /> : null)}
+          />
+        );
       })}
 
-      <AddFilterMenu />
+      <AddFilterMenu scope={scope} />
 
       {/* View is part of how the query renders — grid, or a map of the
           geolocated results. Clicking flips between the two. */}

@@ -1,7 +1,8 @@
 import type { FileEntry, ImageMeta } from "../ipc";
+import { getFilterField } from "../registry/filters";
+import type { RangeSpec } from "../registry/filters";
 import { getSort } from "../registry/sorts";
 import type { SortDir } from "../registry/sorts";
-import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
 
 /**
  * The gallery is a query over the scanned folder — Linear-style: the folder
@@ -22,15 +23,13 @@ export interface Sort {
   dir: SortDir;
 }
 
-/** Numeric per-image quantities a range filter can apply to. */
-export type RangeField = "taken" | "modified" | "size" | "edge";
-
 export type Filter =
   | { kind: "format"; formats: string[] } // any-of, by format group id
   | { kind: "name"; substring: string }
-  | { kind: "camera"; camera: string }
-  | { kind: "aspect"; aspect: string }
-  | { kind: "range"; field: RangeField; from: number; to: number; label: string };
+  // Select and range clauses are keyed by a registered filter field's id
+  // ("camera", "aspect", "taken", …) — their predicates live in the registry.
+  | { kind: "select"; field: string; value: string }
+  | { kind: "range"; field: string; from: number; to: number; label: string };
 
 export interface Query {
   filters: Filter[];
@@ -54,26 +53,12 @@ function formatGroupOf(ext: string): string | undefined {
   return FORMAT_GROUPS.find((g) => (g.exts as readonly string[]).includes(ext))?.id;
 }
 
-/** The numeric value a range filter compares; null = unknown (never matches). */
-function rangeValue(entry: FileEntry, field: RangeField, meta: ImageMeta | undefined): number | null {
-  switch (field) {
-    case "modified":
-      return entry.modifiedMs;
-    case "size":
-      return entry.size;
-    case "taken":
-      return meta ? takenMs(meta) : null;
-    case "edge": {
-      const dims = meta ? effectiveDims(meta) : null;
-      return dims ? Math.max(dims.width, dims.height) : null;
-    }
-  }
-}
-
 /**
  * Metadata-based filters (camera, aspect, taken, edge) match only images
  * whose metadata is already known — results refine as the background read
- * streams in, rather than waiting on it.
+ * streams in, rather than waiting on it. Select and range predicates resolve
+ * through the filter-field registry; a clause whose field is gone (e.g. an
+ * uninstalled plugin's) matches nothing rather than everything.
  */
 function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined): boolean {
   switch (filter.kind) {
@@ -83,14 +68,12 @@ function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined):
     }
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
-    case "camera":
-      return meta?.exif?.camera === filter.camera;
-    case "aspect": {
-      const dims = meta ? effectiveDims(meta) : null;
-      return dims !== null && aspectLabelOf(dims) === filter.aspect;
+    case "select": {
+      const value = getFilterField(filter.field)?.select?.value(entry, meta);
+      return value != null && value === filter.value;
     }
     case "range": {
-      const v = rangeValue(entry, filter.field, meta);
+      const v = getFilterField(filter.field)?.range?.value(entry, meta) ?? null;
       return v !== null && v >= filter.from && v < filter.to;
     }
   }
@@ -143,9 +126,8 @@ export function usesMeta(query: Query): boolean {
   if (getSort(query.sort.key)?.needsMeta) return true;
   return query.filters.some(
     (f) =>
-      f.kind === "camera" ||
-      f.kind === "aspect" ||
-      (f.kind === "range" && (f.field === "taken" || f.field === "edge")),
+      (f.kind === "select" || f.kind === "range") &&
+      getFilterField(f.field)?.needsMeta === true,
   );
 }
 
@@ -183,25 +165,21 @@ export function withNameFilter(query: Query, substring: string): Query {
 }
 
 /**
- * One clause per key: clicking a value sets it, clicking the active value
+ * One clause per field: clicking a value sets it, clicking the active value
  * clears it, clicking another value switches to it.
  */
-export function withCameraToggled(query: Query, camera: string): Query {
-  const active = query.filters.some((f) => f.kind === "camera" && f.camera === camera);
-  const others = query.filters.filter((f) => f.kind !== "camera");
-  return { ...query, filters: active ? others : [...others, { kind: "camera", camera }] };
-}
-
-export function withAspectToggled(query: Query, aspect: string): Query {
-  const active = query.filters.some((f) => f.kind === "aspect" && f.aspect === aspect);
-  const others = query.filters.filter((f) => f.kind !== "aspect");
-  return { ...query, filters: active ? others : [...others, { kind: "aspect", aspect }] };
+export function withSelectToggled(query: Query, field: string, value: string): Query {
+  const active = query.filters.some(
+    (f) => f.kind === "select" && f.field === field && f.value === value,
+  );
+  const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
+  return { ...query, filters: active ? others : [...others, { kind: "select", field, value }] };
 }
 
 /** Range filters are keyed by field — one taken-range, one size-range, etc. */
 export function withRangeToggled(
   query: Query,
-  field: RangeField,
+  field: string,
   from: number,
   to: number,
   label: string,
@@ -218,19 +196,14 @@ export function withRangeToggled(
 
 /* Set variants — editing an existing chip replaces its clause, never clears. */
 
-export function withCameraSet(query: Query, camera: string): Query {
-  const others = query.filters.filter((f) => f.kind !== "camera");
-  return { ...query, filters: [...others, { kind: "camera", camera }] };
-}
-
-export function withAspectSet(query: Query, aspect: string): Query {
-  const others = query.filters.filter((f) => f.kind !== "aspect");
-  return { ...query, filters: [...others, { kind: "aspect", aspect }] };
+export function withSelectSet(query: Query, field: string, value: string): Query {
+  const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
+  return { ...query, filters: [...others, { kind: "select", field, value }] };
 }
 
 export function withRangeSet(
   query: Query,
-  field: RangeField,
+  field: string,
   from: number,
   to: number,
   label: string,
@@ -243,6 +216,8 @@ export type RangeOp = "<=" | "=" | ">=";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
+
 /** Local ms → "YYYY-MM-DD", for prefilling date inputs. */
 export function dateInputValue(ms: number): string {
   const d = new Date(ms);
@@ -250,43 +225,76 @@ export function dateInputValue(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/* Range-spec factories — the parsing/prefill halves of a RangeSpec, so
+ * field definitions (built-in or plugin) only supply the value function. */
+
+/** Day-granular date range: "≤" and "=" include the named day. */
+export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
+  return {
+    ops: ["<=", "=", ">="],
+    input: "date",
+    value,
+    parse: (op, raw) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+      if (!m) return null;
+      const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+      if (!Number.isFinite(day)) return null;
+      const label = `${OP_SYMBOL[op]} ${raw.trim()}`;
+      if (op === ">=") return { from: day, to: Infinity, label };
+      if (op === "<=") return { from: -Infinity, to: day + DAY_MS, label };
+      return { from: day, to: day + DAY_MS, label };
+    },
+    initial: ({ from, to }) =>
+      from === -Infinity
+        ? { op: "<=", value: dateInputValue(to - DAY_MS) }
+        : { op: to === Infinity ? ">=" : "=", value: dateInputValue(from) },
+  };
+}
+
 /**
- * Operator + typed value → half-open [from, to) range with a chip label.
- * Dates are day-granular ("≤" includes the named day); sizes are megabytes;
- * edges are pixels. Null when the input doesn't parse.
+ * Numeric range in a display unit `scale` times the stored one (MB → bytes);
+ * "=" means within one unit. `integer` rounds input to whole units (pixels).
  */
+export function numberRangeSpec(
+  value: RangeSpec["value"],
+  opts: { unit: string; scale?: number; integer?: boolean; ops?: RangeOp[] },
+): RangeSpec {
+  const { unit, scale = 1, integer = false, ops = ["<=", "=", ">="] } = opts;
+  const fromInput = (raw: string): number | null => {
+    const n = Number(raw.trim());
+    if (!Number.isFinite(n) || n < 0 || raw.trim() === "") return null;
+    return integer ? Math.round(n) : n;
+  };
+  const toInput = (stored: number): string =>
+    integer ? String(Math.round(stored / scale)) : String(Number((stored / scale).toFixed(2)));
+  return {
+    ops,
+    input: "number",
+    unit,
+    value,
+    parse: (op, raw) => {
+      const units = fromInput(raw);
+      if (units === null) return null;
+      const stored = units * scale;
+      const label = `${OP_SYMBOL[op]} ${units} ${unit}`;
+      if (op === ">=") return { from: stored, to: Infinity, label };
+      if (op === "<=") return { from: -Infinity, to: stored + 1, label };
+      return { from: stored, to: stored + Math.max(scale, 1), label };
+    },
+    initial: ({ from, to }) =>
+      from === -Infinity
+        ? { op: "<=", value: toInput(to - 1) }
+        : { op: to === Infinity ? ">=" : "=", value: toInput(from) },
+  };
+}
+
+/** Parse an input against a registered range field; null if either is invalid. */
 export function rangeFromInput(
-  field: RangeField,
+  field: string,
   op: RangeOp,
   raw: string,
 ): { from: number; to: number; label: string } | null {
-  const label = (value: string) => `${op === "<=" ? "≤" : op === ">=" ? "≥" : "="} ${value}`;
-  if (field === "taken" || field === "modified") {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
-    if (!m) return null;
-    const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
-    if (!Number.isFinite(day)) return null;
-    const next = day + DAY_MS;
-    const text = label(raw.trim());
-    if (op === ">=") return { from: day, to: Infinity, label: text };
-    if (op === "<=") return { from: -Infinity, to: next, label: text };
-    return { from: day, to: next, label: text };
-  }
-  const value = Number(raw.trim());
-  if (!Number.isFinite(value) || value < 0 || raw.trim() === "") return null;
-  if (field === "size") {
-    const bytes = value * 1e6; // decimal MB, matching formatBytes
-    const text = label(`${raw.trim()} MB`);
-    if (op === ">=") return { from: bytes, to: Infinity, label: text };
-    if (op === "<=") return { from: -Infinity, to: bytes + 1, label: text };
-    return { from: bytes, to: bytes + 1e6, label: text }; // within that megabyte
-  }
-  // edge: whole pixels
-  const px = Math.round(value);
-  const text = label(`${px} px`);
-  if (op === ">=") return { from: px, to: Infinity, label: text };
-  if (op === "<=") return { from: -Infinity, to: px + 1, label: text };
-  return { from: px, to: px + 1, label: text };
+  return getFilterField(field)?.range?.parse(op, raw) ?? null;
 }
 
 export function withoutFilters(query: Query): Query {

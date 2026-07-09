@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 
 import type { ImageMeta } from "../../ipc";
+import { getFilterField } from "../../registry/filters";
 import type { Dims } from "../../state/derived";
 import { effectiveDims } from "../../state/derived";
-import type { RangeField, RangeOp } from "../../state/query";
-import { activeFormats, dateInputValue, FORMAT_GROUPS, rangeFromInput } from "../../state/query";
+import type { RangeOp } from "../../state/query";
+import { activeFormats, FORMAT_GROUPS } from "../../state/query";
 import { aspectBuckets, cameraCounts } from "../../state/stats";
 import { useAppStore } from "../../state/store";
 
@@ -40,122 +41,101 @@ function useCollectionMetas(): ImageMeta[] {
   );
 }
 
-/** Cameras present in the collection, most common first. */
-export function CameraMenuItems({ close }: { close: () => void }) {
-  const metas = useCollectionMetas();
+/** One row per value of a select field; picking sets that field's clause. */
+function SelectMenuItems({
+  field,
+  buckets,
+  empty,
+  close,
+}: {
+  field: string;
+  buckets: { label: string; value: string }[];
+  empty: string;
+  close: () => void;
+}) {
   const query = useAppStore((s) => s.query);
-  const setCameraFilter = useAppStore((s) => s.setCameraFilter);
-  const buckets = cameraCounts(metas, 12).filter((b) => b.value !== undefined);
-  const active = query.filters.find((f) => f.kind === "camera");
+  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
+  const active = query.filters.find((f) => f.kind === "select" && f.field === field);
   if (buckets.length === 0) {
-    return <span className="menu-empty">no camera tags (yet)</span>;
+    return <span className="menu-empty">{empty}</span>;
   }
   return (
     <>
       {buckets.map((b) => (
         <button
-          key={b.label}
+          key={b.value}
           onClick={() => {
-            if (b.value !== undefined) setCameraFilter(b.value);
+            setSelectFilter(field, b.value);
             close();
           }}
         >
           {b.label}
           <span className="menu-check">
-            {active?.kind === "camera" && active.camera === b.value ? "✓" : ""}
+            {active?.kind === "select" && active.value === b.value ? "✓" : ""}
           </span>
         </button>
       ))}
     </>
+  );
+}
+
+/** Cameras present in the collection, most common first. */
+export function CameraMenuItems({ close }: { close: () => void }) {
+  const metas = useCollectionMetas();
+  const buckets = cameraCounts(metas, 12).flatMap((b) =>
+    b.value !== undefined ? [{ label: b.label, value: b.value }] : [],
+  );
+  return (
+    <SelectMenuItems field="camera" buckets={buckets} empty="no camera tags (yet)" close={close} />
   );
 }
 
 /** Aspect ratios present in the collection, most common first. */
 export function AspectMenuItems({ close }: { close: () => void }) {
   const metas = useCollectionMetas();
-  const query = useAppStore((s) => s.query);
-  const setAspectFilter = useAppStore((s) => s.setAspectFilter);
   const dims = metas.map(effectiveDims).filter((d): d is Dims => d !== null);
-  const buckets = aspectBuckets(dims).filter((b) => b.value !== undefined);
-  const active = query.filters.find((f) => f.kind === "aspect");
-  if (buckets.length === 0) {
-    return <span className="menu-empty">no dimensions read (yet)</span>;
-  }
+  const buckets = aspectBuckets(dims).flatMap((b) =>
+    b.value !== undefined ? [{ label: b.label, value: b.value }] : [],
+  );
   return (
-    <>
-      {buckets.map((b) => (
-        <button
-          key={b.label}
-          onClick={() => {
-            if (b.value !== undefined) setAspectFilter(b.value);
-            close();
-          }}
-        >
-          {b.label}
-          <span className="menu-check">
-            {active?.kind === "aspect" && active.aspect === b.value ? "✓" : ""}
-          </span>
-        </button>
-      ))}
-    </>
+    <SelectMenuItems
+      field="aspect"
+      buckets={buckets}
+      empty="no dimensions read (yet)"
+      close={close}
+    />
   );
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
 
-function opsFor(field: RangeField): RangeOp[] {
-  // Exact file size is never a useful question; exact day or pixel edge is.
-  return field === "size" ? ["<=", ">="] : ["<=", "=", ">="];
-}
-
-/** What each operator means for this field, in words. */
-function opHint(field: RangeField, op: RangeOp): string {
-  if (field === "taken" || field === "modified") {
+/** What each operator means for this kind of input, in words. */
+function opHint(input: "date" | "number", op: RangeOp): string {
+  if (input === "date") {
     return op === "<=" ? "on or before" : op === "=" ? "on" : "on or after";
   }
   return op === "<=" ? "at most" : op === "=" ? "exactly" : "at least";
 }
 
-/** Best-effort prefill when editing an existing range chip. */
-function initialInput(
-  field: RangeField,
-  current: { from: number; to: number } | undefined,
-): { op: RangeOp | null; value: string } {
-  if (!current) return { op: null, value: "" };
-  const isDate = field === "taken" || field === "modified";
-  if (current.from === -Infinity) {
-    const v = isDate
-      ? dateInputValue(current.to - DAY_MS)
-      : field === "size"
-        ? String(Number(((current.to - 1) / 1e6).toFixed(2)))
-        : String(current.to - 1);
-    return { op: "<=", value: v };
-  }
-  const op: RangeOp = current.to === Infinity ? ">=" : "=";
-  const v = isDate
-    ? dateInputValue(current.from)
-    : field === "size"
-      ? String(Number((current.from / 1e6).toFixed(2)))
-      : String(current.from);
-  return { op, value: v };
-}
-
 /**
- * Range editor for one field. The operators are ordinary menu rows — picking
- * one reveals the value input; only then does the setting form appear.
+ * Range editor for one registered range field. The operators are ordinary
+ * menu rows — picking one reveals the value input; only then does the
+ * setting form appear.
  */
-export function RangeMenuForm({ field, close }: { field: RangeField; close: () => void }) {
+export function RangeMenuForm({ field, close }: { field: string; close: () => void }) {
+  const spec = getFilterField(field)?.range;
   const query = useAppStore((s) => s.query);
   const setRangeFilter = useAppStore((s) => s.setRangeFilter);
   const current = query.filters.find((f) => f.kind === "range" && f.field === field);
-  const initial = initialInput(field, current?.kind === "range" ? current : undefined);
+  const initial =
+    spec && current?.kind === "range"
+      ? spec.initial(current)
+      : { op: null as RangeOp | null, value: "" };
   const [op, setOp] = useState<RangeOp | null>(initial.op);
   const [value, setValue] = useState(initial.value);
 
-  const isDate = field === "taken" || field === "modified";
-  const range = op === null ? null : rangeFromInput(field, op, value);
+  if (!spec) return null;
+  const range = op === null ? null : spec.parse(op, value);
 
   const apply = () => {
     if (!range) return;
@@ -165,10 +145,10 @@ export function RangeMenuForm({ field, close }: { field: RangeField; close: () =
 
   return (
     <>
-      {opsFor(field).map((o) => (
+      {spec.ops.map((o) => (
         <button key={o} onClick={() => setOp(o)}>
           {OP_SYMBOL[o]}
-          <span className="menu-hint">{opHint(field, o)}</span>
+          <span className="menu-hint">{opHint(spec.input, o)}</span>
           <span className="menu-check">{op === o ? "✓" : ""}</span>
         </button>
       ))}
@@ -182,15 +162,14 @@ export function RangeMenuForm({ field, close }: { field: RangeField; close: () =
         >
           <div className="range-value">
             <input
-              type={isDate ? "date" : "number"}
+              type={spec.input}
               step="any"
               min="0"
               value={value}
               autoFocus
               onChange={(e) => setValue(e.target.value)}
             />
-            {field === "size" && <span className="range-unit">MB</span>}
-            {field === "edge" && <span className="range-unit">px</span>}
+            {spec.unit && <span className="range-unit">{spec.unit}</span>}
           </div>
           <button type="submit" className="range-apply" disabled={range === null}>
             Apply

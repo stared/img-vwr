@@ -1,28 +1,31 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { FileEntry, ImageMeta } from "../ipc";
+import { clearFilterFieldsForTest, registerFilterField } from "../registry/filters";
 import { clearSortsForTest, registerSort, sortsFor } from "../registry/sorts";
 import { registerBuiltinSorts } from "../sorts/builtin";
+import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
 import {
   applyQuery,
   dateInputValue,
+  dateRangeSpec,
   defaultQuery,
+  numberRangeSpec,
   rangeFromInput,
   usesMeta,
-  withAspectToggled,
-  withCameraSet,
-  withCameraToggled,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
   withoutFormats,
   withRangeSet,
   withRangeToggled,
+  withSelectSet,
+  withSelectToggled,
   withSort,
 } from "./query";
 
-// Sort behavior lives in the registry; the engine tests need the built-ins
-// plus one source-style order (position in the collection as delivered).
+// Sort and filter behavior lives in the registries; the engine tests
+// exercise them through registered fields — the same seam plugins use.
 beforeAll(() => {
   clearSortsForTest();
   registerBuiltinSorts();
@@ -32,6 +35,53 @@ beforeAll(() => {
     defaultDir: "asc",
     appliesTo: (scope) => scope?.kind === "source",
     value: (_entry, ctx) => ctx.sourceIndex,
+  });
+
+  clearFilterFieldsForTest();
+  registerFilterField({
+    id: "camera",
+    label: "camera",
+    needsMeta: true,
+    select: { value: (_entry, meta) => meta?.exif?.camera ?? null },
+  });
+  registerFilterField({
+    id: "aspect",
+    label: "aspect",
+    needsMeta: true,
+    select: {
+      value: (_entry, meta) => {
+        const dims = meta ? effectiveDims(meta) : null;
+        return dims ? aspectLabelOf(dims) : null;
+      },
+    },
+  });
+  registerFilterField({
+    id: "taken",
+    label: "taken",
+    needsMeta: true,
+    range: dateRangeSpec((_entry, meta) => (meta ? takenMs(meta) : null)),
+  });
+  registerFilterField({
+    id: "modified",
+    label: "modified",
+    range: dateRangeSpec((entry) => entry.modifiedMs),
+  });
+  registerFilterField({
+    id: "size",
+    label: "size",
+    range: numberRangeSpec((entry) => entry.size, { unit: "MB", scale: 1e6, ops: ["<=", ">="] }),
+  });
+  registerFilterField({
+    id: "edge",
+    label: "longest edge",
+    needsMeta: true,
+    range: numberRangeSpec(
+      (_entry, meta) => {
+        const dims = meta ? effectiveDims(meta) : null;
+        return dims ? Math.max(dims.width, dims.height) : null;
+      },
+      { unit: "px", integer: true },
+    ),
   });
 });
 
@@ -118,7 +168,7 @@ describe("applyQuery", () => {
         exif: { orientation: 1, dateTime: null, camera: "iPhone SE", gpsLat: null, gpsLon: null },
       }),
     };
-    const query = withCameraToggled(defaultQuery, "iPhone SE");
+    const query = withSelectToggled(defaultQuery, "camera", "iPhone SE");
     expect(applyQuery(ENTRIES, query, meta).map((e) => e.name)).toEqual(["beach2.jpg"]);
     // No metadata at all → nothing can match yet.
     expect(applyQuery(ENTRIES, query)).toEqual([]);
@@ -134,7 +184,7 @@ describe("applyQuery", () => {
       }),
       "/p/zoo.webp": imageMeta({ width: 3000, height: 2000 }), // 3:2
     };
-    const query = withAspectToggled(defaultQuery, "4:3");
+    const query = withSelectToggled(defaultQuery, "aspect", "4:3");
     expect(applyQuery(ENTRIES, query, meta).map((e) => e.name)).toEqual([
       "Alps.png",
       "beach2.jpg",
@@ -153,12 +203,17 @@ describe("applyQuery", () => {
     expect(applyQuery(ENTRIES, byEdge, meta).map((e) => e.name)).toEqual(["zoo.webp"]);
   });
 
+  it("a clause on an unregistered field matches nothing, not everything", () => {
+    const query = withSelectToggled(defaultQuery, "gone.plugin", "x");
+    expect(applyQuery(ENTRIES, query)).toEqual([]);
+  });
+
   it("usesMeta is true only for metadata-dependent filters", () => {
     expect(usesMeta(defaultQuery)).toBe(false);
     expect(usesMeta(withRangeToggled(defaultQuery, "size", 0, 1, "x"))).toBe(false);
     expect(usesMeta(withRangeToggled(defaultQuery, "taken", 0, 1, "x"))).toBe(true);
-    expect(usesMeta(withCameraToggled(defaultQuery, "X"))).toBe(true);
-    expect(usesMeta(withAspectToggled(defaultQuery, "4:3"))).toBe(true);
+    expect(usesMeta(withSelectToggled(defaultQuery, "camera", "X"))).toBe(true);
+    expect(usesMeta(withSelectToggled(defaultQuery, "aspect", "4:3"))).toBe(true);
   });
 });
 
@@ -184,13 +239,16 @@ describe("query editing", () => {
   });
 
   it("value toggles set, switch, and clear their clause", () => {
-    const one = withCameraToggled(defaultQuery, "A");
-    expect(one.filters).toEqual([{ kind: "camera", camera: "A" }]);
+    const one = withSelectToggled(defaultQuery, "camera", "A");
+    expect(one.filters).toEqual([{ kind: "select", field: "camera", value: "A" }]);
     // Another value switches the clause rather than stacking a second one.
-    const switched = withCameraToggled(one, "B");
-    expect(switched.filters).toEqual([{ kind: "camera", camera: "B" }]);
+    const switched = withSelectToggled(one, "camera", "B");
+    expect(switched.filters).toEqual([{ kind: "select", field: "camera", value: "B" }]);
     // The active value clears it.
-    expect(withCameraToggled(switched, "B").filters).toEqual([]);
+    expect(withSelectToggled(switched, "camera", "B").filters).toEqual([]);
+    // Clauses on different select fields stack.
+    const two = withSelectToggled(one, "aspect", "4:3");
+    expect(two.filters).toHaveLength(2);
   });
 
   it("range toggles are keyed by field", () => {
@@ -205,9 +263,13 @@ describe("query editing", () => {
   });
 
   it("set variants replace their clause without ever clearing", () => {
-    const one = withCameraSet(defaultQuery, "A");
-    expect(withCameraSet(one, "A").filters).toEqual([{ kind: "camera", camera: "A" }]);
-    expect(withCameraSet(one, "B").filters).toEqual([{ kind: "camera", camera: "B" }]);
+    const one = withSelectSet(defaultQuery, "camera", "A");
+    expect(withSelectSet(one, "camera", "A").filters).toEqual([
+      { kind: "select", field: "camera", value: "A" },
+    ]);
+    expect(withSelectSet(one, "camera", "B").filters).toEqual([
+      { kind: "select", field: "camera", value: "B" },
+    ]);
     const sized = withRangeSet(defaultQuery, "size", 0, 100, "small");
     const resized = withRangeSet(sized, "size", 0, 100, "small");
     expect(resized.filters).toHaveLength(1);
