@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
+import { similarTo } from "../../similarity";
 import { filterFieldsFor, getFilterField, type FilterField } from "../../registry/filters";
 import { getSort, sortsFor, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
@@ -75,6 +76,75 @@ function EditableChip({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The similarity anchor as a self-describing clause:
+ * `closest to: "people dancing" with SigLIP 2 Base`. The phrase is typed and
+ * edited right here; × drops the clause (and its sort).
+ */
+function ClosestChip() {
+  const similarity = useAppStore((s) => s.similarity);
+  const closestOpen = useAppStore((s) => s.closestOpen);
+  const setClosestOpen = useAppStore((s) => s.setClosestOpen);
+  const clearSimilarity = useAppStore((s) => s.clearSimilarity);
+  const modelLabel = useAppStore(
+    (s) => s.embedModels.find((m) => m.active)?.label ?? "no model",
+  );
+  const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (closestOpen) inputRef.current?.focus();
+  }, [closestOpen]);
+
+  if (!closestOpen && !similarity) return null;
+
+  if (closestOpen) {
+    return (
+      <span className="chip">
+        <span className="chip-key">closest to:</span>
+        <input
+          ref={inputRef}
+          value={text}
+          placeholder="describe it…"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && text.trim()) {
+              const query = text.trim();
+              void similarTo({ kind: "text", query }, `"${query}"`);
+              setClosestOpen(false);
+            }
+            if (e.key === "Escape") {
+              setClosestOpen(false);
+              e.stopPropagation();
+            }
+          }}
+          onBlur={() => setClosestOpen(false)}
+        />
+      </span>
+    );
+  }
+
+  if (!similarity) return null;
+  return (
+    <span className="chip chip-edit chip-removable">
+      <button
+        className="chip-body"
+        title="edit the phrase"
+        onClick={() => {
+          setText(similarity.anchor.kind === "text" ? similarity.anchor.query : "");
+          setClosestOpen(true);
+        }}
+      >
+        <span className="chip-key">closest to:</span> {similarity.label}{" "}
+        <span className="chip-dim">with {modelLabel}</span>
+      </button>
+      <button className="chip-x" title="remove closest-to" onClick={clearSimilarity}>
+        ×
+      </button>
+    </span>
   );
 }
 
@@ -191,8 +261,6 @@ export function FilterBar() {
   const setSort = useAppStore((s) => s.setSort);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const setGalleryLayout = useAppStore((s) => s.setGalleryLayout);
-  const similarity = useAppStore((s) => s.similarity);
-  const clearSimilarity = useAppStore((s) => s.clearSimilarity);
 
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -269,17 +337,7 @@ export function FilterBar() {
         );
       })}
 
-      {/* The similarity anchor is a clause too: what "similar" sorts toward. */}
-      {similarity && (
-        <span className="chip chip-edit chip-removable">
-          <span className="chip-body chip-static">
-            <span className="chip-key">similar:</span> {similarity.label}
-          </span>
-          <button className="chip-x" title="clear similarity" onClick={clearSimilarity}>
-            ×
-          </button>
-        </span>
-      )}
+      <ClosestChip />
 
       <AddFilterMenu scope={scope} />
 

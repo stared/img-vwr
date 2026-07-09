@@ -82,6 +82,8 @@ export interface AppState {
   query: Query;
   /** Find-by-name input visibility (the filter bar shows while editing). */
   findOpen: boolean;
+  /** "closest to" phrase input visibility in the filter bar. */
+  closestOpen: boolean;
   sidebarVisible: boolean;
   /** Which left panel the activity bar has selected (one at a time). */
   activePanelId: string;
@@ -129,6 +131,7 @@ interface AppActions {
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
+  setClosestOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   /** VS Code semantics: re-selecting the active icon collapses the sidebar. */
   setActivePanel: (id: string) => void;
@@ -165,6 +168,7 @@ export const initialState: AppState = {
   selectedIndex: 0,
   query: defaultQuery,
   findOpen: false,
+  closestOpen: false,
   sidebarVisible: true,
   activePanelId: "folders",
   paletteOpen: false,
@@ -195,6 +199,7 @@ export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
     selectedIndex: 0,
     // Similarity anchors are per-collection; a new scope starts without one.
     similarity: null,
+    closestOpen: false,
     embedProgress: null,
     viewerView: null,
     viewerImg: null,
@@ -438,6 +443,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   clearFilters: () => set({ ...withQuery(get(), withoutFilters(get().query)), findOpen: false }),
 
   setFindOpen: (open) => set({ findOpen: open }),
+
+  setClosestOpen: (open) => set({ closestOpen: open }),
 
   toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 

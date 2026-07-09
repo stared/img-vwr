@@ -120,7 +120,11 @@ impl EmbeddingService {
                 if thumbs.is_stale(epoch) {
                     return;
                 }
-                let _ = service.vector_for(&embedder, &path);
+                if let Err(e) = service.vector_for(&embedder, &path) {
+                    // Unindexable images (no codec, unreadable) sort last;
+                    // the log keeps the reason visible without failing the pass.
+                    eprintln!("embedding failed for {path}: {e}");
+                }
                 done += 1;
                 if done.is_multiple_of(8) || done == total {
                     let _ = EmbeddingProgress { done, total, epoch }.emit(&app);
@@ -181,7 +185,9 @@ impl EmbeddingService {
             None => {
                 let thumb = self.thumb_file(path, &key)?;
                 let v = embedder.embed_image_file(&thumb).map_err(|e| e.to_string())?;
-                let _ = write_vector(&vec_file, &v);
+                if let Err(e) = write_vector(&vec_file, &v) {
+                    eprintln!("vector cache write failed for {}: {e}", vec_file.display());
+                }
                 v
             }
         };

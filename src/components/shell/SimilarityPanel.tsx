@@ -1,7 +1,4 @@
-import { useState } from "react";
-
 import { embeddingSelect } from "../../ipc";
-import { similarTo } from "../../similarity";
 import { useAppStore } from "../../state/store";
 
 function downloadLabel(mb: number): string {
@@ -9,26 +6,24 @@ function downloadLabel(mb: number): string {
 }
 
 /**
- * Model picker + semantic search. Each model row carries its quality and
+ * Model picker for "closest to" sorting. Each row carries its quality and
  * speed notes; picking one downloads it once into the app cache and loads
- * it. Everything runs locally.
+ * it. Everything runs locally. The query itself lives in the filter bar:
+ * `+ → closest to…`, or "Closest to This Image" on a selected image.
  */
 export function SimilarityPanel() {
   const models = useAppStore((s) => s.embedModels);
   const status = useAppStore((s) => s.embedStatus);
   const progress = useAppStore((s) => s.embedProgress);
-  const scope = useAppStore((s) => s.scope);
-  const [query, setQuery] = useState("");
 
-  const ready = status?.phase === "ready";
   const busy = status?.phase === "downloading" || status?.phase === "loading";
-  const localScope = scope?.kind === "folder";
 
   return (
     <div className="similarity">
       <p className="panel-hint">
-        Sort by likeness — to an image, or to a phrase. A local model computes
-        it; nothing leaves this machine.
+        Sort a folder by likeness — to an image, or to a phrase typed in the
+        query bar (+ → closest to…). A local model computes it; nothing
+        leaves this machine.
       </p>
 
       <div className="model-list">
@@ -65,26 +60,6 @@ export function SimilarityPanel() {
 
       {status?.phase === "error" && status.error && (
         <p className="panel-error">{status.error}</p>
-      )}
-
-      {ready && localScope && (
-        <form
-          className="source-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const text = query.trim();
-            if (text) void similarTo({ kind: "text", query: text }, `"${text}"`);
-          }}
-        >
-          <input
-            value={query}
-            placeholder="search by meaning…"
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </form>
-      )}
-      {ready && !localScope && (
-        <p className="panel-hint">Open a local folder to search it by similarity.</p>
       )}
 
       {progress && progress.done < progress.total && (

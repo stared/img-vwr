@@ -5,7 +5,7 @@
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::{mobileclip, siglip};
+use candle_transformers::models::siglip;
 use serde::Serialize;
 use tokenizers::Tokenizer;
 
@@ -30,67 +30,47 @@ impl std::fmt::Display for EmbedError {
 
 impl std::error::Error for EmbedError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Family {
-    MobileClip,
-    Siglip,
-}
-
 /// One offered model: identity, where its weights live, and the picker notes.
 pub struct ModelSpec {
     pub id: &'static str,
     pub label: &'static str,
     /// One-line quality note for the picker.
     pub quality: &'static str,
-    /// One-line speed note for the picker (relative; the panel shows
-    /// measured throughput while indexing).
+    /// One-line speed note for the picker. Throughput was measured with this
+    /// crate's `bench` example on an Apple Silicon GPU (Metal, release build).
     pub speed: &'static str,
     pub download_mb: u32,
     pub dim: u32,
     hf_repo: &'static str,
-    weights_file: &'static str,
     image_size: usize,
-    family: Family,
 }
 
-/// The picks, fastest first. All are dual encoders whose 256 px input matches
-/// the thumbnail cache exactly, so indexing never re-decodes originals.
+/// The picks — SigLIP 2 only. MobileCLIP S2 was evaluated and dropped:
+/// candle's Metal conv2d path makes its FastViT tower take ~78 s per image
+/// (vs 14 ms for a ViT), and even on CPU it ran 60× behind SigLIP 2 Base on
+/// the GPU — no niche left. ViTs are the fast path in this runtime; their
+/// 256 px input matches the thumbnail cache exactly, so indexing never
+/// re-decodes originals.
 pub static MODELS: &[ModelSpec] = &[
-    ModelSpec {
-        id: "mobileclip-s2",
-        label: "MobileCLIP S2",
-        quality: "good — on par with OpenAI's CLIP ViT-B/16 (Apple, 2024)",
-        speed: "fastest, smallest download",
-        download_mb: 400,
-        dim: 512,
-        hf_repo: "apple/MobileCLIP-S2-OpenCLIP",
-        weights_file: "open_clip_model.safetensors",
-        image_size: 256,
-        family: Family::MobileClip,
-    },
     ModelSpec {
         id: "siglip2-base",
         label: "SigLIP 2 Base",
         quality: "strong retrieval, multilingual queries (Google, 2025)",
-        speed: "moderate — a few times slower than S2",
+        speed: "fast — ~70 photos/s measured on an Apple Silicon GPU",
         download_mb: 1535,
         dim: 768,
         hf_repo: "google/siglip2-base-patch16-256",
-        weights_file: "model.safetensors",
         image_size: 256,
-        family: Family::Siglip,
     },
     ModelSpec {
-        id: "siglip2-large",
-        label: "SigLIP 2 Large",
-        quality: "best of these picks — finest-grained matching",
-        speed: "slowest — roughly 3× the base model",
-        download_mb: 3560,
-        dim: 1024,
-        hf_repo: "google/siglip2-large-patch16-256",
-        weights_file: "model.safetensors",
+        id: "siglip2-so400m",
+        label: "SigLIP 2 SO400M",
+        quality: "best — the shape-optimized encoder behind PaliGemma",
+        speed: "slower — bigger model, roughly 4× the base",
+        download_mb: 4580,
+        dim: 1152,
+        hf_repo: "google/siglip2-so400m-patch16-256",
         image_size: 256,
-        family: Family::Siglip,
     },
 ];
 
@@ -116,30 +96,27 @@ pub struct EmbedModelInfo {
 pub fn is_downloaded(spec: &ModelSpec, cache_dir: &std::path::Path) -> bool {
     let cache = hf_hub::Cache::new(cache_dir.to_path_buf());
     let repo = cache.model(spec.hf_repo.to_string());
-    let mut files = vec![spec.weights_file, "tokenizer.json"];
-    if spec.family == Family::Siglip {
-        files.push("config.json");
-    }
-    files.iter().all(|f| repo.get(f).is_some())
-}
-
-enum Net {
-    MobileClip(Box<mobileclip::MobileClipModel>),
-    Siglip(Box<siglip::Model>),
+    ["model.safetensors", "tokenizer.json", "config.json"]
+        .iter()
+        .all(|f| repo.get(f).is_some())
 }
 
 pub struct Embedder {
-    net: Net,
+    net: Box<siglip::Model>,
     tokenizer: Tokenizer,
     device: Device,
     image_size: usize,
     /// SigLIP pads text to a fixed length; (length, pad token id).
-    text_pad: Option<(usize, u32)>,
+    text_pad: (usize, u32),
     pub model_id: &'static str,
     pub dim: usize,
 }
 
 fn best_device() -> Device {
+    // Escape hatch for benchmarking and for machines with broken Metal.
+    if std::env::var_os("IMGVWR_EMBED_CPU").is_some() {
+        return Device::Cpu;
+    }
     #[cfg(target_os = "macos")]
     {
         if let Ok(device) = Device::new_metal(0) {
@@ -160,44 +137,30 @@ impl Embedder {
         let repo = api.model(spec.hf_repo.to_string());
         let get = |file: &str| repo.get(file).map_err(|e| EmbedError::Download(e.to_string()));
 
-        let weights = get(spec.weights_file)?;
+        let weights = get("model.safetensors")?;
         let tokenizer =
             Tokenizer::from_file(get("tokenizer.json")?).map_err(|e| EmbedError::Model(e.to_string()))?;
+        let config: siglip::Config = serde_json::from_slice(
+            &std::fs::read(get("config.json")?).map_err(|e| EmbedError::Model(e.to_string()))?,
+        )
+        .map_err(|e| EmbedError::Model(e.to_string()))?;
 
         let device = best_device();
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(std::slice::from_ref(&weights), DType::F32, &device)
                 .map_err(|e| EmbedError::Model(e.to_string()))?
         };
-
-        let (net, text_pad) = match spec.family {
-            Family::MobileClip => {
-                let config = mobileclip::MobileClipConfig::s2();
-                let net = mobileclip::MobileClipModel::new(vb, &config)
-                    .map_err(|e| EmbedError::Model(e.to_string()))?;
-                (Net::MobileClip(Box::new(net)), None)
-            }
-            Family::Siglip => {
-                let config: siglip::Config = serde_json::from_slice(
-                    &std::fs::read(get("config.json")?).map_err(|e| EmbedError::Model(e.to_string()))?,
-                )
-                .map_err(|e| EmbedError::Model(e.to_string()))?;
-                let pad = (
-                    config.text_config.max_position_embeddings,
-                    config.text_config.pad_token_id,
-                );
-                let net =
-                    siglip::Model::new(&config, vb).map_err(|e| EmbedError::Model(e.to_string()))?;
-                (Net::Siglip(Box::new(net)), Some(pad))
-            }
-        };
+        let net = siglip::Model::new(&config, vb).map_err(|e| EmbedError::Model(e.to_string()))?;
 
         Ok(Self {
-            net,
+            net: Box::new(net),
             tokenizer,
             device,
             image_size: spec.image_size,
-            text_pad,
+            text_pad: (
+                config.text_config.max_position_embeddings,
+                config.text_config.pad_token_id,
+            ),
             model_id: spec.id,
             dim: spec.dim as usize,
         })
@@ -220,21 +183,18 @@ impl Embedder {
             .and_then(|t| t.permute((2, 0, 1)))
             .and_then(|t| t.to_dtype(DType::F32))
             .map_err(|e| EmbedError::Image(e.to_string()))?;
-        // Each family's own pixel normalization.
-        let tensor = match self.net {
-            Net::MobileClip(_) => tensor.affine(1. / 255., 0.),
-            Net::Siglip(_) => tensor.affine(2. / 255., -1.),
-        }
-        .map_err(|e| EmbedError::Image(e.to_string()))?;
+        // SigLIP pixel normalization: [0, 255] → [-1, 1].
+        let tensor = tensor
+            .affine(2. / 255., -1.)
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
         let batch = tensor
             .unsqueeze(0)
             .and_then(|t| t.to_device(&self.device))
             .map_err(|e| EmbedError::Image(e.to_string()))?;
-        let features = match &self.net {
-            Net::MobileClip(m) => m.get_image_features(&batch),
-            Net::Siglip(m) => m.get_image_features(&batch),
-        }
-        .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let features = self
+            .net
+            .get_image_features(&batch)
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
         let vec = features
             .flatten_all()
             .and_then(|t| t.to_vec1::<f32>())
@@ -249,16 +209,14 @@ impl Embedder {
             .encode(query, true)
             .map_err(|e| EmbedError::Text(e.to_string()))?;
         let mut ids = encoding.get_ids().to_vec();
-        if let Some((max_len, pad_id)) = self.text_pad {
-            ids.truncate(max_len);
-            ids.resize(max_len, pad_id);
-        }
+        let (max_len, pad_id) = self.text_pad;
+        ids.truncate(max_len);
+        ids.resize(max_len, pad_id);
         let input = Tensor::new(vec![ids], &self.device).map_err(|e| EmbedError::Text(e.to_string()))?;
-        let features = match &self.net {
-            Net::MobileClip(m) => m.get_text_features(&input),
-            Net::Siglip(m) => m.get_text_features(&input),
-        }
-        .map_err(|e| EmbedError::Text(e.to_string()))?;
+        let features = self
+            .net
+            .get_text_features(&input)
+            .map_err(|e| EmbedError::Text(e.to_string()))?;
         let vec = features
             .flatten_all()
             .and_then(|t| t.to_vec1::<f32>())

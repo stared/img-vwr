@@ -6,6 +6,7 @@ import {
   events,
 } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
+import { registerFilterField } from "../registry/filters";
 import { registerSort } from "../registry/sorts";
 import { applyQuery } from "../state/query";
 import type { Similarity } from "../state/store";
@@ -13,9 +14,10 @@ import { useAppStore } from "../state/store";
 
 /**
  * Similarity module — the first consumer of the embedding plugin crate.
- * Registers a transient "similar" sort whose scores come from Rust (a local
- * dual-encoder model the user picks in the Similarity panel), plus the two
- * commands that set an anchor: the selected image, or a typed phrase.
+ * Registers the transient "closest" sort whose scores come from Rust (a
+ * local dual-encoder model picked in the Similarity panel). The anchor is a
+ * clause in the query bar — `closest to: "phrase" with <model>` — typed and
+ * edited right there; commands cover the selected-image and palette flows.
  */
 
 function inFolderScope(): boolean {
@@ -62,13 +64,21 @@ function selectedEntryPath(): { path: string; name: string } | null {
 }
 
 async function refreshModels(): Promise<void> {
-  useAppStore.getState().setEmbedModels(await embeddingModels());
+  const models = await embeddingModels();
+  const { setEmbedModels, setEmbedStatus, embedStatus } = useAppStore.getState();
+  setEmbedModels(models);
+  // After a webview reload the Rust side may still hold a loaded model;
+  // mirror it back so the commands stay available.
+  const active = models.find((m) => m.active);
+  if (active && embedStatus === null) {
+    setEmbedStatus({ modelId: active.id, phase: "ready", error: null });
+  }
 }
 
 export function registerSimilarity(): void {
   registerSort({
     id: "similar",
-    label: "similar",
+    label: "closest",
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
     transient: true,
@@ -80,10 +90,19 @@ export function registerSimilarity(): void {
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
 
+  // The anchor is added like any other clause: "+ → closest to…" opens the
+  // inline phrase input in the query bar.
+  registerFilterField({
+    id: "closest",
+    label: "closest to…",
+    appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
+    pick: () => useAppStore.getState().setClosestOpen(true),
+  });
+
   registerCommand({
     id: "similar.image",
-    title: "Sort by Similarity to This Image",
-    keywords: ["alike", "embedding", "nearest", "resembles"],
+    title: "Closest to This Image",
+    keywords: ["similar", "alike", "embedding", "nearest", "resembles"],
     when: (ctx: CommandContext) =>
       inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
     run: async () => {
@@ -95,8 +114,8 @@ export function registerSimilarity(): void {
 
   registerCommand({
     id: "similar.text",
-    title: "Search by Meaning…",
-    keywords: ["semantic", "phrase", "describe", "embedding", "clip"],
+    title: "Closest to Phrase…",
+    keywords: ["similar", "semantic", "describe", "embedding", "clip", "search by meaning"],
     input: { placeholder: "describe it, e.g. sunset over mountains" },
     when: (ctx: CommandContext) =>
       inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
@@ -119,6 +138,11 @@ export function registerSimilarity(): void {
     }
     // downloaded/active flags changed; refresh the picker.
     if (phase === "ready" || phase === "error") void refreshModels();
+    // A newly loaded model measures a different space: recompute the anchor.
+    if (phase === "ready") {
+      const { similarity } = useAppStore.getState();
+      if (similarity) void similarTo(similarity.anchor, similarity.label);
+    }
   });
 
   void events.embeddingProgress.listen(({ payload }) => {

@@ -336,9 +336,9 @@ kbd {
   color: var(--danger);
 }
 
-/* Similarity chip has no editor menu; the body is inert text. */
-.chip-static {
-  cursor: default;
+/* The model name inside the closest-to chip reads as secondary. */
+.chip-dim {
+  color: var(--text-dim);
 }
 
 .crumbs {
