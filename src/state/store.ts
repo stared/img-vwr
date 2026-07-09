@@ -454,14 +454,15 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
 
-  setSimilarity: (similarity) =>
+  setSimilarity: (similarity) => {
+    // Streaming score updates must not reset a direction the user flipped.
+    const current = get().query.sort;
+    const dir = current.key === "similar" ? current.dir : "desc";
     set({
       similarity,
-      ...withQuery(
-        { ...get(), similarity },
-        { ...get().query, sort: { key: "similar", dir: "desc" } },
-      ),
-    }),
+      ...withQuery({ ...get(), similarity }, { ...get().query, sort: { key: "similar", dir } }),
+    });
+  },
 
   clearSimilarity: () => {
     const { query } = get();
