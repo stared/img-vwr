@@ -653,6 +653,41 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
+/* Sort-chip tokens: each word is its own click target. Live tokens (the
+   phrase, the model) show their editability on hover. */
+.chip-sort {
+  padding: 0;
+}
+
+.chip-seg {
+  padding: 2px 3px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.chip-seg:first-child {
+  padding-left: 8px;
+}
+
+.chip-seg-live {
+  text-decoration: underline dotted var(--text-dim);
+  text-underline-offset: 3px;
+}
+
+.chip-seg-live:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.chip-sort input {
+  width: 140px;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
 .filter-menu.sort-menu {
   left: auto;
   right: 0;

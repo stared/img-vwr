@@ -11,6 +11,7 @@ import { registerSort } from "../registry/sorts";
 import { applyQuery } from "../state/query";
 import type { Similarity } from "../state/store";
 import { useAppStore } from "../state/store";
+import { ModelMenu } from "./ModelMenu";
 
 /**
  * Similarity module — the first consumer of the embedding plugin crate.
@@ -86,12 +87,30 @@ export function registerSimilarity(): void {
     appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
     reads: "scores",
     param: {
-      // The chip carries the full clause — anchor and model — in one place.
-      chipLabel: () => {
-        const { similarity, embedModels } = useAppStore.getState();
-        if (!similarity) return "closest";
-        const model = embedModels.find((m) => m.active)?.label ?? "no model";
-        return `closest to ${similarity.label} with ${model}`;
+      // The chip is the whole clause, each token editable in place:
+      // closest to ["people dancing"] with [SigLIP 2 Base].
+      segments: () => {
+        const { similarity, embedModels, embedStatus } = useAppStore.getState();
+        const busy =
+          embedStatus?.phase === "downloading" || embedStatus?.phase === "loading";
+        const model = busy
+          ? `${embedStatus.phase}…`
+          : (embedModels.find((m) => m.active)?.label ?? "no model");
+        return [
+          { kind: "text", text: "closest to" },
+          {
+            kind: "edit",
+            text: similarity === null ? "…" : similarity.label,
+            prefill: similarity?.anchor.kind === "text" ? similarity.anchor.query : "",
+            placeholder: "describe it…",
+            commit: (value) => {
+              const query = value.trim();
+              if (query) void similarTo({ kind: "text", query }, `"${query}"`);
+            },
+          },
+          { kind: "text", text: "with" },
+          { kind: "menu", text: model, Menu: ModelMenu },
+        ];
       },
       collectLabel: "closest to…",
       collectHint: "type a phrase",

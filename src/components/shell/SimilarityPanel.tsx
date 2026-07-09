@@ -1,9 +1,6 @@
 import { embeddingSelect } from "../../ipc";
+import { downloadLabel } from "../../similarity/ModelMenu";
 import { useAppStore } from "../../state/store";
-
-function downloadLabel(mb: number): string {
-  return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`;
-}
 
 /**
  * Model picker for "closest to" sorting. Each row carries its quality and

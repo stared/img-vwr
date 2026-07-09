@@ -45,7 +45,7 @@ beforeAll(() => {
     appliesTo: () => true,
     reads: "scores",
     param: {
-      chipLabel: () => "closest to x",
+      segments: () => [{ kind: "text", text: "closest to x" }],
       collectLabel: "closest to…",
       collectHint: "type a phrase",
       isSet: () => true,

@@ -1,3 +1,5 @@
+import type { ComponentType } from "react";
+
 import type { FileEntry, ImageMeta } from "../ipc";
 import type { Scope } from "../state/store";
 
@@ -31,13 +33,32 @@ export interface SortValueContext {
 export type SortReads = "entry" | "meta" | "scores";
 
 /**
+ * One token of a parameterized sort's chip. Every token declares its own
+ * interaction: inert words open the sort menu like the rest of the chip,
+ * `edit` tokens turn into an inline input in place, `menu` tokens drop
+ * their own dropdown (e.g. the model picker).
+ */
+export type SortChipSegment =
+  | { kind: "text"; text: string }
+  | {
+      kind: "edit";
+      text: string;
+      prefill: string;
+      placeholder: string;
+      commit: (value: string) => void;
+    }
+  | { kind: "menu"; text: string; Menu: ComponentType<{ close: () => void }> };
+
+/**
  * A parameterized sort carries transient state (an anchor image, a phrase)
- * and defines its whole lifecycle in one place: how the chip reads, how the
- * parameter is collected from the sort menu, and how it is dismissed.
+ * and defines its whole lifecycle in one place: how the chip reads and is
+ * edited (segments), how the parameter is collected from the sort menu,
+ * and how it is dismissed.
  */
 export interface SortParam {
-  /** Full self-describing chip text, e.g. `closest to "sunset" with SigLIP 2 Base`. */
-  chipLabel: () => string;
+  /** The chip as click-target tokens, e.g.
+   * `closest to · ["sunset"] · with · [SigLIP 2 Base]`. */
+  segments: () => SortChipSegment[];
   /** Menu row shown while the parameter is unset, e.g. `closest to…`. */
   collectLabel: string;
   collectHint: string;
