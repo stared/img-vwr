@@ -241,8 +241,8 @@ export function sortForScope(scope: Scope, current: Sort): Sort {
     if (declared) return declared;
   }
   const provider = getSort(current.key);
-  // Transient sorts (similarity) lose their anchor with the scope.
-  if (provider && !provider.transient && (provider.appliesTo?.(scope) ?? true)) return current;
+  // Parameterized sorts (similarity) lose their anchor with the scope.
+  if (provider && provider.param === null && provider.appliesTo(scope)) return current;
   return defaultQuery.sort;
 }
 

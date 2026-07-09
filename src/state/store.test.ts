@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { clearSortsForTest, registerSort } from "../registry/sorts";
-import { clearSourcesForTest, registerSource } from "../registry/sources";
+import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
 import { sortForScope, type Scope } from "./store";
@@ -26,18 +26,32 @@ beforeAll(() => {
       {
         id: "tsrc.rank",
         label: "rank",
+        hints: { asc: "as delivered", desc: "reversed" },
         defaultDir: "asc",
+        appliesTo: sourceScope("tsrc"),
+        reads: "entry",
+        param: null,
         value: (_entry, ctx) => ctx.sourceIndex,
       },
     ],
     defaultSort: { key: "tsrc.rank", dir: "asc" },
+    filters: [],
   });
   registerSort({
     id: "test.similar",
     label: "similar",
+    hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
-    transient: true,
-    needsScores: true,
+    appliesTo: () => true,
+    reads: "scores",
+    param: {
+      chipLabel: () => "closest to x",
+      collectLabel: "closest to…",
+      collectHint: "type a phrase",
+      isSet: () => true,
+      collect: () => {},
+      clear: () => {},
+    },
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
   registerSource({
@@ -48,6 +62,9 @@ beforeAll(() => {
     placeholder: "",
     label: (arg) => arg,
     fetch: () => Promise.resolve([]),
+    sorts: [],
+    defaultSort: null,
+    filters: [],
   });
 });
 

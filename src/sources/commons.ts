@@ -1,6 +1,7 @@
 import { fetch } from "@tauri-apps/plugin-http";
 
 import type { ImageSource, SourceItem } from "../registry/sources";
+import { sourceScope } from "../registry/sources";
 import { urlExtension } from "./shared";
 
 const API = "https://commons.wikimedia.org/w/api.php";
@@ -117,10 +118,14 @@ export const commonsSource: ImageSource = {
       label: "relevance",
       hints: { asc: "best match", desc: "reversed" },
       defaultDir: "asc",
+      appliesTo: sourceScope("commons"),
+      reads: "entry",
+      param: null,
       value: (_entry, ctx) => ctx.sourceIndex,
     },
   ],
   defaultSort: { key: "commons.relevance", dir: "asc" },
+  filters: [],
   fetch: async (arg) => {
     if (!arg.trim()) throw new Error("no search given");
     const response = await fetch(commonsRequestUrl(arg), {

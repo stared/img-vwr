@@ -5,22 +5,47 @@ import type { Scope } from "../state/store";
  * Sort registry — every way a collection can be ordered. Sort options are
  * deliberately not hardcoded anywhere: the built-ins (name, modified, size)
  * register here at startup, sources contribute orders that only exist on
- * their collections (Reddit's hot rank, Commons' search relevance), and a
- * future plugin API registers into the same table (e.g. "similar to…" from
- * an embedding model). The sort menu, chip, and palette commands are all
- * derived from this table, filtered by scope.
+ * their collections (Reddit's hot rank, Commons' search relevance), and
+ * plugins register into the same table. The sort menu, chip, and palette
+ * commands are all derived from this table, filtered by scope.
+ *
+ * The contract is TOTAL — no optional fields, no fallbacks. Every provider
+ * states where it applies, what its value reads, and whether it is
+ * parameterized; inconsistent partial combinations cannot be expressed.
  */
 
 export type SortDir = "asc" | "desc";
 
 export interface SortValueContext {
+  /** Per-image metadata; undefined until the background read delivers it. */
   meta: ImageMeta | undefined;
   /** Position in the collection as it was delivered — scan order for
    * folders, API rank for sources. */
   sourceIndex: number;
-  /** Computed per-image scores (e.g. similarity), keyed by path. Empty
+  /** Computed per-image scores (e.g. similarity), keyed by path; empty
    * unless something put scores into the store. */
   scores: Record<string, number>;
+}
+
+/** What a sort's value function reads; drives re-sort invalidation. */
+export type SortReads = "entry" | "meta" | "scores";
+
+/**
+ * A parameterized sort carries transient state (an anchor image, a phrase)
+ * and defines its whole lifecycle in one place: how the chip reads, how the
+ * parameter is collected from the sort menu, and how it is dismissed.
+ */
+export interface SortParam {
+  /** Full self-describing chip text, e.g. `closest to "sunset" with SigLIP 2 Base`. */
+  chipLabel: () => string;
+  /** Menu row shown while the parameter is unset, e.g. `closest to…`. */
+  collectLabel: string;
+  collectHint: string;
+  isSet: () => boolean;
+  /** Collect the missing parameter (e.g. open the phrase editor). */
+  collect: () => void;
+  /** Drop the parameter (and with it the sort); rendered as the chip's ×. */
+  clear: () => void;
 }
 
 export interface SortProvider {
@@ -28,24 +53,16 @@ export interface SortProvider {
   /** Query-language label, lowercase; the chip reads "sort: {label}". */
   label: string;
   /** Menu hint per direction, e.g. "A→Z" / "Z→A". */
-  hints?: { asc: string; desc: string };
+  hints: { asc: string; desc: string };
   /** Direction the first invocation uses; invoking again flips. */
   defaultDir: SortDir;
-  /** Scopes where this sort makes sense; omit = everywhere. */
-  appliesTo?: (scope: Scope | null) => boolean;
-  /** True when `value` reads per-image metadata (which streams in late). */
-  needsMeta?: boolean;
-  /** True when `value` reads computed scores from the store. */
-  needsScores?: boolean;
-  /** Tied to transient state (an anchor image, a query); reset to the
-   * scope default instead of surviving a scope change. */
-  transient?: boolean;
-  /** Full self-describing chip text for parameterized sorts, e.g.
-   * `closest to "sunset" with SigLIP 2 Base`; falls back to `label`. */
-  chipLabel?: () => string;
-  /** Present on dismissible sorts: drops the parameter (and the sort with
-   * it); rendered as the chip's ×. */
-  clear?: () => void;
+  /** Scopes where this sort makes sense. */
+  appliesTo: (scope: Scope | null) => boolean;
+  /** What `value` reads. */
+  reads: SortReads;
+  /** null for plain sorts (which survive scope changes); parameterized
+   * sorts reset with the scope and carry their full lifecycle here. */
+  param: SortParam | null;
   /** The sortable value: numbers compare numerically, strings naturally
    * (case-insensitive, numeric-aware); null always sorts last. */
   value: (entry: FileEntry, ctx: SortValueContext) => number | string | null;
@@ -70,7 +87,7 @@ export function allSorts(): SortProvider[] {
 
 /** The sorts offered for a scope, in registration order. */
 export function sortsFor(scope: Scope | null): SortProvider[] {
-  return allSorts().filter((p) => p.appliesTo?.(scope) ?? true);
+  return allSorts().filter((p) => p.appliesTo(scope));
 }
 
 /** Test-only: reset global registry state between test cases. */

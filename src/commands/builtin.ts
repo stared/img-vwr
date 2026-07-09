@@ -151,13 +151,16 @@ export function registerBuiltinCommands(): void {
  */
 export function registerSortCommands(): void {
   for (const provider of allSorts()) {
+    // Parameterized sorts (similarity) register their own commands that
+    // collect the parameter; a bare "Sort by closest" would do nothing.
+    if (provider.param !== null) continue;
     registerCommand({
       id: `sort.${provider.id}`,
       title: `Sort by ${provider.label}`,
       keywords: ["order", "invoke again to reverse"],
       when: (ctx) => {
         const state = ctx.store.getState();
-        return state.entries.length > 0 && (provider.appliesTo?.(state.scope) ?? true);
+        return state.entries.length > 0 && provider.appliesTo(state.scope);
       },
       run: ({ store }) => store.getState().sortBy(provider.id),
     });

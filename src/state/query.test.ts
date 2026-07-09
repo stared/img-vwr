@@ -32,62 +32,92 @@ beforeAll(() => {
   registerSort({
     id: "test.rank",
     label: "rank",
+    hints: { asc: "as delivered", desc: "reversed" },
     defaultDir: "asc",
     appliesTo: (scope) => scope?.kind === "source",
+    reads: "entry",
+    param: null,
     value: (_entry, ctx) => ctx.sourceIndex,
   });
   registerSort({
     id: "test.score",
     label: "score",
+    hints: { asc: "lowest", desc: "highest" },
     defaultDir: "desc",
-    needsScores: true,
+    appliesTo: () => true,
+    reads: "scores",
+    param: null,
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
 
+  const NoMenu = () => null;
   clearFilterFieldsForTest();
   registerFilterField({
+    kind: "select",
     id: "camera",
     label: "camera",
+    appliesTo: () => true,
     needsMeta: true,
-    select: { value: (_entry, meta) => meta?.exif?.camera ?? null },
+    Menu: NoMenu,
+    value: (_entry, meta) => meta?.exif?.camera ?? null,
   });
   registerFilterField({
+    kind: "select",
     id: "aspect",
     label: "aspect",
+    appliesTo: () => true,
     needsMeta: true,
-    select: {
-      value: (_entry, meta) => {
-        const dims = meta ? effectiveDims(meta) : null;
-        return dims ? aspectLabelOf(dims) : null;
-      },
+    Menu: NoMenu,
+    value: (_entry, meta) => {
+      const dims = meta ? effectiveDims(meta) : null;
+      return dims ? aspectLabelOf(dims) : null;
     },
   });
   registerFilterField({
+    kind: "range",
     id: "taken",
     label: "taken",
+    appliesTo: () => true,
     needsMeta: true,
-    range: dateRangeSpec((_entry, meta) => (meta ? takenMs(meta) : null)),
+    Menu: NoMenu,
+    spec: dateRangeSpec((_entry, meta) => (meta ? takenMs(meta) : null)),
   });
   registerFilterField({
+    kind: "range",
     id: "modified",
     label: "modified",
-    range: dateRangeSpec((entry) => entry.modifiedMs),
+    appliesTo: () => true,
+    needsMeta: false,
+    Menu: NoMenu,
+    spec: dateRangeSpec((entry) => entry.modifiedMs),
   });
   registerFilterField({
+    kind: "range",
     id: "size",
     label: "size",
-    range: numberRangeSpec((entry) => entry.size, { unit: "MB", scale: 1e6, ops: ["<=", ">="] }),
+    appliesTo: () => true,
+    needsMeta: false,
+    Menu: NoMenu,
+    spec: numberRangeSpec((entry) => entry.size, {
+      unit: "MB",
+      scale: 1e6,
+      integer: false,
+      ops: ["<=", ">="],
+    }),
   });
   registerFilterField({
+    kind: "range",
     id: "edge",
     label: "longest edge",
+    appliesTo: () => true,
     needsMeta: true,
-    range: numberRangeSpec(
+    Menu: NoMenu,
+    spec: numberRangeSpec(
       (_entry, meta) => {
         const dims = meta ? effectiveDims(meta) : null;
         return dims ? Math.max(dims.width, dims.height) : null;
       },
-      { unit: "px", integer: true },
+      { unit: "px", scale: 1, integer: true, ops: ["<=", "=", ">="] },
     ),
   });
 });

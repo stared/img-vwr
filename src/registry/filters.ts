@@ -8,28 +8,60 @@ import type { Scope } from "../state/store";
  * Filter-field registry — every field the query can filter on. Like sorts,
  * filter options are deliberately not hardcoded: built-ins (format, camera,
  * aspect, taken, …) register here at startup, and sources or plugins add
- * fields the same way, optionally scoped via `appliesTo`. The "+" menu,
- * the chips' edit menus, and the predicate evaluation all resolve through
- * this table.
+ * fields the same way, scoped via `appliesTo`. The "+" menu, the chips'
+ * edit menus, and the predicate evaluation all resolve through this table.
  *
- * The clause STATE in the query stays plain data keyed by field id; a field
- * provides the BEHAVIOR: how its value is read off an image, how input is
- * parsed, and what menu edits it.
+ * The contract is TOTAL: a field is exactly one of four kinds, each with
+ * every behavior it needs — no optional hooks, no fallback rendering.
+ * The clause STATE in the query stays plain data keyed by field id.
  */
 
-/** A select field buckets each image into a string; clauses match on equality. */
-export interface SelectSpec {
-  /** The bucket an image belongs to; null = unknown, never matches. */
-  value: (entry: FileEntry, meta: ImageMeta | undefined) => string | null;
+interface FieldBase {
+  id: string;
+  /** "+"-menu row label, lowercase like the query language. */
+  label: string;
+  /** Scopes where this field makes sense. */
+  appliesTo: (scope: Scope | null) => boolean;
 }
 
-/** A range field compares a numeric value against a half-open [from, to). */
+/** Picking the row acts immediately (e.g. opens an inline input). */
+export type ActionField = FieldBase & {
+  kind: "action";
+  pick: () => void;
+};
+
+/** A custom submenu with its own clause handling (e.g. format multi-toggle). */
+export type MenuField = FieldBase & {
+  kind: "menu";
+  /** Right-side hint in the "+" menu. */
+  hint: string;
+  needsMeta: boolean;
+  Menu: ComponentType<{ close: () => void }>;
+};
+
+/** Buckets each image into a string; the clause matches on equality. */
+export type SelectField = FieldBase & {
+  kind: "select";
+  needsMeta: boolean;
+  Menu: ComponentType<{ close: () => void }>;
+  /** The bucket an image belongs to; null = unknown, never matches. */
+  value: (entry: FileEntry, meta: ImageMeta | undefined) => string | null;
+};
+
+/** Compares a numeric value against a half-open [from, to). */
+export type RangeField = FieldBase & {
+  kind: "range";
+  needsMeta: boolean;
+  Menu: ComponentType<{ close: () => void }>;
+  spec: RangeSpec;
+};
+
 export interface RangeSpec {
   /** Operators that make sense ("=" is useless for file size). */
   ops: RangeOp[];
   input: "date" | "number";
-  /** Unit shown next to the value input ("MB", "px"). */
-  unit?: string;
+  /** Unit shown next to the value input ("MB", "px"); null for dates. */
+  unit: string | null;
   /** The compared value; null = unknown, never matches. */
   value: (entry: FileEntry, meta: ImageMeta | undefined) => number | null;
   /** Operator + typed value → bounds and a chip label; null = unparsable. */
@@ -38,21 +70,7 @@ export interface RangeSpec {
   initial: (bounds: { from: number; to: number }) => { op: RangeOp; value: string };
 }
 
-export interface FilterField {
-  id: string;
-  /** "+"-menu row label, lowercase like the query language. */
-  label: string;
-  /** Scopes where this field makes sense; omit = everywhere. */
-  appliesTo?: (scope: Scope | null) => boolean;
-  /** True when the predicate reads per-image metadata (streams in late). */
-  needsMeta?: boolean;
-  /** Menu body for the "+" submenu and for editing the field's chip. */
-  Menu?: ComponentType<{ close: () => void }>;
-  /** Picking the row acts immediately instead of opening a submenu. */
-  pick?: () => void;
-  select?: SelectSpec;
-  range?: RangeSpec;
-}
+export type FilterField = ActionField | MenuField | SelectField | RangeField;
 
 const registry = new Map<string, FilterField>();
 
@@ -69,7 +87,7 @@ export function getFilterField(id: string): FilterField | undefined {
 
 /** The filter fields offered for a scope, in registration order. */
 export function filterFieldsFor(scope: Scope | null): FilterField[] {
-  return [...registry.values()].filter((f) => f.appliesTo?.(scope) ?? true);
+  return [...registry.values()].filter((f) => f.appliesTo(scope));
 }
 
 /** Test-only: reset global registry state between test cases. */

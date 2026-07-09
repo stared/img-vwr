@@ -69,11 +69,14 @@ function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined):
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
-      const value = getFilterField(filter.field)?.select?.value(entry, meta);
-      return value != null && value === filter.value;
+      const field = getFilterField(filter.field);
+      if (field?.kind !== "select") return false;
+      return field.value(entry, meta) === filter.value;
     }
     case "range": {
-      const v = getFilterField(filter.field)?.range?.value(entry, meta) ?? null;
+      const field = getFilterField(filter.field);
+      if (field?.kind !== "range") return false;
+      const v = field.spec.value(entry, meta);
       return v !== null && v >= filter.from && v < filter.to;
     }
   }
@@ -128,17 +131,17 @@ export function applyQuery(
 
 /** True when the active sort reads computed scores from the store. */
 export function usesScores(query: Query): boolean {
-  return getSort(query.sort.key)?.needsScores === true;
+  return getSort(query.sort.key)?.reads === "scores";
 }
 
 /** True when applying the query needs per-image metadata. */
 export function usesMeta(query: Query): boolean {
-  if (getSort(query.sort.key)?.needsMeta) return true;
-  return query.filters.some(
-    (f) =>
-      (f.kind === "select" || f.kind === "range") &&
-      getFilterField(f.field)?.needsMeta === true,
-  );
+  if (getSort(query.sort.key)?.reads === "meta") return true;
+  return query.filters.some((f) => {
+    if (f.kind !== "select" && f.kind !== "range") return false;
+    const field = getFilterField(f.field);
+    return field !== undefined && field.kind !== "action" && field.needsMeta;
+  });
 }
 
 /* Pure query editing helpers — the store actions apply these. */
@@ -243,6 +246,7 @@ export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
   return {
     ops: ["<=", "=", ">="],
     input: "date",
+    unit: null,
     value,
     parse: (op, raw) => {
       const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
@@ -267,9 +271,9 @@ export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
  */
 export function numberRangeSpec(
   value: RangeSpec["value"],
-  opts: { unit: string; scale?: number; integer?: boolean; ops?: RangeOp[] },
+  opts: { unit: string; scale: number; integer: boolean; ops: RangeOp[] },
 ): RangeSpec {
-  const { unit, scale = 1, integer = false, ops = ["<=", "=", ">="] } = opts;
+  const { unit, scale, integer, ops } = opts;
   const fromInput = (raw: string): number | null => {
     const n = Number(raw.trim());
     if (!Number.isFinite(n) || n < 0 || raw.trim() === "") return null;
@@ -300,11 +304,13 @@ export function numberRangeSpec(
 
 /** Parse an input against a registered range field; null if either is invalid. */
 export function rangeFromInput(
-  field: string,
+  fieldId: string,
   op: RangeOp,
   raw: string,
 ): { from: number; to: number; label: string } | null {
-  return getFilterField(field)?.range?.parse(op, raw) ?? null;
+  const field = getFilterField(fieldId);
+  if (field?.kind !== "range") return null;
+  return field.spec.parse(op, raw);
 }
 
 export function withoutFilters(query: Query): Query {

@@ -1,6 +1,7 @@
 import { fetch } from "@tauri-apps/plugin-http";
 
 import type { ImageSource, SourceItem } from "../registry/sources";
+import { sourceScope } from "../registry/sources";
 import { urlExtension } from "./shared";
 
 /**
@@ -89,10 +90,14 @@ export const redditSource: ImageSource = {
       label: "hot",
       hints: { asc: "front page", desc: "reversed" },
       defaultDir: "asc",
+      appliesTo: sourceScope("reddit"),
+      reads: "entry",
+      param: null,
       value: (_entry, ctx) => ctx.sourceIndex,
     },
   ],
   defaultSort: { key: "reddit.hot", dir: "asc" },
+  filters: [],
   fetch: async (arg) => {
     const sub = subredditOf(arg);
     if (!sub) throw new Error("no subreddit given");

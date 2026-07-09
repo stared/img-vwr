@@ -81,26 +81,31 @@ export function registerSimilarity(): void {
     label: "closest",
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
-    transient: true,
-    needsScores: true,
-    // Only local folders can be indexed, and the sort only means something
-    // once an anchor has been chosen.
-    appliesTo: (scope) =>
-      scope?.kind === "folder" && useAppStore.getState().similarity !== null,
-    // The chip carries the full clause — anchor and model — in one place.
-    chipLabel: () => {
-      const { similarity, embedModels } = useAppStore.getState();
-      if (!similarity) return "closest";
-      const model = embedModels.find((m) => m.active)?.label ?? "no model";
-      return `closest to ${similarity.label} with ${model}`;
+    // Only local folders can be indexed; without an anchor the sort menu
+    // offers the collect row instead of direction rows.
+    appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
+    reads: "scores",
+    param: {
+      // The chip carries the full clause — anchor and model — in one place.
+      chipLabel: () => {
+        const { similarity, embedModels } = useAppStore.getState();
+        if (!similarity) return "closest";
+        const model = embedModels.find((m) => m.active)?.label ?? "no model";
+        return `closest to ${similarity.label} with ${model}`;
+      },
+      collectLabel: "closest to…",
+      collectHint: "type a phrase",
+      isSet: () => useAppStore.getState().similarity !== null,
+      collect: () => useAppStore.getState().setClosestOpen(true),
+      clear: () => useAppStore.getState().clearSimilarity(),
     },
-    clear: () => useAppStore.getState().clearSimilarity(),
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
 
   // The anchor is added like any other clause: "+ → closest to…" opens the
   // inline phrase input in the query bar.
   registerFilterField({
+    kind: "action",
     id: "closest",
     label: "closest to…",
     appliesTo: (scope) => scope?.kind === "folder" && modelReady(),

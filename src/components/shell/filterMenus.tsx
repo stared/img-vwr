@@ -123,7 +123,8 @@ function opHint(input: "date" | "number", op: RangeOp): string {
  * setting form appear.
  */
 export function RangeMenuForm({ field, close }: { field: string; close: () => void }) {
-  const spec = getFilterField(field)?.range;
+  const registered = getFilterField(field);
+  const spec = registered?.kind === "range" ? registered.spec : undefined;
   const query = useAppStore((s) => s.query);
   const setRangeFilter = useAppStore((s) => s.setRangeFilter);
   const current = query.filters.find((f) => f.kind === "range" && f.field === field);

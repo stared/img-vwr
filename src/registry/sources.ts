@@ -35,35 +35,40 @@ export interface ImageSource {
   fetch: (arg: string) => Promise<SourceItem[]>;
   /**
    * Orders that only exist on this source's collections (API rank, search
-   * relevance). Registered into the sort registry scoped to this source.
+   * relevance); empty when the source has none. Each declares its own
+   * `appliesTo` — nothing is scoped implicitly.
    */
-  sorts?: SortProvider[];
+  sorts: SortProvider[];
   /**
    * Sort a freshly opened collection from this source starts with — the
-   * API's own order is usually the point of opening it.
+   * API's own order is usually the point of opening it. null = keep the
+   * usual keep-if-applies rule.
    */
-  defaultSort?: Sort;
+  defaultSort: Sort | null;
   /**
    * Filter fields that only exist on this source's collections (e.g. a
-   * license on Commons). Registered scoped to this source.
+   * license on Commons); empty when the source has none.
    */
-  filters?: FilterField[];
+  filters: FilterField[];
 }
 
 const registry = new Map<string, ImageSource>();
+
+/** Scope predicate for things that only apply to one source's collections. */
+export function sourceScope(sourceId: string): (scope: Scope | null) => boolean {
+  return (scope) => scope?.kind === "source" && scope.sourceId === sourceId;
+}
 
 export function registerSource(source: ImageSource): void {
   if (registry.has(source.id)) {
     throw new Error(`source already registered: ${source.id}`);
   }
   registry.set(source.id, source);
-  const ownScope = (scope: Scope | null) =>
-    scope?.kind === "source" && scope.sourceId === source.id;
-  for (const sort of source.sorts ?? []) {
-    registerSort({ ...sort, appliesTo: sort.appliesTo ?? ownScope });
+  for (const sort of source.sorts) {
+    registerSort(sort);
   }
-  for (const field of source.filters ?? []) {
-    registerFilterField({ ...field, appliesTo: field.appliesTo ?? ownScope });
+  for (const field of source.filters) {
+    registerFilterField(field);
   }
 }
 

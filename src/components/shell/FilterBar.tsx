@@ -12,27 +12,52 @@ import { useAppStore } from "../../state/store";
 import { FormatMenuItems } from "./filterMenus";
 
 /**
- * Every complete sort choice the current scope offers, from the sort
- * registry — each provider contributes both directions, led by its default.
+ * Every sort choice the current scope offers, from the sort registry — each
+ * provider contributes both directions, led by its default. A parameterized
+ * sort whose parameter is unset contributes one row that collects it
+ * (e.g. "closest to…" opens the phrase editor).
  */
-function sortOptions(scope: Scope | null): { sort: Sort; label: string; hint: string }[] {
-  return sortsFor(scope).flatMap((provider) => {
+type SortRow =
+  | { kind: "sort"; sort: Sort; label: string; hint: string }
+  | { kind: "collect"; label: string; hint: string; collect: () => void };
+
+function sortOptions(scope: Scope | null): SortRow[] {
+  return sortsFor(scope).flatMap((provider): SortRow[] => {
+    if (provider.param !== null && !provider.param.isSet()) {
+      return [
+        {
+          kind: "collect",
+          label: provider.param.collectLabel,
+          hint: provider.param.collectHint,
+          collect: provider.param.collect,
+        },
+      ];
+    }
     const dirs: SortDir[] =
       provider.defaultDir === "asc" ? ["asc", "desc"] : ["desc", "asc"];
     return dirs.map((dir) => ({
+      kind: "sort",
       sort: { key: provider.id, dir },
       label: provider.label,
-      hint: provider.hints?.[dir] ?? "",
+      hint: provider.hints[dir],
     }));
   });
 }
 
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
 
-/** Right-side hint in the "+" menu: the field's operators, or a submenu mark. */
+/** Right-side hint in the "+" menu, by field kind. */
 function fieldHint(field: FilterField): string {
-  if (field.range) return field.range.ops.map((op) => OP_SYMBOL[op]).join(" ");
-  return field.pick ? "" : "›";
+  switch (field.kind) {
+    case "action":
+      return "";
+    case "menu":
+      return field.hint;
+    case "select":
+      return "›";
+    case "range":
+      return field.spec.ops.map((op) => OP_SYMBOL[op]).join(" ");
+  }
 }
 
 /**
@@ -174,8 +199,8 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
   };
 
   const fields = filterFieldsFor(scope);
-  const sub = subId === null ? undefined : fields.find((f) => f.id === subId);
-  const SubMenu = sub?.Menu;
+  const found = subId === null ? undefined : fields.find((f) => f.id === subId);
+  const sub = found !== undefined && found.kind !== "action" ? found : undefined;
 
   return (
     <div className="filter-add">
@@ -193,7 +218,7 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
                   <button
                     key={field.id}
                     onClick={() => {
-                      if (field.pick) {
+                      if (field.kind === "action") {
                         field.pick();
                         close();
                       } else {
@@ -210,7 +235,7 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
                 <button className="menu-back" onClick={() => setSubId(null)}>
                   ‹ {sub.label}
                 </button>
-                {SubMenu && <SubMenu close={close} />}
+                <sub.Menu close={close} />
               </>
             )}
           </div>
@@ -245,6 +270,7 @@ export function FilterBar() {
   const formats = activeFormats(query);
   const showFind = findOpen || nameText !== "";
   const sort = query.sort;
+  const sortProvider = getSort(sort.key);
 
   useEffect(() => {
     if (findOpen) inputRef.current?.focus();
@@ -297,7 +323,7 @@ export function FilterBar() {
         if (filter.kind !== "select" && filter.kind !== "range") {
           return null; // name and format have dedicated chips above
         }
-        const FieldMenu = getFilterField(filter.field)?.Menu;
+        const field = getFilterField(filter.field);
         return (
           <EditableChip
             key={`${filter.kind}-${filter.field}`}
@@ -308,7 +334,10 @@ export function FilterBar() {
                 ? toggleSelectFilter(filter.field, filter.value)
                 : toggleRangeFilter(filter.field, filter.from, filter.to, filter.label)
             }
-            renderMenu={(close) => (FieldMenu ? <FieldMenu close={close} /> : null)}
+            renderMenu={(close) =>
+              // A clause whose field is gone (uninstalled plugin) has no menu.
+              field !== undefined && field.kind !== "action" ? <field.Menu close={close} /> : null
+            }
           />
         );
       })}
@@ -333,7 +362,7 @@ export function FilterBar() {
           parameter and falls back to the default order. */}
       <div className="sort-control">
         <span
-          className={`chip chip-sort chip-edit${getSort(sort.key)?.clear ? " chip-removable" : ""}`}
+          className={`chip chip-sort chip-edit${sortProvider?.param ? " chip-removable" : ""}`}
         >
           <button
             className="chip-body"
@@ -341,14 +370,18 @@ export function FilterBar() {
             onClick={() => setSortMenuOpen(!sortMenuOpen)}
           >
             <span className="chip-key">sort:</span>{" "}
-            {getSort(sort.key)?.chipLabel?.() ?? getSort(sort.key)?.label ?? sort.key}{" "}
+            {sortProvider === undefined
+              ? sort.key
+              : sortProvider.param === null
+                ? sortProvider.label
+                : sortProvider.param.chipLabel()}{" "}
             {sort.dir === "asc" ? "↑" : "↓"}
           </button>
-          {getSort(sort.key)?.clear && (
+          {sortProvider !== undefined && sortProvider.param !== null && (
             <button
               className="chip-x"
               title="remove this sort"
-              onClick={() => getSort(sort.key)?.clear?.()}
+              onClick={sortProvider.param.clear}
             >
               ×
             </button>
@@ -358,20 +391,35 @@ export function FilterBar() {
           <>
             <div className="menu-backdrop" onClick={closeSortMenu} />
             <div className="filter-menu sort-menu">
-              {sortOptions(scope).map(({ sort: option, label, hint }) => {
-                const active = option.key === sort.key && option.dir === sort.dir;
+              {sortOptions(scope).map((row) => {
+                if (row.kind === "collect") {
+                  return (
+                    <button
+                      key={`collect-${row.label}`}
+                      onClick={() => {
+                        row.collect();
+                        closeSortMenu();
+                      }}
+                    >
+                      <span>{row.label}</span>
+                      <span className="menu-hint">{row.hint}</span>
+                      <span className="menu-check"></span>
+                    </button>
+                  );
+                }
+                const active = row.sort.key === sort.key && row.sort.dir === sort.dir;
                 return (
                   <button
-                    key={`${option.key}-${option.dir}`}
+                    key={`${row.sort.key}-${row.sort.dir}`}
                     onClick={() => {
-                      setSort(option);
+                      setSort(row.sort);
                       closeSortMenu();
                     }}
                   >
                     <span>
-                      {label} {option.dir === "asc" ? "↑" : "↓"}
+                      {row.label} {row.sort.dir === "asc" ? "↑" : "↓"}
                     </span>
-                    <span className="menu-hint">{hint}</span>
+                    <span className="menu-hint">{row.hint}</span>
                     <span className="menu-check">{active ? "✓" : ""}</span>
                   </button>
                 );
