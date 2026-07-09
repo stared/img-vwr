@@ -81,6 +81,9 @@ export interface SortProvider {
   appliesTo: (scope: Scope | null) => boolean;
   /** What `value` reads. */
   reads: SortReads;
+  /** What a null value means: sort those entries last, or exclude them
+   * from the visible list entirely (a ranked view shows only the ranked). */
+  missing: "last" | "hide";
   /** null for plain sorts (which survive scope changes); parameterized
    * sorts reset with the scope and carry their full lifecycle here. */
   param: SortParam | null;

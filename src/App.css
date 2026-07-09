@@ -891,6 +891,9 @@ button.stats-row:hover .stats-label {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
+  /* Reserve the scrollbar's width permanently: results streaming in (or a
+     sort hiding rows) must never re-flow the columns. */
+  scrollbar-gutter: stable;
 }
 
 .gallery-inner {

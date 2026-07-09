@@ -117,7 +117,12 @@ export function applyQuery(
       }),
     ]),
   );
-  return [...filtered].sort((a, b) => {
+  // A ranked view shows only ranked entries; they appear as values land.
+  const shown =
+    provider.missing === "hide"
+      ? filtered.filter((e) => (values.get(e.path) ?? null) !== null)
+      : filtered;
+  return [...shown].sort((a, b) => {
     const va = values.get(a.path) ?? null;
     const vb = values.get(b.path) ?? null;
     if (va === null || vb === null) {

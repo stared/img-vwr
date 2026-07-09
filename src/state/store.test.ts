@@ -30,6 +30,7 @@ beforeAll(() => {
         defaultDir: "asc",
         appliesTo: sourceScope("tsrc"),
         reads: "entry",
+        missing: "last",
         param: null,
         value: (_entry, ctx) => ctx.sourceIndex,
       },
@@ -44,6 +45,7 @@ beforeAll(() => {
     defaultDir: "desc",
     appliesTo: () => true,
     reads: "scores",
+    missing: "hide",
     param: {
       segments: () => [{ kind: "text", text: "closest to x" }],
       collectLabel: "closest to…",

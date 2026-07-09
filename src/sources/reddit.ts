@@ -92,6 +92,7 @@ export const redditSource: ImageSource = {
       defaultDir: "asc",
       appliesTo: sourceScope("reddit"),
       reads: "entry",
+      missing: "last",
       param: null,
       value: (_entry, ctx) => ctx.sourceIndex,
     },

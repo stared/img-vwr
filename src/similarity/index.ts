@@ -98,6 +98,9 @@ export function registerSimilarity(): void {
     // offers the collect row instead of direction rows.
     appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
     reads: "scores",
+    // A ranked view shows only what has been ranked: images without a
+    // vector yet stay hidden and appear as their embeddings land.
+    missing: "hide",
     param: {
       // The chip is the whole clause, each token editable in place:
       // closest to ["people dancing"] with [SigLIP 2 Base].

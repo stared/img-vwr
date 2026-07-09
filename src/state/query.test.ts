@@ -36,6 +36,7 @@ beforeAll(() => {
     defaultDir: "asc",
     appliesTo: (scope) => scope?.kind === "source",
     reads: "entry",
+    missing: "last",
     param: null,
     value: (_entry, ctx) => ctx.sourceIndex,
   });
@@ -46,6 +47,7 @@ beforeAll(() => {
     defaultDir: "desc",
     appliesTo: () => true,
     reads: "scores",
+    missing: "hide",
     param: null,
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
@@ -169,7 +171,7 @@ describe("applyQuery", () => {
     expect(filtered.map((e) => e.name)).toEqual(["beach10.jpg", "beach2.jpg"]);
   });
 
-  it("a scores-backed sort ranks scored entries and puts unscored ones last", () => {
+  it("a hide-missing scores sort shows ONLY ranked entries", () => {
     const scores = { "/p/zoo.webp": 0.9, "/p/Alps.png": 0.4 };
     const ranked = applyQuery(
       ENTRIES,
@@ -177,13 +179,10 @@ describe("applyQuery", () => {
       {},
       scores,
     );
-    expect(ranked.map((e) => e.name)).toEqual([
-      "zoo.webp",
-      "Alps.png",
-      // Unscored: name order, always after scored regardless of direction.
-      "beach2.jpg",
-      "beach10.jpg",
-    ]);
+    // Unscored entries are excluded entirely; they appear as scores land.
+    expect(ranked.map((e) => e.name)).toEqual(["zoo.webp", "Alps.png"]);
+    expect(applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.score", dir: "desc" } }))
+      .toEqual([]);
   });
 
   it("an unknown sort key falls back to name order", () => {

@@ -120,6 +120,7 @@ export const commonsSource: ImageSource = {
       defaultDir: "asc",
       appliesTo: sourceScope("commons"),
       reads: "entry",
+      missing: "last",
       param: null,
       value: (_entry, ctx) => ctx.sourceIndex,
     },

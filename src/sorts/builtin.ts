@@ -9,6 +9,7 @@ export function registerBuiltinSorts(): void {
     defaultDir: "asc",
     appliesTo: () => true,
     reads: "entry",
+    missing: "last",
     param: null,
     value: (entry) => entry.name,
   });
@@ -19,6 +20,7 @@ export function registerBuiltinSorts(): void {
     defaultDir: "desc",
     appliesTo: () => true,
     reads: "entry",
+    missing: "last",
     param: null,
     value: (entry) => entry.modifiedMs,
   });
@@ -29,6 +31,7 @@ export function registerBuiltinSorts(): void {
     defaultDir: "desc",
     appliesTo: () => true,
     reads: "entry",
+    missing: "last",
     param: null,
     value: (entry) => entry.size,
   });
