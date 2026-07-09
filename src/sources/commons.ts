@@ -110,6 +110,17 @@ export const commonsSource: ImageSource = {
   glyph: "W",
   placeholder: "search, or Category:…",
   label: (arg) => arg.trim(),
+  // Search results arrive relevance-ranked; category listings alphabetical.
+  sorts: [
+    {
+      id: "commons.relevance",
+      label: "relevance",
+      hints: { asc: "best match", desc: "reversed" },
+      defaultDir: "asc",
+      value: (_entry, ctx) => ctx.sourceIndex,
+    },
+  ],
+  defaultSort: { key: "commons.relevance", dir: "asc" },
   fetch: async (arg) => {
     if (!arg.trim()) throw new Error("no search given");
     const response = await fetch(commonsRequestUrl(arg), {

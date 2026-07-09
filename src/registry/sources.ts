@@ -1,4 +1,6 @@
 import type { FileEntry, ImageMeta } from "../ipc";
+import type { Sort } from "../state/query";
+import { registerSort, type SortProvider } from "./sorts";
 
 /**
  * Source registry — where image collections come from. The folder scanner is
@@ -29,6 +31,16 @@ export interface ImageSource {
   /** Scope-chip value for an argument, e.g. "r/EarthPorn". */
   label: (arg: string) => string;
   fetch: (arg: string) => Promise<SourceItem[]>;
+  /**
+   * Orders that only exist on this source's collections (API rank, search
+   * relevance). Registered into the sort registry scoped to this source.
+   */
+  sorts?: SortProvider[];
+  /**
+   * Sort a freshly opened collection from this source starts with — the
+   * API's own order is usually the point of opening it.
+   */
+  defaultSort?: Sort;
 }
 
 const registry = new Map<string, ImageSource>();
@@ -38,6 +50,14 @@ export function registerSource(source: ImageSource): void {
     throw new Error(`source already registered: ${source.id}`);
   }
   registry.set(source.id, source);
+  for (const sort of source.sorts ?? []) {
+    registerSort({
+      ...sort,
+      appliesTo:
+        sort.appliesTo ??
+        ((scope) => scope?.kind === "source" && scope.sourceId === source.id),
+    });
+  }
 }
 
 export function getSource(id: string): ImageSource | undefined {

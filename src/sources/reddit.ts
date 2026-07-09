@@ -82,6 +82,17 @@ export const redditSource: ImageSource = {
   glyph: "r/",
   placeholder: "subreddit, e.g. EarthPorn",
   label: (arg) => `r/${subredditOf(arg)}`,
+  // The feed is /hot — its order IS the front-page rank, worth sorting by.
+  sorts: [
+    {
+      id: "reddit.hot",
+      label: "hot",
+      hints: { asc: "front page", desc: "reversed" },
+      defaultDir: "asc",
+      value: (_entry, ctx) => ctx.sourceIndex,
+    },
+  ],
+  defaultSort: { key: "reddit.hot", dir: "asc" },
   fetch: async (arg) => {
     const sub = subredditOf(arg);
     if (!sub) throw new Error("no subreddit given");

@@ -1,7 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { registerCommand, type CommandContext } from "../registry/commands";
-import { FORMAT_GROUPS, type SortKey } from "../state/query";
+import { allSorts } from "../registry/sorts";
+import { FORMAT_GROUPS } from "../state/query";
 
 const ZOOM_STEP = 1.25;
 
@@ -118,21 +119,6 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().viewerZoomActual(),
   });
 
-  const sortTitles: Record<SortKey, string> = {
-    name: "Sort by Name",
-    modified: "Sort by Date Modified",
-    size: "Sort by Size",
-  };
-  for (const key of ["name", "modified", "size"] as const) {
-    registerCommand({
-      id: `sort.${key}`,
-      title: sortTitles[key],
-      keywords: ["order", "invoke again to reverse"],
-      when: hasImages,
-      run: ({ store }) => store.getState().sortBy(key),
-    });
-  }
-
   registerCommand({
     id: "filter.find",
     title: "Find by Name…",
@@ -157,4 +143,23 @@ export function registerBuiltinCommands(): void {
     when: ({ store }) => store.getState().query.filters.length > 0,
     run: ({ store }) => store.getState().clearFilters(),
   });
+}
+
+/**
+ * One palette command per registered sort — called after sources register,
+ * so their scope-specific sorts (hot, relevance) get commands too.
+ */
+export function registerSortCommands(): void {
+  for (const provider of allSorts()) {
+    registerCommand({
+      id: `sort.${provider.id}`,
+      title: `Sort by ${provider.label}`,
+      keywords: ["order", "invoke again to reverse"],
+      when: (ctx) => {
+        const state = ctx.store.getState();
+        return state.entries.length > 0 && (provider.appliesTo?.(state.scope) ?? true);
+      },
+      run: ({ store }) => store.getState().sortBy(provider.id),
+    });
+  }
 }

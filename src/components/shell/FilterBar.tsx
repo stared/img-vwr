@@ -1,28 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
+import { getSort, sortsFor, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
-import type { RangeField, Sort, SortKey } from "../../state/query";
+import type { RangeField, Sort } from "../../state/query";
 import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
 import type { Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
 import { AspectMenuItems, CameraMenuItems, FormatMenuItems, RangeMenuForm } from "./filterMenus";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  name: "name",
-  modified: "modified",
-  size: "size",
-};
-
-/** Every complete sort choice, each key led by its most useful direction. */
-const SORT_OPTIONS: { sort: Sort; hint: string }[] = [
-  { sort: { key: "name", dir: "asc" }, hint: "A→Z" },
-  { sort: { key: "name", dir: "desc" }, hint: "Z→A" },
-  { sort: { key: "modified", dir: "desc" }, hint: "newest" },
-  { sort: { key: "modified", dir: "asc" }, hint: "oldest" },
-  { sort: { key: "size", dir: "desc" }, hint: "largest" },
-  { sort: { key: "size", dir: "asc" }, hint: "smallest" },
-];
+/**
+ * Every complete sort choice the current scope offers, from the sort
+ * registry — each provider contributes both directions, led by its default.
+ */
+function sortOptions(scope: Scope | null): { sort: Sort; label: string; hint: string }[] {
+  return sortsFor(scope).flatMap((provider) => {
+    const dirs: SortDir[] =
+      provider.defaultDir === "asc" ? ["asc", "desc"] : ["desc", "asc"];
+    return dirs.map((dir) => ({
+      sort: { key: provider.id, dir },
+      label: provider.label,
+      hint: provider.hints?.[dir] ?? "",
+    }));
+  });
+}
 
 const RANGE_FIELDS: { field: RangeField; label: string }[] = [
   { field: "taken", label: "taken" },
@@ -319,14 +320,14 @@ export function FilterBar() {
           title="change sort"
           onClick={() => setSortMenuOpen(!sortMenuOpen)}
         >
-          <span className="chip-key">sort:</span> {SORT_LABELS[sort.key]}{" "}
+          <span className="chip-key">sort:</span> {getSort(sort.key)?.label ?? sort.key}{" "}
           {sort.dir === "asc" ? "↑" : "↓"}
         </button>
         {sortMenuOpen && (
           <>
             <div className="menu-backdrop" onClick={closeSortMenu} />
             <div className="filter-menu sort-menu">
-              {SORT_OPTIONS.map(({ sort: option, hint }) => {
+              {sortOptions(scope).map(({ sort: option, label, hint }) => {
                 const active = option.key === sort.key && option.dir === sort.dir;
                 return (
                   <button
@@ -337,7 +338,7 @@ export function FilterBar() {
                     }}
                   >
                     <span>
-                      {SORT_LABELS[option.key]} {option.dir === "asc" ? "↑" : "↓"}
+                      {label} {option.dir === "asc" ? "↑" : "↓"}
                     </span>
                     <span className="menu-hint">{hint}</span>
                     <span className="menu-check">{active ? "✓" : ""}</span>

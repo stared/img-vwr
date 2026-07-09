@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
-import { registerBuiltinCommands } from "./commands/builtin";
+import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerSourceCommands } from "./commands/sources";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SOURCE_ICONS } from "./components/shell/icons";
@@ -13,11 +13,16 @@ import { allPanels, registerPanel } from "./registry/panels";
 import { allSources, registerSource } from "./registry/sources";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
+import { registerBuiltinSorts } from "./sorts/builtin";
 
 registerBuiltinCommands();
+registerBuiltinSorts();
+// Sources bring their own scope-specific sorts, so they register first;
+// the sort commands then cover built-ins and source sorts alike.
 registerSource(redditSource);
 registerSource(commonsSource);
 registerSourceCommands();
+registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
 for (const source of allSources()) {
   registerPanel({

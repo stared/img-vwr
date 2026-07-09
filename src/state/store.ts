@@ -12,8 +12,9 @@ import {
 } from "../components/viewer/viewport";
 import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
+import { getSort } from "../registry/sorts";
 import { getSource, type SourceItem } from "../registry/sources";
-import type { Query, RangeField, Sort, SortKey } from "./query";
+import type { Query, RangeField, Sort } from "./query";
 import {
   applyQuery,
   defaultQuery,
@@ -93,7 +94,7 @@ interface AppActions {
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
-  sortBy: (key: SortKey) => void;
+  sortBy: (key: string) => void;
   setSort: (sort: Sort) => void;
   clearFormatFilter: () => void;
   toggleFormatFilter: (group: string) => void;
@@ -187,6 +188,23 @@ export function scopeFailed(message: string): Partial<AppState> {
   return { entries: [], status: "error", error: message };
 }
 
+/**
+ * Sort for a freshly opened scope. A source's declared default wins — its
+ * API order (hot rank, relevance) is usually why you opened it. Otherwise
+ * the current sort survives wherever it still applies (folder → folder
+ * keeps your choice), and falls back to the app default when it doesn't
+ * (e.g. "hot" makes no sense on a local folder).
+ */
+export function sortForScope(scope: Scope, current: Sort): Sort {
+  if (scope.kind === "source") {
+    const declared = getSource(scope.sourceId)?.defaultSort;
+    if (declared) return declared;
+  }
+  const provider = getSort(current.key);
+  if (provider && (provider.appliesTo?.(scope) ?? true)) return current;
+  return defaultQuery.sort;
+}
+
 /** Move the selection by `delta` within `count` items; a real move resets the viewport. */
 export function movedSelection(
   state: Pick<AppState, "selectedIndex">,
@@ -273,7 +291,12 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   openFolder: async (path) => {
     const epoch = await newEpoch();
-    set(scopeLoading({ kind: "folder", path }, epoch));
+    const scope: Scope = { kind: "folder", path };
+    const query = get().query;
+    set({
+      ...scopeLoading(scope, epoch),
+      query: { ...query, sort: sortForScope(scope, query.sort) },
+    });
     try {
       const entries = await scanFolder(path);
       // Ignore a stale response if the user already opened another scope.
@@ -291,7 +314,12 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     const source = getSource(sourceId);
     if (!source) return;
     const epoch = await newEpoch();
-    set(scopeLoading({ kind: "source", sourceId, arg, label: source.label(arg) }, epoch));
+    const scope: Scope = { kind: "source", sourceId, arg, label: source.label(arg) };
+    const query = get().query;
+    set({
+      ...scopeLoading(scope, epoch),
+      query: { ...query, sort: sortForScope(scope, query.sort) },
+    });
     try {
       const items = await source.fetch(arg);
       if (get().epoch === epoch) {

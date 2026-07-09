@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { FileEntry, ImageMeta } from "../ipc";
+import { clearSortsForTest, registerSort, sortsFor } from "../registry/sorts";
+import { registerBuiltinSorts } from "../sorts/builtin";
 import {
   applyQuery,
   dateInputValue,
@@ -18,6 +20,20 @@ import {
   withRangeToggled,
   withSort,
 } from "./query";
+
+// Sort behavior lives in the registry; the engine tests need the built-ins
+// plus one source-style order (position in the collection as delivered).
+beforeAll(() => {
+  clearSortsForTest();
+  registerBuiltinSorts();
+  registerSort({
+    id: "test.rank",
+    label: "rank",
+    defaultDir: "asc",
+    appliesTo: (scope) => scope?.kind === "source",
+    value: (_entry, ctx) => ctx.sourceIndex,
+  });
+});
 
 function entry(name: string, ext: string, size: number, modifiedMs: number): FileEntry {
   return { path: `/p/${name}`, name, formatHint: ext, size, modifiedMs };
@@ -53,6 +69,31 @@ describe("applyQuery", () => {
     expect(byDate[0]?.name).toBe("zoo.webp");
     const bySize = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "size", dir: "asc" } });
     expect(bySize.map((e) => e.size)).toEqual([100, 200, 300, 400]);
+  });
+
+  it("a registered source order sorts by delivery position, surviving filters", () => {
+    const byRank = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.rank", dir: "asc" } });
+    expect(byRank.map((e) => e.name)).toEqual(["beach2.jpg", "beach10.jpg", "Alps.png", "zoo.webp"]);
+    // Positions are assigned before filtering, so rank is stable under filters.
+    const filtered = applyQuery(ENTRIES, {
+      ...withFormatToggled(defaultQuery, "jpeg"),
+      sort: { key: "test.rank", dir: "desc" },
+    });
+    expect(filtered.map((e) => e.name)).toEqual(["beach10.jpg", "beach2.jpg"]);
+  });
+
+  it("an unknown sort key falls back to name order", () => {
+    const names = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "gone.plugin", dir: "asc" } });
+    expect(names.map((e) => e.name)).toEqual(["Alps.png", "beach2.jpg", "beach10.jpg", "zoo.webp"]);
+  });
+
+  it("sortsFor filters providers by scope", () => {
+    const folderIds = sortsFor({ kind: "folder", path: "/p" }).map((p) => p.id);
+    expect(folderIds).toEqual(["name", "modified", "size"]);
+    const sourceIds = sortsFor({ kind: "source", sourceId: "x", arg: "", label: "" }).map(
+      (p) => p.id,
+    );
+    expect(sourceIds).toContain("test.rank");
   });
 
   it("format filter groups jpg and jpeg, filters compose with AND", () => {

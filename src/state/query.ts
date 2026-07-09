@@ -1,4 +1,6 @@
 import type { FileEntry, ImageMeta } from "../ipc";
+import { getSort } from "../registry/sorts";
+import type { SortDir } from "../registry/sorts";
 import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
 
 /**
@@ -6,13 +8,17 @@ import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
  * is the scope (an implicit first filter), explicit filters compose on top,
  * and one sort applies. All fields are already client-side; applying a query
  * is pure and instant.
+ *
+ * The query STATE is plain serializable data; the BEHAVIOR behind a sort key
+ * lives in the sort registry, so sources and plugins can contribute options
+ * without touching this module.
  */
 
-export type SortKey = "name" | "modified" | "size";
-export type SortDir = "asc" | "desc";
+export type { SortDir } from "../registry/sorts";
 
 export interface Sort {
-  key: SortKey;
+  /** A registered sort provider's id ("name", "reddit.hot", …). */
+  key: string;
   dir: SortDir;
 }
 
@@ -32,13 +38,6 @@ export interface Query {
 }
 
 export const defaultQuery: Query = { filters: [], sort: { key: "name", dir: "asc" } };
-
-/** Opinionated first-invocation direction per field; invoking again flips. */
-export const defaultDirFor: Record<SortKey, SortDir> = {
-  name: "asc",
-  modified: "desc", // newest first
-  size: "desc", // largest first
-};
 
 /** Display groups: jpg/jpeg are one thing to a human. */
 export const FORMAT_GROUPS = [
@@ -99,16 +98,10 @@ function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined):
 
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-function compareBy(sort: Sort, a: FileEntry, b: FileEntry): number {
-  const sign = sort.dir === "asc" ? 1 : -1;
-  switch (sort.key) {
-    case "name":
-      return sign * naturalCollator.compare(a.name, b.name);
-    case "modified":
-      return sign * (a.modifiedMs - b.modifiedMs) || naturalCollator.compare(a.name, b.name);
-    case "size":
-      return sign * (a.size - b.size) || naturalCollator.compare(a.name, b.name);
-  }
+/** Numbers numerically, strings naturally; callers put null last themselves. */
+function compareValues(a: number | string, b: number | string): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return naturalCollator.compare(String(a), String(b));
 }
 
 export function applyQuery(
@@ -119,11 +112,35 @@ export function applyQuery(
   const filtered = query.filters.length
     ? entries.filter((e) => query.filters.every((f) => matches(e, f, meta[e.path])))
     : entries;
-  return [...filtered].sort((a, b) => compareBy(query.sort, a, b));
+  const provider = getSort(query.sort.key);
+  if (!provider) {
+    // Unknown sort (e.g. a plugin's, no longer installed): stable name order.
+    return [...filtered].sort((a, b) => naturalCollator.compare(a.name, b.name));
+  }
+  const sign = query.sort.dir === "asc" ? 1 : -1;
+  // The pre-filter position IS the source's own order (scan / API rank).
+  const sourceIndex = new Map(entries.map((e, i) => [e.path, i]));
+  const values = new Map<string, number | string | null>(
+    filtered.map((e) => [
+      e.path,
+      provider.value(e, { meta: meta[e.path], sourceIndex: sourceIndex.get(e.path) ?? 0 }),
+    ]),
+  );
+  return [...filtered].sort((a, b) => {
+    const va = values.get(a.path) ?? null;
+    const vb = values.get(b.path) ?? null;
+    if (va === null || vb === null) {
+      // Unknown values sort last regardless of direction.
+      if (va === null && vb === null) return naturalCollator.compare(a.name, b.name);
+      return va === null ? 1 : -1;
+    }
+    return sign * compareValues(va, vb) || naturalCollator.compare(a.name, b.name);
+  });
 }
 
-/** True when any filter needs per-image metadata to evaluate. */
+/** True when applying the query needs per-image metadata. */
 export function usesMeta(query: Query): boolean {
+  if (getSort(query.sort.key)?.needsMeta) return true;
   return query.filters.some(
     (f) =>
       f.kind === "camera" ||
@@ -134,13 +151,13 @@ export function usesMeta(query: Query): boolean {
 
 /* Pure query editing helpers — the store actions apply these. */
 
-export function withSort(query: Query, key: SortKey): Query {
+export function withSort(query: Query, key: string): Query {
   const dir: SortDir =
     query.sort.key === key
       ? query.sort.dir === "asc"
         ? "desc"
         : "asc"
-      : defaultDirFor[key];
+      : (getSort(key)?.defaultDir ?? "asc");
   return { ...query, sort: { key, dir } };
 }
 
