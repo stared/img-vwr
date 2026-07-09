@@ -654,8 +654,11 @@ button.stats-row:hover .stats-label {
 }
 
 /* Sort-chip tokens: each word is its own click target. Live tokens (the
-   phrase, the model) show their editability on hover. */
+   phrase, the model) show their editability on hover. The chip sits above
+   the menu backdrop so it stays interactive while collecting a parameter. */
 .chip-sort {
+  position: relative;
+  z-index: 51;
   padding: 0;
 }
 

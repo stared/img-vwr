@@ -59,12 +59,12 @@ export interface SortParam {
   /** The chip as click-target tokens, e.g.
    * `closest to · ["sunset"] · with · [SigLIP 2 Base]`. */
   segments: () => SortChipSegment[];
-  /** Menu row shown while the parameter is unset, e.g. `closest to…`. */
+  /** Menu row shown while the parameter is unset, e.g. `closest to…`.
+   * Picking it morphs the sort chip into these segments with the first
+   * `edit` token open — collection happens in the chip, nowhere else. */
   collectLabel: string;
   collectHint: string;
   isSet: () => boolean;
-  /** Collect the missing parameter (e.g. open the phrase editor). */
-  collect: () => void;
   /** Drop the parameter (and with it the sort); rendered as the chip's ×. */
   clear: () => void;
 }

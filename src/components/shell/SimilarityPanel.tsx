@@ -18,9 +18,8 @@ export function SimilarityPanel() {
   return (
     <div className="similarity">
       <p className="panel-hint">
-        Sort a folder by likeness — to an image, or to a phrase typed in the
-        query bar (+ → closest to…). A local model computes it; nothing
-        leaves this machine.
+        Sort a folder by likeness — to an image, or to a phrase (sort: →
+        closest to…). A local model computes it; nothing leaves this machine.
       </p>
 
       <div className="model-list">

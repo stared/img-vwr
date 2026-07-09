@@ -49,7 +49,6 @@ beforeAll(() => {
       collectLabel: "closest to…",
       collectHint: "type a phrase",
       isSet: () => true,
-      collect: () => {},
       clear: () => {},
     },
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,

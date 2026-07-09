@@ -6,7 +6,6 @@ import {
   events,
 } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
-import { registerFilterField } from "../registry/filters";
 import { registerSort } from "../registry/sorts";
 import { applyQuery } from "../state/query";
 import type { Similarity } from "../state/store";
@@ -115,20 +114,9 @@ export function registerSimilarity(): void {
       collectLabel: "closest to…",
       collectHint: "type a phrase",
       isSet: () => useAppStore.getState().similarity !== null,
-      collect: () => useAppStore.getState().setClosestOpen(true),
       clear: () => useAppStore.getState().clearSimilarity(),
     },
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
-  });
-
-  // The anchor is added like any other clause: "+ → closest to…" opens the
-  // inline phrase input in the query bar.
-  registerFilterField({
-    kind: "action",
-    id: "closest",
-    label: "closest to…",
-    appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
-    pick: () => useAppStore.getState().setClosestOpen(true),
   });
 
   registerCommand({

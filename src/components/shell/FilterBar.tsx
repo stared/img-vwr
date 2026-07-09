@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
-import { similarTo } from "../../similarity";
 import { filterFieldsFor, getFilterField, type FilterField } from "../../registry/filters";
 import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
@@ -19,7 +18,7 @@ import { FormatMenuItems } from "./filterMenus";
  */
 type SortRow =
   | { kind: "sort"; sort: Sort; label: string; hint: string }
-  | { kind: "collect"; label: string; hint: string; collect: () => void };
+  | { kind: "collect"; providerId: string; label: string; hint: string };
 
 function sortOptions(scope: Scope | null): SortRow[] {
   return sortsFor(scope).flatMap((provider): SortRow[] => {
@@ -27,9 +26,9 @@ function sortOptions(scope: Scope | null): SortRow[] {
       return [
         {
           kind: "collect",
+          providerId: provider.id,
           label: provider.param.collectLabel,
           hint: provider.param.collectHint,
-          collect: provider.param.collect,
         },
       ];
     }
@@ -101,51 +100,6 @@ function EditableChip({
         </>
       )}
     </div>
-  );
-}
-
-/**
- * Transient editor for the "closest to" phrase — visible only while typing;
- * the committed clause lives in the sort chip (`sort: closest to "…" with
- * <model> ↓`), never as a second chip.
- */
-function ClosestChip() {
-  const closestOpen = useAppStore((s) => s.closestOpen);
-  const setClosestOpen = useAppStore((s) => s.setClosestOpen);
-  const [text, setText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!closestOpen) return;
-    // Prefill with the current phrase when editing an existing anchor.
-    const anchor = useAppStore.getState().similarity?.anchor;
-    setText(anchor?.kind === "text" ? anchor.query : "");
-    inputRef.current?.focus();
-  }, [closestOpen]);
-
-  if (!closestOpen) return null;
-  return (
-    <span className="chip">
-      <span className="chip-key">closest to:</span>
-      <input
-        ref={inputRef}
-        value={text}
-        placeholder="describe it…"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && text.trim()) {
-            const query = text.trim();
-            void similarTo({ kind: "text", query }, `"${query}"`);
-            setClosestOpen(false);
-          }
-          if (e.key === "Escape") {
-            setClosestOpen(false);
-            e.stopPropagation();
-          }
-        }}
-        onBlur={() => setClosestOpen(false)}
-      />
-    </span>
   );
 }
 
@@ -265,13 +219,18 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
   const [openSeg, setOpenSeg] = useState<number | null>(null);
   const [editingSeg, setEditingSeg] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+  /** Provider id whose parameter is being collected in the chip right now. */
+  const [collecting, setCollecting] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editingSeg !== null) editRef.current?.focus();
   }, [editingSeg]);
 
-  const provider = getSort(sort.key);
+  const activeProvider = getSort(sort.key);
+  // While collecting, the chip shows the PENDING sort's segments instead.
+  const collectingProvider = collecting === null ? undefined : getSort(collecting);
+  const provider = collectingProvider ?? activeProvider;
   const segments: SortChipSegment[] =
     provider === undefined
       ? [{ kind: "text", text: sort.key }]
@@ -279,13 +238,27 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
         ? [{ kind: "text", text: provider.label }]
         : provider.param.segments();
 
+  const cancelCollect = () => {
+    setCollecting(null);
+    setEditingSeg(null);
+  };
   const closeAll = () => {
     setSortMenuOpen(false);
     setOpenSeg(null);
   };
   const toggleSortMenu = () => {
+    cancelCollect();
     setOpenSeg(null);
     setSortMenuOpen(!sortMenuOpen);
+  };
+  const startCollect = (providerId: string) => {
+    const pending = getSort(providerId);
+    if (pending === undefined || pending.param === null) return;
+    const editIndex = pending.param.segments().findIndex((s) => s.kind === "edit");
+    setCollecting(providerId);
+    setEditingSeg(editIndex >= 0 ? editIndex : null);
+    setEditText("");
+    closeAll();
   };
 
   const openSegment = openSeg === null ? undefined : segments[openSeg];
@@ -309,14 +282,18 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && editText.trim()) {
                     seg.commit(editText);
-                    setEditingSeg(null);
+                    cancelCollect();
                   }
                   if (e.key === "Escape") {
-                    setEditingSeg(null);
+                    cancelCollect();
                     e.stopPropagation();
                   }
                 }}
-                onBlur={() => setEditingSeg(null)}
+                // While collecting, the input persists so the model can be
+                // picked first; the backdrop handles clicks elsewhere.
+                onBlur={() => {
+                  if (collecting === null) setEditingSeg(null);
+                }}
               />
             );
           }
@@ -350,19 +327,23 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
             </button>
           );
         })}
-        <button
-          className="chip-seg"
-          title="flip direction"
-          onClick={() => setSort({ key: sort.key, dir: sort.dir === "asc" ? "desc" : "asc" })}
-        >
-          {sort.dir === "asc" ? "↑" : "↓"}
-        </button>
-        {provider !== undefined && provider.param !== null && (
+        {collecting === null && (
+          <button
+            className="chip-seg"
+            title="flip direction"
+            onClick={() => setSort({ key: sort.key, dir: sort.dir === "asc" ? "desc" : "asc" })}
+          >
+            {sort.dir === "asc" ? "↑" : "↓"}
+          </button>
+        )}
+        {collecting === null && provider !== undefined && provider.param !== null && (
           <button className="chip-x" title="remove this sort" onClick={provider.param.clear}>
             ×
           </button>
         )}
       </span>
+
+      {collecting !== null && <div className="menu-backdrop" onClick={cancelCollect} />}
 
       {SegMenu !== undefined && (
         <>
@@ -381,11 +362,8 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
               if (row.kind === "collect") {
                 return (
                   <button
-                    key={`collect-${row.label}`}
-                    onClick={() => {
-                      row.collect();
-                      closeAll();
-                    }}
+                    key={`collect-${row.providerId}`}
+                    onClick={() => startCollect(row.providerId)}
                   >
                     <span>{row.label}</span>
                     <span className="menu-hint">{row.hint}</span>
@@ -508,8 +486,6 @@ export function FilterBar() {
           />
         );
       })}
-
-      <ClosestChip />
 
       <AddFilterMenu scope={scope} />
 
