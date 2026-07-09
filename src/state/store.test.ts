@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { clearSortsForTest } from "../registry/sorts";
+import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
@@ -31,6 +31,14 @@ beforeAll(() => {
       },
     ],
     defaultSort: { key: "tsrc.rank", dir: "asc" },
+  });
+  registerSort({
+    id: "test.similar",
+    label: "similar",
+    defaultDir: "desc",
+    transient: true,
+    needsScores: true,
+    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
   registerSource({
     id: "plain",
@@ -72,5 +80,11 @@ describe("sortForScope", () => {
       key: "modified",
       dir: "desc",
     });
+  });
+
+  it("transient sorts (similarity) never survive a scope change", () => {
+    expect(sortForScope(FOLDER_SCOPE, { key: "test.similar", dir: "desc" })).toEqual(
+      defaultQuery.sort,
+    );
   });
 });

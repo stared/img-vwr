@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tauri::Manager as _;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
+use services::embeddings::EmbeddingService;
 use services::thumbnails::ThumbnailService;
 
 fn specta_builder() -> Builder<tauri::Wry> {
@@ -19,12 +20,19 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::request_thumbnails,
             commands::request_dir_counts,
             commands::request_meta,
+            commands::embedding_models,
+            commands::embedding_select,
+            commands::embedding_index,
+            commands::embedding_rank_image,
+            commands::embedding_rank_text,
         ])
         .events(collect_events![
             events::ThumbnailReady,
             events::ThumbnailFailed,
             events::DirCountReady,
-            events::MetaBatchReady
+            events::MetaBatchReady,
+            events::EmbeddingStatus,
+            events::EmbeddingProgress
         ])
 }
 
@@ -66,8 +74,9 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
-            let cache_dir = app.path().app_cache_dir()?.join("thumbnails");
-            app.manage(Arc::new(ThumbnailService::new(cache_dir)?));
+            let cache_root = app.path().app_cache_dir()?;
+            app.manage(Arc::new(ThumbnailService::new(cache_root.join("thumbnails"))?));
+            app.manage(Arc::new(EmbeddingService::new(cache_root)?));
             Ok(())
         })
         .run(tauri::generate_context!())

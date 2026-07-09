@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/imgvwr-core"]
+members = ["crates/imgvwr-core", "crates/imgvwr-embed"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -24,6 +24,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 imgvwr-core = { path = "crates/imgvwr-core" }
+imgvwr-embed = { path = "crates/imgvwr-embed" }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

@@ -36,6 +36,13 @@ beforeAll(() => {
     appliesTo: (scope) => scope?.kind === "source",
     value: (_entry, ctx) => ctx.sourceIndex,
   });
+  registerSort({
+    id: "test.score",
+    label: "score",
+    defaultDir: "desc",
+    needsScores: true,
+    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
+  });
 
   clearFilterFieldsForTest();
   registerFilterField({
@@ -132,6 +139,23 @@ describe("applyQuery", () => {
     expect(filtered.map((e) => e.name)).toEqual(["beach10.jpg", "beach2.jpg"]);
   });
 
+  it("a scores-backed sort ranks scored entries and puts unscored ones last", () => {
+    const scores = { "/p/zoo.webp": 0.9, "/p/Alps.png": 0.4 };
+    const ranked = applyQuery(
+      ENTRIES,
+      { ...defaultQuery, sort: { key: "test.score", dir: "desc" } },
+      {},
+      scores,
+    );
+    expect(ranked.map((e) => e.name)).toEqual([
+      "zoo.webp",
+      "Alps.png",
+      // Unscored: name order, always after scored regardless of direction.
+      "beach2.jpg",
+      "beach10.jpg",
+    ]);
+  });
+
   it("an unknown sort key falls back to name order", () => {
     const names = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "gone.plugin", dir: "asc" } });
     expect(names.map((e) => e.name)).toEqual(["Alps.png", "beach2.jpg", "beach10.jpg", "zoo.webp"]);
@@ -139,7 +163,8 @@ describe("applyQuery", () => {
 
   it("sortsFor filters providers by scope", () => {
     const folderIds = sortsFor({ kind: "folder", path: "/p" }).map((p) => p.id);
-    expect(folderIds).toEqual(["name", "modified", "size"]);
+    expect(folderIds).toEqual(expect.arrayContaining(["name", "modified", "size"]));
+    expect(folderIds).not.toContain("test.rank");
     const sourceIds = sortsFor({ kind: "source", sourceId: "x", arg: "", label: "" }).map(
       (p) => p.id,
     );

@@ -5,13 +5,15 @@ import App from "./App";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerSourceCommands } from "./commands/sources";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
-import { FolderIcon, SOURCE_ICONS } from "./components/shell/icons";
+import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
+import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
 import { allPanels, registerPanel } from "./registry/panels";
 import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFilterFields } from "./filters/builtin";
+import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
 import { registerBuiltinSorts } from "./sorts/builtin";
@@ -24,6 +26,7 @@ registerBuiltinFilterFields();
 registerSource(redditSource);
 registerSource(commonsSource);
 registerSourceCommands();
+registerSimilarity();
 registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
 for (const source of allSources()) {
@@ -34,6 +37,12 @@ for (const source of allSources()) {
     icon: SOURCE_ICONS[source.id] ?? source.glyph,
   });
 }
+registerPanel({
+  id: "similarity",
+  title: "Similarity",
+  component: SimilarityPanel,
+  icon: <SimilarityIcon />,
+});
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
 // Every left panel is reachable from the palette, like VS Code's view commands.
 for (const panel of allPanels()) {

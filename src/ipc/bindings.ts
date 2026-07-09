@@ -52,6 +52,39 @@ async requestDirCounts(paths: string[]) : Promise<void> {
  */
 async requestMeta(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("request_meta", { paths, epoch });
+},
+async embeddingModels() : Promise<EmbedModelInfo[]> {
+    return await TAURI_INVOKE("embedding_models");
+},
+/**
+ * Download (first time) and activate a model; progress arrives as
+ * `embedding-status` events.
+ */
+async embeddingSelect(modelId: string) : Promise<void> {
+    await TAURI_INVOKE("embedding_select", { modelId });
+},
+/**
+ * Compute (or load from cache) one vector per image in the background;
+ * progress arrives as `embedding-progress` events.
+ */
+async embeddingIndex(paths: string[], epoch: number) : Promise<void> {
+    await TAURI_INVOKE("embedding_index", { paths, epoch });
+},
+async embeddingRankImage(anchor: string, paths: string[]) : Promise<Result<SimilarityScore[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("embedding_rank_image", { anchor, paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async embeddingRankText(query: string, paths: string[]) : Promise<Result<SimilarityScore[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("embedding_rank_text", { query, paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -60,11 +93,15 @@ async requestMeta(paths: string[], epoch: number) : Promise<void> {
 
 export const events = __makeEvents__<{
 dirCountReady: DirCountReady,
+embeddingProgress: EmbeddingProgress,
+embeddingStatus: EmbeddingStatus,
 metaBatchReady: MetaBatchReady,
 thumbnailFailed: ThumbnailFailed,
 thumbnailReady: ThumbnailReady
 }>({
 dirCountReady: "dir-count-ready",
+embeddingProgress: "embedding-progress",
+embeddingStatus: "embedding-status",
 metaBatchReady: "meta-batch-ready",
 thumbnailFailed: "thumbnail-failed",
 thumbnailReady: "thumbnail-ready"
@@ -82,6 +119,19 @@ thumbnailReady: "thumbnail-ready"
  */
 export type DirCountReady = { path: string; imageCount: number }
 export type DirEntry = { path: string; name: string }
+/**
+ * Catalog entry as shown in the UI picker.
+ */
+export type EmbedModelInfo = { id: string; label: string; quality: string; speed: string; downloadMb: number; dim: number; downloaded: boolean; active: boolean }
+/**
+ * Progress of a background indexing pass over the current collection.
+ */
+export type EmbeddingProgress = { done: number; total: number; epoch: number }
+/**
+ * Lifecycle of the user-selected embedding model:
+ * "downloading" → "loading" → "ready", or "error".
+ */
+export type EmbeddingStatus = { modelId: string; phase: string; error: string | null }
 export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; 
 /**
  * Decimal degrees; positive = north/east.
@@ -103,6 +153,7 @@ width: number | null; height: number | null; format: string; fileSize: number; m
  */
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
+export type SimilarityScore = { path: string; score: number }
 export type ThumbnailFailed = { path: string; error: string; epoch: number }
 export type ThumbnailReady = { path: string; 
 /**

@@ -277,6 +277,70 @@ kbd {
   font-size: 13px;
 }
 
+/* Similarity panel: model picker rows with quality/speed notes. */
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.model-row:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.model-row.active {
+  border-color: var(--accent);
+}
+
+.model-row:disabled:not(.active) {
+  opacity: 0.6;
+}
+
+.model-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-state {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.model-row.active .model-state {
+  color: var(--accent);
+}
+
+.model-note {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.panel-error {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* Similarity chip has no editor menu; the body is inert text. */
+.chip-static {
+  cursor: default;
+}
+
 .crumbs {
   padding: 2px 6px 8px;
   font-size: 12px;

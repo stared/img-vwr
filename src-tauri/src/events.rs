@@ -42,3 +42,22 @@ pub struct MetaBatchReady {
     pub items: Vec<MetaEntry>,
     pub epoch: u64,
 }
+
+/// Lifecycle of the user-selected embedding model:
+/// "downloading" → "loading" → "ready", or "error".
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingStatus {
+    pub model_id: String,
+    pub phase: String,
+    pub error: Option<String>,
+}
+
+/// Progress of a background indexing pass over the current collection.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingProgress {
+    pub done: u32,
+    pub total: u32,
+    pub epoch: u64,
+}

@@ -1,10 +1,18 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { commands, events } from "./bindings";
-import type { DirEntry, FileEntry, ImageMeta, MetaEntry, Result } from "./bindings";
+import type {
+  DirEntry,
+  EmbedModelInfo,
+  FileEntry,
+  ImageMeta,
+  MetaEntry,
+  Result,
+  SimilarityScore,
+} from "./bindings";
 
 export { events };
-export type { DirEntry, FileEntry, ImageMeta, MetaEntry };
+export type { DirEntry, EmbedModelInfo, FileEntry, ImageMeta, MetaEntry, SimilarityScore };
 
 /** Unwrap a specta Result, throwing on the error branch. */
 function unwrap<T>(result: Result<T, string>): T {
@@ -36,6 +44,32 @@ export async function requestDirCounts(paths: string[]): Promise<void> {
 
 export async function requestMeta(paths: string[], epoch: number): Promise<void> {
   return commands.requestMeta(paths, epoch);
+}
+
+export async function embeddingModels(): Promise<EmbedModelInfo[]> {
+  return commands.embeddingModels();
+}
+
+export async function embeddingSelect(modelId: string): Promise<void> {
+  return commands.embeddingSelect(modelId);
+}
+
+export async function embeddingIndex(paths: string[], epoch: number): Promise<void> {
+  return commands.embeddingIndex(paths, epoch);
+}
+
+export async function embeddingRankImage(
+  anchor: string,
+  paths: string[],
+): Promise<SimilarityScore[]> {
+  return unwrap(await commands.embeddingRankImage(anchor, paths));
+}
+
+export async function embeddingRankText(
+  query: string,
+  paths: string[],
+): Promise<SimilarityScore[]> {
+  return unwrap(await commands.embeddingRankText(query, paths));
 }
 
 /**

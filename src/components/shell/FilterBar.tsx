@@ -191,6 +191,8 @@ export function FilterBar() {
   const setSort = useAppStore((s) => s.setSort);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const setGalleryLayout = useAppStore((s) => s.setGalleryLayout);
+  const similarity = useAppStore((s) => s.similarity);
+  const clearSimilarity = useAppStore((s) => s.clearSimilarity);
 
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -266,6 +268,18 @@ export function FilterBar() {
           />
         );
       })}
+
+      {/* The similarity anchor is a clause too: what "similar" sorts toward. */}
+      {similarity && (
+        <span className="chip chip-edit chip-removable">
+          <span className="chip-body chip-static">
+            <span className="chip-key">similar:</span> {similarity.label}
+          </span>
+          <button className="chip-x" title="clear similarity" onClick={clearSimilarity}>
+            ×
+          </button>
+        </span>
+      )}
 
       <AddFilterMenu scope={scope} />
 

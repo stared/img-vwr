@@ -91,6 +91,7 @@ export function applyQuery(
   entries: FileEntry[],
   query: Query,
   meta: Record<string, ImageMeta> = {},
+  scores: Record<string, number> = {},
 ): FileEntry[] {
   const filtered = query.filters.length
     ? entries.filter((e) => query.filters.every((f) => matches(e, f, meta[e.path])))
@@ -106,7 +107,11 @@ export function applyQuery(
   const values = new Map<string, number | string | null>(
     filtered.map((e) => [
       e.path,
-      provider.value(e, { meta: meta[e.path], sourceIndex: sourceIndex.get(e.path) ?? 0 }),
+      provider.value(e, {
+        meta: meta[e.path],
+        sourceIndex: sourceIndex.get(e.path) ?? 0,
+        scores,
+      }),
     ]),
   );
   return [...filtered].sort((a, b) => {
@@ -119,6 +124,11 @@ export function applyQuery(
     }
     return sign * compareValues(va, vb) || naturalCollator.compare(a.name, b.name);
   });
+}
+
+/** True when the active sort reads computed scores from the store. */
+export function usesScores(query: Query): boolean {
+  return getSort(query.sort.key)?.needsScores === true;
 }
 
 /** True when applying the query needs per-image metadata. */

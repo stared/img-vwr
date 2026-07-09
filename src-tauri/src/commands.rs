@@ -2,8 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use imgvwr_core::{DirEntry, FileEntry, ImageMeta};
+use imgvwr_embed::EmbedModelInfo;
+use serde::Serialize;
 use tauri::{AppHandle, Manager as _, State};
 
+use crate::services::embeddings::EmbeddingService;
 use crate::services::thumbnails::ThumbnailService;
 
 #[tauri::command]
@@ -94,4 +97,74 @@ pub fn request_thumbnails(
     epoch: u64,
 ) {
     service.request(&app, paths, epoch);
+}
+
+/* Embedding commands — thin adapters over the embedding service, which is
+ * itself a thin host around the imgvwr-embed plugin crate. */
+
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_models(service: State<'_, Arc<EmbeddingService>>) -> Vec<EmbedModelInfo> {
+    service.models()
+}
+
+/// Download (first time) and activate a model; progress arrives as
+/// `embedding-status` events.
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_select(
+    app: AppHandle,
+    service: State<'_, Arc<EmbeddingService>>,
+    model_id: String,
+) {
+    service.select(&app, model_id);
+}
+
+/// Compute (or load from cache) one vector per image in the background;
+/// progress arrives as `embedding-progress` events.
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_index(
+    app: AppHandle,
+    service: State<'_, Arc<EmbeddingService>>,
+    thumbs: State<'_, Arc<ThumbnailService>>,
+    paths: Vec<String>,
+    epoch: u64,
+) {
+    service.index(&app, &thumbs, paths, epoch);
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarityScore {
+    pub path: String,
+    pub score: f32,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_rank_image(
+    service: State<'_, Arc<EmbeddingService>>,
+    anchor: String,
+    paths: Vec<String>,
+) -> Result<Vec<SimilarityScore>, String> {
+    let scores = service.rank_image(&anchor, &paths)?;
+    Ok(scores
+        .into_iter()
+        .map(|(path, score)| SimilarityScore { path, score })
+        .collect())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_rank_text(
+    service: State<'_, Arc<EmbeddingService>>,
+    query: String,
+    paths: Vec<String>,
+) -> Result<Vec<SimilarityScore>, String> {
+    let scores = service.rank_text(&query, &paths)?;
+    Ok(scores
+        .into_iter()
+        .map(|(path, score)| SimilarityScore { path, score })
+        .collect())
 }

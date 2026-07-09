@@ -18,6 +18,9 @@ export interface SortValueContext {
   /** Position in the collection as it was delivered — scan order for
    * folders, API rank for sources. */
   sourceIndex: number;
+  /** Computed per-image scores (e.g. similarity), keyed by path. Empty
+   * unless something put scores into the store. */
+  scores: Record<string, number>;
 }
 
 export interface SortProvider {
@@ -32,6 +35,11 @@ export interface SortProvider {
   appliesTo?: (scope: Scope | null) => boolean;
   /** True when `value` reads per-image metadata (which streams in late). */
   needsMeta?: boolean;
+  /** True when `value` reads computed scores from the store. */
+  needsScores?: boolean;
+  /** Tied to transient state (an anchor image, a query); reset to the
+   * scope default instead of surviving a scope change. */
+  transient?: boolean;
   /** The sortable value: numbers compare numerically, strings naturally
    * (case-insensitive, numeric-aware); null always sorts last. */
   value: (entry: FileEntry, ctx: SortValueContext) => number | string | null;

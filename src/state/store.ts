@@ -10,7 +10,7 @@ import {
   zoomAtPoint,
   type Point,
 } from "../components/viewer/viewport";
-import type { FileEntry, ImageMeta, MetaEntry } from "../ipc";
+import type { EmbedModelInfo, FileEntry, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import { getSort } from "../registry/sorts";
 import { getSource, type SourceItem } from "../registry/sources";
@@ -19,6 +19,7 @@ import {
   applyQuery,
   defaultQuery,
   usesMeta,
+  usesScores,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
@@ -38,6 +39,23 @@ export type GalleryLayout = "grid" | "map";
 export type Scope =
   | { kind: "folder"; path: string }
   | { kind: "source"; sourceId: string; arg: string; label: string };
+
+/** Computed per-image scores backing a transient sort ("similar to …"). */
+export interface Similarity {
+  /** Chip value describing the anchor: a file name or a quoted phrase. */
+  label: string;
+  /** What the scores measure distance to; kept for re-ranking as the
+   * background index fills in. */
+  anchor: { kind: "image"; path: string } | { kind: "text"; query: string };
+  scores: Record<string, number>;
+}
+
+/** Embedding model lifecycle, mirrored from Rust events for the panel. */
+export interface EmbedStatus {
+  modelId: string;
+  phase: "downloading" | "loading" | "ready" | "error";
+  error: string | null;
+}
 
 export interface AppState {
   scope: Scope | null;
@@ -70,6 +88,14 @@ export interface AppState {
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
+  /** Scores + label behind the "similar" sort; null = no anchor chosen. */
+  similarity: Similarity | null;
+  /** Model catalog with downloaded/active flags, for the picker panel. */
+  embedModels: EmbedModelInfo[];
+  /** Latest model lifecycle event; null before any selection. */
+  embedStatus: EmbedStatus | null;
+  /** Indexing progress of the current collection; null when idle. */
+  embedProgress: { done: number; total: number } | null;
   /** Viewer transform; null until the current image has loaded. */
   viewerView: Viewport | null;
   /** Natural size of the loaded viewer image. */
@@ -109,6 +135,12 @@ interface AppActions {
   setPaletteOpen: (open: boolean) => void;
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
+  /** Install similarity scores and switch the sort to "similar". */
+  setSimilarity: (similarity: Similarity) => void;
+  clearSimilarity: () => void;
+  setEmbedModels: (models: EmbedModelInfo[]) => void;
+  setEmbedStatus: (status: EmbedStatus) => void;
+  setEmbedProgress: (progress: { done: number; total: number } | null) => void;
   viewerImageLoaded: (size: Size) => void;
   viewerWinResized: (size: Size) => void;
   viewerZoom: (factor: number, cursor?: Point) => void;
@@ -137,6 +169,10 @@ export const initialState: AppState = {
   activePanelId: "folders",
   paletteOpen: false,
   palettePrompt: null,
+  similarity: null,
+  embedModels: [],
+  embedStatus: null,
+  embedProgress: null,
   viewerView: null,
   viewerImg: null,
   viewerWin: { width: 0, height: 0 },
@@ -157,6 +193,9 @@ export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
     meta: {},
     viewMode: "gallery",
     selectedIndex: 0,
+    // Similarity anchors are per-collection; a new scope starts without one.
+    similarity: null,
+    embedProgress: null,
     viewerView: null,
     viewerImg: null,
   };
@@ -197,7 +236,8 @@ export function sortForScope(scope: Scope, current: Sort): Sort {
     if (declared) return declared;
   }
   const provider = getSort(current.key);
-  if (provider && (provider.appliesTo?.(scope) ?? true)) return current;
+  // Transient sorts (similarity) lose their anchor with the scope.
+  if (provider && !provider.transient && (provider.appliesTo?.(scope) ?? true)) return current;
   return defaultQuery.sort;
 }
 
@@ -218,12 +258,14 @@ export function movedSelection(
  * new filters; otherwise fall back to the top.
  */
 export function withQuery(
-  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta">,
+  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta" | "similarity">,
   query: Query,
 ): Partial<AppState> {
-  const selectedPath = applyQuery(state.entries, state.query, state.meta)[state.selectedIndex]
-    ?.path;
-  const nextVisible = applyQuery(state.entries, query, state.meta);
+  const scores = state.similarity?.scores ?? {};
+  const selectedPath = applyQuery(state.entries, state.query, state.meta, scores)[
+    state.selectedIndex
+  ]?.path;
+  const nextVisible = applyQuery(state.entries, query, state.meta, scores);
   const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
   return { query, selectedIndex: index >= 0 ? index : 0 };
 }
@@ -351,7 +393,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setGalleryLayout: (layout) => set({ galleryLayout: layout }),
 
   openViewer: (index) => {
-    const visibleCount = applyQuery(get().entries, get().query, get().meta).length;
+    const { entries, query, meta, similarity } = get();
+    const visibleCount = applyQuery(entries, query, meta, similarity?.scores ?? {}).length;
     if (index >= 0 && index < visibleCount) {
       set({
         viewMode: "viewer",
@@ -366,7 +409,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   closeViewer: () => set({ viewMode: "gallery" }),
 
   navigate: (delta) => {
-    const visibleCount = applyQuery(get().entries, get().query, get().meta).length;
+    const { entries, query, meta, similarity } = get();
+    const visibleCount = applyQuery(entries, query, meta, similarity?.scores ?? {}).length;
     set(movedSelection(get(), visibleCount, delta));
   },
 
@@ -410,6 +454,27 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
 
+  setSimilarity: (similarity) =>
+    set({
+      similarity,
+      ...withQuery(
+        { ...get(), similarity },
+        { ...get().query, sort: { key: "similar", dir: "desc" } },
+      ),
+    }),
+
+  clearSimilarity: () => {
+    const { query } = get();
+    const sort = query.sort.key === "similar" ? defaultQuery.sort : query.sort;
+    set({ similarity: null, ...withQuery({ ...get(), similarity: null }, { ...query, sort }) });
+  },
+
+  setEmbedModels: (embedModels) => set({ embedModels }),
+
+  setEmbedStatus: (embedStatus) => set({ embedStatus }),
+
+  setEmbedProgress: (embedProgress) => set({ embedProgress }),
+
   viewerImageLoaded: (size) =>
     set({
       viewerImg: size,
@@ -445,11 +510,13 @@ export function useVisibleEntries(): FileEntry[] {
   const entries = useAppStore((s) => s.entries);
   const query = useAppStore((s) => s.query);
   const meta = useAppStore((s) => s.meta);
+  const similarity = useAppStore((s) => s.similarity);
   // Only meta-based filters make streaming metadata batches change the
   // result; otherwise skip re-sorting thousands of entries per batch.
   const metaDep = usesMeta(query) ? meta : null;
+  const scoresDep = usesScores(query) ? (similarity?.scores ?? null) : null;
   return useMemo(
-    () => applyQuery(entries, query, metaDep ?? {}),
-    [entries, query, metaDep],
+    () => applyQuery(entries, query, metaDep ?? {}, scoresDep ?? {}),
+    [entries, query, metaDep, scoresDep],
   );
 }
