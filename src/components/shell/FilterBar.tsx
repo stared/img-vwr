@@ -80,70 +80,46 @@ function EditableChip({
 }
 
 /**
- * The similarity anchor as a self-describing clause:
- * `closest to: "people dancing" with SigLIP 2 Base`. The phrase is typed and
- * edited right here; × drops the clause (and its sort).
+ * Transient editor for the "closest to" phrase — visible only while typing;
+ * the committed clause lives in the sort chip (`sort: closest to "…" with
+ * <model> ↓`), never as a second chip.
  */
 function ClosestChip() {
-  const similarity = useAppStore((s) => s.similarity);
   const closestOpen = useAppStore((s) => s.closestOpen);
   const setClosestOpen = useAppStore((s) => s.setClosestOpen);
-  const clearSimilarity = useAppStore((s) => s.clearSimilarity);
-  const modelLabel = useAppStore(
-    (s) => s.embedModels.find((m) => m.active)?.label ?? "no model",
-  );
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (closestOpen) inputRef.current?.focus();
+    if (!closestOpen) return;
+    // Prefill with the current phrase when editing an existing anchor.
+    const anchor = useAppStore.getState().similarity?.anchor;
+    setText(anchor?.kind === "text" ? anchor.query : "");
+    inputRef.current?.focus();
   }, [closestOpen]);
 
-  if (!closestOpen && !similarity) return null;
-
-  if (closestOpen) {
-    return (
-      <span className="chip">
-        <span className="chip-key">closest to:</span>
-        <input
-          ref={inputRef}
-          value={text}
-          placeholder="describe it…"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && text.trim()) {
-              const query = text.trim();
-              void similarTo({ kind: "text", query }, `"${query}"`);
-              setClosestOpen(false);
-            }
-            if (e.key === "Escape") {
-              setClosestOpen(false);
-              e.stopPropagation();
-            }
-          }}
-          onBlur={() => setClosestOpen(false)}
-        />
-      </span>
-    );
-  }
-
-  if (!similarity) return null;
+  if (!closestOpen) return null;
   return (
-    <span className="chip chip-edit chip-removable">
-      <button
-        className="chip-body"
-        title="edit the phrase"
-        onClick={() => {
-          setText(similarity.anchor.kind === "text" ? similarity.anchor.query : "");
-          setClosestOpen(true);
+    <span className="chip">
+      <span className="chip-key">closest to:</span>
+      <input
+        ref={inputRef}
+        value={text}
+        placeholder="describe it…"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && text.trim()) {
+            const query = text.trim();
+            void similarTo({ kind: "text", query }, `"${query}"`);
+            setClosestOpen(false);
+          }
+          if (e.key === "Escape") {
+            setClosestOpen(false);
+            e.stopPropagation();
+          }
         }}
-      >
-        <span className="chip-key">closest to:</span> {similarity.label}{" "}
-        <span className="chip-dim">with {modelLabel}</span>
-      </button>
-      <button className="chip-x" title="remove closest-to" onClick={clearSimilarity}>
-        ×
-      </button>
+        onBlur={() => setClosestOpen(false)}
+      />
     </span>
   );
 }
@@ -351,17 +327,33 @@ export function FilterBar() {
         <span className="chip-key">view:</span> {galleryLayout}
       </button>
 
-      {/* Sort always exists — right-aligned, never removable. Its chip is the
-          sort control: every menu row is a complete key+direction choice. */}
+      {/* Sort always exists — right-aligned. Its chip is the sort control and
+          carries the whole clause (parameterized sorts include their anchor
+          and model); only parameterized sorts get an ×, which drops the
+          parameter and falls back to the default order. */}
       <div className="sort-control">
-        <button
-          className="chip chip-sort"
-          title="change sort"
-          onClick={() => setSortMenuOpen(!sortMenuOpen)}
+        <span
+          className={`chip chip-sort chip-edit${getSort(sort.key)?.clear ? " chip-removable" : ""}`}
         >
-          <span className="chip-key">sort:</span> {getSort(sort.key)?.label ?? sort.key}{" "}
-          {sort.dir === "asc" ? "↑" : "↓"}
-        </button>
+          <button
+            className="chip-body"
+            title="change sort"
+            onClick={() => setSortMenuOpen(!sortMenuOpen)}
+          >
+            <span className="chip-key">sort:</span>{" "}
+            {getSort(sort.key)?.chipLabel?.() ?? getSort(sort.key)?.label ?? sort.key}{" "}
+            {sort.dir === "asc" ? "↑" : "↓"}
+          </button>
+          {getSort(sort.key)?.clear && (
+            <button
+              className="chip-x"
+              title="remove this sort"
+              onClick={() => getSort(sort.key)?.clear?.()}
+            >
+              ×
+            </button>
+          )}
+        </span>
         {sortMenuOpen && (
           <>
             <div className="menu-backdrop" onClick={closeSortMenu} />

@@ -87,6 +87,14 @@ export function registerSimilarity(): void {
     // once an anchor has been chosen.
     appliesTo: (scope) =>
       scope?.kind === "folder" && useAppStore.getState().similarity !== null,
+    // The chip carries the full clause — anchor and model — in one place.
+    chipLabel: () => {
+      const { similarity, embedModels } = useAppStore.getState();
+      if (!similarity) return "closest";
+      const model = embedModels.find((m) => m.active)?.label ?? "no model";
+      return `closest to ${similarity.label} with ${model}`;
+    },
+    clear: () => useAppStore.getState().clearSimilarity(),
     value: (entry, ctx) => ctx.scores[entry.path] ?? null,
   });
 

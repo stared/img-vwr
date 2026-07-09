@@ -336,10 +336,6 @@ kbd {
   color: var(--danger);
 }
 
-/* The model name inside the closest-to chip reads as secondary. */
-.chip-dim {
-  color: var(--text-dim);
-}
 
 .crumbs {
   padding: 2px 6px 8px;

@@ -40,6 +40,12 @@ export interface SortProvider {
   /** Tied to transient state (an anchor image, a query); reset to the
    * scope default instead of surviving a scope change. */
   transient?: boolean;
+  /** Full self-describing chip text for parameterized sorts, e.g.
+   * `closest to "sunset" with SigLIP 2 Base`; falls back to `label`. */
+  chipLabel?: () => string;
+  /** Present on dismissible sorts: drops the parameter (and the sort with
+   * it); rendered as the chip's ×. */
+  clear?: () => void;
   /** The sortable value: numbers compare numerically, strings naturally
    * (case-insensitive, numeric-aware); null always sorts last. */
   value: (entry: FileEntry, ctx: SortValueContext) => number | string | null;
