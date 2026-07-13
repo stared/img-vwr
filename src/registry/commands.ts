@@ -13,6 +13,17 @@ export interface CommandContext {
 /** Context menus a command can surface in, besides the palette. */
 export type CommandMenu = "image";
 
+/** One placement of a command in a context menu. */
+export interface MenuPlacement {
+  menu: CommandMenu;
+  /** Placements sharing a submenu title collapse under one row ("Rating");
+   * null = top level. */
+  submenu: string | null;
+  /** Row text in that menu — short and in-context ("★★★"); the palette
+   * always shows the full title ("Rate ★★★"). */
+  label: string;
+}
+
 export interface Command {
   id: string;
   title: string;
@@ -24,7 +35,7 @@ export interface Command {
    * Menus this command appears in — every command states its placements
    * ([] = palette only). Right-clicking an image lists the "image" ones.
    */
-  menus: CommandMenu[];
+  menus: MenuPlacement[];
   /** Shown in the palette next to the title (derived from keybindings). */
   when?: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, arg?: string) => void | Promise<void>;
@@ -47,11 +58,18 @@ export function allCommands(): Command[] {
   return [...registry.values()];
 }
 
-/** Applicable commands for a context menu, in registration order. */
-export function menuCommands(menu: CommandMenu, ctx: CommandContext): Command[] {
-  return allCommands().filter(
-    (c) => c.menus.includes(menu) && (!c.when || c.when(ctx)),
-  );
+export interface MenuEntry {
+  command: Command;
+  placement: MenuPlacement;
+}
+
+/** Applicable entries for a context menu, in registration order. */
+export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[] {
+  return allCommands().flatMap((command) => {
+    const placement = command.menus.find((p) => p.menu === menu);
+    if (!placement || (command.when && !command.when(ctx))) return [];
+    return [{ command, placement }];
+  });
 }
 
 /** Runs the command if it exists and its `when` guard passes. */

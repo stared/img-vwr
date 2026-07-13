@@ -68,7 +68,7 @@ export function registerBuiltinCommands(): void {
     id: "viewer.open",
     title: "Open Image",
     keywords: ["view", "show"],
-    menus: ["image"],
+    menus: [{ menu: "image", submenu: null, label: "Open Image" }],
     when: (ctx) => hasImages(ctx) && !inViewer(ctx),
     run: ({ store }) => store.getState().openViewer(store.getState().selectedIndex),
   });
