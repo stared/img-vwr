@@ -42,7 +42,7 @@ function useCollectionMetas(): ImageMeta[] {
 }
 
 /** One row per value of a select field; picking sets that field's clause. */
-function SelectMenuItems({
+export function SelectMenuItems({
   field,
   buckets,
   empty,

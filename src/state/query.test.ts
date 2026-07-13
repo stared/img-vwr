@@ -5,6 +5,7 @@ import { clearFilterFieldsForTest, registerFilterField } from "../registry/filte
 import { clearSortsForTest, registerSort, sortsFor } from "../registry/sorts";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
+import type { QueryData } from "./query";
 import {
   applyQuery,
   dateInputValue,
@@ -12,6 +13,7 @@ import {
   defaultQuery,
   numberRangeSpec,
   rangeFromInput,
+  usesLabels,
   usesMeta,
   withFormatToggled,
   withNameFilter,
@@ -59,18 +61,18 @@ beforeAll(() => {
     id: "camera",
     label: "camera",
     appliesTo: () => true,
-    needsMeta: true,
+    reads: "meta",
     Menu: NoMenu,
-    value: (_entry, meta) => meta?.exif?.camera ?? null,
+    value: (_entry, { meta }) => meta?.exif?.camera ?? null,
   });
   registerFilterField({
     kind: "select",
     id: "aspect",
     label: "aspect",
     appliesTo: () => true,
-    needsMeta: true,
+    reads: "meta",
     Menu: NoMenu,
-    value: (_entry, meta) => {
+    value: (_entry, { meta }) => {
       const dims = meta ? effectiveDims(meta) : null;
       return dims ? aspectLabelOf(dims) : null;
     },
@@ -80,16 +82,16 @@ beforeAll(() => {
     id: "taken",
     label: "taken",
     appliesTo: () => true,
-    needsMeta: true,
+    reads: "meta",
     Menu: NoMenu,
-    spec: dateRangeSpec((_entry, meta) => (meta ? takenMs(meta) : null)),
+    spec: dateRangeSpec((_entry, { meta }) => (meta ? takenMs(meta) : null)),
   });
   registerFilterField({
     kind: "range",
     id: "modified",
     label: "modified",
     appliesTo: () => true,
-    needsMeta: false,
+    reads: "entry",
     Menu: NoMenu,
     spec: dateRangeSpec((entry) => entry.modifiedMs),
   });
@@ -98,7 +100,7 @@ beforeAll(() => {
     id: "size",
     label: "size",
     appliesTo: () => true,
-    needsMeta: false,
+    reads: "entry",
     Menu: NoMenu,
     spec: numberRangeSpec((entry) => entry.size, {
       unit: "MB",
@@ -112,17 +114,57 @@ beforeAll(() => {
     id: "edge",
     label: "longest edge",
     appliesTo: () => true,
-    needsMeta: true,
+    reads: "meta",
     Menu: NoMenu,
     spec: numberRangeSpec(
-      (_entry, meta) => {
+      (_entry, { meta }) => {
         const dims = meta ? effectiveDims(meta) : null;
         return dims ? Math.max(dims.width, dims.height) : null;
       },
       { unit: "px", scale: 1, integer: true, ops: ["<=", "=", ">="] },
     ),
   });
+  // Label-backed fields, registered the same way the labels module does.
+  registerFilterField({
+    kind: "range",
+    id: "stars",
+    label: "stars",
+    appliesTo: () => true,
+    reads: "labels",
+    Menu: NoMenu,
+    spec: numberRangeSpec((_entry, { labels }) => labels.stars, {
+      unit: "★",
+      scale: 1,
+      integer: true,
+      ops: ["<=", "=", ">="],
+    }),
+  });
+  registerFilterField({
+    kind: "flags",
+    id: "tag",
+    label: "tag",
+    appliesTo: () => true,
+    reads: "labels",
+    Menu: NoMenu,
+    values: (_entry, { labels }) => labels.tags,
+  });
+  registerSort({
+    id: "stars",
+    label: "stars",
+    hints: { asc: "lowest rated", desc: "highest rated" },
+    defaultDir: "desc",
+    appliesTo: () => true,
+    reads: "labels",
+    missing: "last",
+    param: null,
+    value: (_entry, ctx) => ctx.labels.stars,
+  });
 });
+
+/** QueryData with every channel empty unless a test provides it. */
+function data(part: Partial<QueryData> = {}): QueryData {
+  return { meta: {}, scores: {}, labels: {}, ...part };
+}
 
 function entry(name: string, ext: string, size: number, modifiedMs: number): FileEntry {
   return { path: `/p/${name}`, name, formatHint: ext, size, modifiedMs };
@@ -149,25 +191,26 @@ const ENTRIES: FileEntry[] = [
 
 describe("applyQuery", () => {
   it("default: natural name sort, case-insensitive, no filtering", () => {
-    const names = applyQuery(ENTRIES, defaultQuery).map((e) => e.name);
+    const names = applyQuery(ENTRIES, defaultQuery, data()).map((e) => e.name);
     expect(names).toEqual(["Alps.png", "beach2.jpg", "beach10.jpg", "zoo.webp"]);
   });
 
   it("sorts by modified desc (newest first) and size", () => {
-    const byDate = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "modified", dir: "desc" } });
+    const byDate = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "modified", dir: "desc" } }, data());
     expect(byDate[0]?.name).toBe("zoo.webp");
-    const bySize = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "size", dir: "asc" } });
+    const bySize = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "size", dir: "asc" } }, data());
     expect(bySize.map((e) => e.size)).toEqual([100, 200, 300, 400]);
   });
 
   it("a registered source order sorts by delivery position, surviving filters", () => {
-    const byRank = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.rank", dir: "asc" } });
+    const byRank = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.rank", dir: "asc" } }, data());
     expect(byRank.map((e) => e.name)).toEqual(["beach2.jpg", "beach10.jpg", "Alps.png", "zoo.webp"]);
     // Positions are assigned before filtering, so rank is stable under filters.
-    const filtered = applyQuery(ENTRIES, {
-      ...withFormatToggled(defaultQuery, "jpeg"),
-      sort: { key: "test.rank", dir: "desc" },
-    });
+    const filtered = applyQuery(
+      ENTRIES,
+      { ...withFormatToggled(defaultQuery, "jpeg"), sort: { key: "test.rank", dir: "desc" } },
+      data(),
+    );
     expect(filtered.map((e) => e.name)).toEqual(["beach10.jpg", "beach2.jpg"]);
   });
 
@@ -176,17 +219,17 @@ describe("applyQuery", () => {
     const ranked = applyQuery(
       ENTRIES,
       { ...defaultQuery, sort: { key: "test.score", dir: "desc" } },
-      {},
-      scores,
+      data({ scores }),
     );
     // Unscored entries are excluded entirely; they appear as scores land.
     expect(ranked.map((e) => e.name)).toEqual(["zoo.webp", "Alps.png"]);
-    expect(applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.score", dir: "desc" } }))
-      .toEqual([]);
+    expect(
+      applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "test.score", dir: "desc" } }, data()),
+    ).toEqual([]);
   });
 
   it("an unknown sort key falls back to name order", () => {
-    const names = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "gone.plugin", dir: "asc" } });
+    const names = applyQuery(ENTRIES, { ...defaultQuery, sort: { key: "gone.plugin", dir: "asc" } }, data());
     expect(names.map((e) => e.name)).toEqual(["Alps.png", "beach2.jpg", "beach10.jpg", "zoo.webp"]);
   });
 
@@ -201,18 +244,19 @@ describe("applyQuery", () => {
   });
 
   it("format filter groups jpg and jpeg, filters compose with AND", () => {
-    const jpegs = applyQuery(ENTRIES, withFormatToggled(defaultQuery, "jpeg"));
+    const jpegs = applyQuery(ENTRIES, withFormatToggled(defaultQuery, "jpeg"), data());
     expect(jpegs.map((e) => e.formatHint)).toEqual(["jpg", "jpg"]);
 
     const composed = applyQuery(
       ENTRIES,
       withNameFilter(withFormatToggled(defaultQuery, "jpeg"), "10"),
+      data(),
     );
     expect(composed.map((e) => e.name)).toEqual(["beach10.jpg"]);
   });
 
   it("name filter is case-insensitive substring", () => {
-    const found = applyQuery(ENTRIES, withNameFilter(defaultQuery, "ALPS"));
+    const found = applyQuery(ENTRIES, withNameFilter(defaultQuery, "ALPS"), data());
     expect(found.map((e) => e.name)).toEqual(["Alps.png"]);
   });
 
@@ -223,9 +267,9 @@ describe("applyQuery", () => {
       }),
     };
     const query = withSelectToggled(defaultQuery, "camera", "iPhone SE");
-    expect(applyQuery(ENTRIES, query, meta).map((e) => e.name)).toEqual(["beach2.jpg"]);
+    expect(applyQuery(ENTRIES, query, data({ meta })).map((e) => e.name)).toEqual(["beach2.jpg"]);
     // No metadata at all → nothing can match yet.
-    expect(applyQuery(ENTRIES, query)).toEqual([]);
+    expect(applyQuery(ENTRIES, query, data())).toEqual([]);
   });
 
   it("aspect filter snaps dimensions, honoring EXIF rotation", () => {
@@ -239,7 +283,7 @@ describe("applyQuery", () => {
       "/p/zoo.webp": imageMeta({ width: 3000, height: 2000 }), // 3:2
     };
     const query = withSelectToggled(defaultQuery, "aspect", "4:3");
-    expect(applyQuery(ENTRIES, query, meta).map((e) => e.name)).toEqual([
+    expect(applyQuery(ENTRIES, query, data({ meta })).map((e) => e.name)).toEqual([
       "Alps.png",
       "beach2.jpg",
     ]);
@@ -247,19 +291,19 @@ describe("applyQuery", () => {
 
   it("range filters are half-open and field-specific", () => {
     const bySize = withRangeToggled(defaultQuery, "size", 200, 400, "200–400");
-    expect(applyQuery(ENTRIES, bySize).map((e) => e.size)).toEqual([200, 300]);
+    expect(applyQuery(ENTRIES, bySize, data()).map((e) => e.size)).toEqual([200, 300]);
 
     const byModified = withRangeToggled(defaultQuery, "modified", 1_000, 2_000, "old");
-    expect(applyQuery(ENTRIES, byModified).map((e) => e.name)).toEqual(["beach10.jpg"]);
+    expect(applyQuery(ENTRIES, byModified, data()).map((e) => e.name)).toEqual(["beach10.jpg"]);
 
     const byEdge = withRangeToggled(defaultQuery, "edge", 3900, 4100, "≈4000");
     const meta = { "/p/zoo.webp": imageMeta({ width: 3000, height: 4000 }) };
-    expect(applyQuery(ENTRIES, byEdge, meta).map((e) => e.name)).toEqual(["zoo.webp"]);
+    expect(applyQuery(ENTRIES, byEdge, data({ meta })).map((e) => e.name)).toEqual(["zoo.webp"]);
   });
 
   it("a clause on an unregistered field matches nothing, not everything", () => {
     const query = withSelectToggled(defaultQuery, "gone.plugin", "x");
-    expect(applyQuery(ENTRIES, query)).toEqual([]);
+    expect(applyQuery(ENTRIES, query, data())).toEqual([]);
   });
 
   it("usesMeta is true only for metadata-dependent filters", () => {
@@ -268,6 +312,57 @@ describe("applyQuery", () => {
     expect(usesMeta(withRangeToggled(defaultQuery, "taken", 0, 1, "x"))).toBe(true);
     expect(usesMeta(withSelectToggled(defaultQuery, "camera", "X"))).toBe(true);
     expect(usesMeta(withSelectToggled(defaultQuery, "aspect", "4:3"))).toBe(true);
+  });
+
+  it("stars range filter reads labels; unrated images never match", () => {
+    const labels = {
+      "/p/beach2.jpg": { stars: 4, tags: [] },
+      "/p/Alps.png": { stars: 2, tags: [] },
+    };
+    const atLeast3 = withRangeToggled(defaultQuery, "stars", 3, Infinity, "≥ 3 ★");
+    expect(applyQuery(ENTRIES, atLeast3, data({ labels })).map((e) => e.name)).toEqual([
+      "beach2.jpg",
+    ]);
+    // Nothing rated → nothing matches.
+    expect(applyQuery(ENTRIES, atLeast3, data())).toEqual([]);
+  });
+
+  it("a tag clause (select on a flags field) matches on membership", () => {
+    const labels = {
+      "/p/beach2.jpg": { stars: null, tags: ["sea", "pair"] },
+      "/p/zoo.webp": { stars: null, tags: ["animals"] },
+    };
+    const tagged = withSelectToggled(defaultQuery, "tag", "sea");
+    expect(applyQuery(ENTRIES, tagged, data({ labels })).map((e) => e.name)).toEqual([
+      "beach2.jpg",
+    ]);
+    expect(applyQuery(ENTRIES, tagged, data())).toEqual([]);
+  });
+
+  it("stars sort ranks rated images first, unrated last in name order", () => {
+    const labels = {
+      "/p/Alps.png": { stars: 2, tags: [] },
+      "/p/zoo.webp": { stars: 5, tags: [] },
+    };
+    const byStars = applyQuery(
+      ENTRIES,
+      { ...defaultQuery, sort: { key: "stars", dir: "desc" } },
+      data({ labels }),
+    );
+    expect(byStars.map((e) => e.name)).toEqual([
+      "zoo.webp",
+      "Alps.png",
+      "beach2.jpg",
+      "beach10.jpg",
+    ]);
+  });
+
+  it("usesLabels is true for label-backed clauses and the stars sort", () => {
+    expect(usesLabels(defaultQuery)).toBe(false);
+    expect(usesLabels(withRangeToggled(defaultQuery, "stars", 3, Infinity, "x"))).toBe(true);
+    expect(usesLabels(withSelectToggled(defaultQuery, "tag", "sea"))).toBe(true);
+    expect(usesLabels({ ...defaultQuery, sort: { key: "stars", dir: "desc" } })).toBe(true);
+    expect(usesLabels(withSelectToggled(defaultQuery, "camera", "X"))).toBe(false);
   });
 });
 
@@ -281,7 +376,7 @@ describe("query editing", () => {
   it("withFormatToggled adds, extends, and removes the format filter", () => {
     const one = withFormatToggled(defaultQuery, "png");
     const two = withFormatToggled(one, "gif");
-    expect(applyQuery(ENTRIES, two).map((e) => e.name)).toEqual(["Alps.png"]);
+    expect(applyQuery(ENTRIES, two, data()).map((e) => e.name)).toEqual(["Alps.png"]);
     const none = withFormatToggled(withFormatToggled(two, "gif"), "png");
     expect(none.filters).toEqual([]);
   });

@@ -926,6 +926,20 @@ button.stats-row:hover .stats-label {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
+}
+
+/* Star badge on rated cells; sits over the thumbnail's bottom-left. */
+.thumb-stars {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  z-index: 1;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--accent);
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
 }
 
 .thumb-frame img {
@@ -995,6 +1009,11 @@ button.stats-row:hover .stats-label {
   display: flex;
   gap: 14px;
   flex-shrink: 0;
+}
+
+/* Stars + tags of the selected image. */
+.status-labels {
+  color: var(--accent);
 }
 
 /* ---- Command palette ---- */

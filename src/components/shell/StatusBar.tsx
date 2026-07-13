@@ -9,9 +9,15 @@ export function StatusBar() {
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
   const entry = visible[index];
+  const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
 
   const countText =
     visible.length === total ? `${total} images` : `${visible.length} of ${total}`;
+  const labelsText = labels
+    ? [labels.stars === null ? "" : "★".repeat(labels.stars), ...labels.tags]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <footer className="statusbar">
@@ -25,6 +31,7 @@ export function StatusBar() {
       <span className="status-right">
         {viewMode === "viewer" && entry ? (
           <>
+            {labelsText && <span className="status-labels">{labelsText}</span>}
             <span>{entry.name}</span>
             <span>
               {index + 1} / {visible.length}
@@ -37,7 +44,10 @@ export function StatusBar() {
             {view && <span>{Math.round(view.scale * 100)}%</span>}
           </>
         ) : (
-          total > 0 && <span>{countText}</span>
+          <>
+            {labelsText && <span className="status-labels">{labelsText}</span>}
+            {total > 0 && <span>{countText}</span>}
+          </>
         )}
       </span>
     </footer>

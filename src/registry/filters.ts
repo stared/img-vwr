@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
 import type { RangeOp } from "../state/query";
 import type { Scope } from "../state/store";
 
@@ -24,6 +24,18 @@ interface FieldBase {
   appliesTo: (scope: Scope | null) => boolean;
 }
 
+/** What a field's predicate reads beyond the entry itself; drives which
+ * streaming store slices invalidate the visible list. */
+export type FieldReads = "entry" | "meta" | "labels";
+
+/** Per-entry data a predicate can read. Meta is undefined until the
+ * background read delivers it; labels are TOTAL — an unlabeled image is
+ * the empty label set, not an unknown. */
+export interface FieldCtx {
+  meta: ImageMeta | undefined;
+  labels: ImageLabels;
+}
+
 /** Picking the row acts immediately (e.g. opens an inline input). */
 export type ActionField = FieldBase & {
   kind: "action";
@@ -35,23 +47,32 @@ export type MenuField = FieldBase & {
   kind: "menu";
   /** Right-side hint in the "+" menu. */
   hint: string;
-  needsMeta: boolean;
+  reads: FieldReads;
   Menu: ComponentType<{ close: () => void }>;
 };
 
 /** Buckets each image into a string; the clause matches on equality. */
 export type SelectField = FieldBase & {
   kind: "select";
-  needsMeta: boolean;
+  reads: FieldReads;
   Menu: ComponentType<{ close: () => void }>;
   /** The bucket an image belongs to; null = unknown, never matches. */
-  value: (entry: FileEntry, meta: ImageMeta | undefined) => string | null;
+  value: (entry: FileEntry, ctx: FieldCtx) => string | null;
+};
+
+/** Multi-valued select (tags): each image has a set of values and the
+ * clause matches when its value is one of them. */
+export type FlagsField = FieldBase & {
+  kind: "flags";
+  reads: FieldReads;
+  Menu: ComponentType<{ close: () => void }>;
+  values: (entry: FileEntry, ctx: FieldCtx) => string[];
 };
 
 /** Compares a numeric value against a half-open [from, to). */
 export type RangeField = FieldBase & {
   kind: "range";
-  needsMeta: boolean;
+  reads: FieldReads;
   Menu: ComponentType<{ close: () => void }>;
   spec: RangeSpec;
 };
@@ -63,14 +84,14 @@ export interface RangeSpec {
   /** Unit shown next to the value input ("MB", "px"); null for dates. */
   unit: string | null;
   /** The compared value; null = unknown, never matches. */
-  value: (entry: FileEntry, meta: ImageMeta | undefined) => number | null;
+  value: (entry: FileEntry, ctx: FieldCtx) => number | null;
   /** Operator + typed value → bounds and a chip label; null = unparsable. */
   parse: (op: RangeOp, raw: string) => { from: number; to: number; label: string } | null;
   /** Inverse of parse: prefill the editor from an active clause. */
   initial: (bounds: { from: number; to: number }) => { op: RangeOp; value: string };
 }
 
-export type FilterField = ActionField | MenuField | SelectField | RangeField;
+export type FilterField = ActionField | MenuField | SelectField | FlagsField | RangeField;
 
 const registry = new Map<string, FilterField>();
 

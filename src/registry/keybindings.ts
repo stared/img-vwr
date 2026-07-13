@@ -48,8 +48,16 @@ export const defaultKeybindings: ReadonlyMap<string, string> = new Map([
   ["=", "viewer.zoomIn"],
   ["+", "viewer.zoomIn"],
   ["-", "viewer.zoomOut"],
-  ["0", "viewer.zoomFit"],
-  ["1", "viewer.zoomActual"],
+  // Zoom presets follow Preview.app; bare digits rate (Lightroom-style).
+  ["mod+0", "viewer.zoomFit"],
+  ["mod+1", "viewer.zoomActual"],
+  ["0", "labels.stars.0"],
+  ["1", "labels.stars.1"],
+  ["2", "labels.stars.2"],
+  ["3", "labels.stars.3"],
+  ["4", "labels.stars.4"],
+  ["5", "labels.stars.5"],
+  ["t", "labels.tag"],
 ]);
 
 /** First binding whose chord matches the event, or null. */

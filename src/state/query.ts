@@ -1,6 +1,6 @@
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
 import { getFilterField } from "../registry/filters";
-import type { RangeSpec } from "../registry/filters";
+import type { FieldCtx, RangeSpec } from "../registry/filters";
 import { getSort } from "../registry/sorts";
 import type { SortDir } from "../registry/sorts";
 
@@ -38,6 +38,23 @@ export interface Query {
 
 export const defaultQuery: Query = { filters: [], sort: { key: "name", dir: "asc" } };
 
+/**
+ * Everything a query can read besides the entries themselves, keyed by
+ * path. Total by construction: callers always pass all three maps (empty
+ * maps mean "nothing known/labeled"), so predicates never meet undefined
+ * data channels.
+ */
+export interface QueryData {
+  meta: Record<string, ImageMeta>;
+  scores: Record<string, number>;
+  labels: Record<string, ImageLabels>;
+}
+
+export const EMPTY_QUERY_DATA: QueryData = { meta: {}, scores: {}, labels: {} };
+
+/** An image nobody labeled: genuinely zero stars-null tags-none, not unknown. */
+export const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
+
 /** Display groups: jpg/jpeg are one thing to a human. */
 export const FORMAT_GROUPS = [
   { id: "png", label: "PNG", exts: ["png"] },
@@ -60,7 +77,7 @@ function formatGroupOf(ext: string): string | undefined {
  * through the filter-field registry; a clause whose field is gone (e.g. an
  * uninstalled plugin's) matches nothing rather than everything.
  */
-function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined): boolean {
+function matches(entry: FileEntry, filter: Filter, ctx: FieldCtx): boolean {
   switch (filter.kind) {
     case "format": {
       const group = formatGroupOf(entry.formatHint);
@@ -69,14 +86,17 @@ function matches(entry: FileEntry, filter: Filter, meta: ImageMeta | undefined):
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
+      // A select clause matches a single-valued field on equality and a
+      // multi-valued (flags) field on membership — same chip, same state.
       const field = getFilterField(filter.field);
-      if (field?.kind !== "select") return false;
-      return field.value(entry, meta) === filter.value;
+      if (field?.kind === "select") return field.value(entry, ctx) === filter.value;
+      if (field?.kind === "flags") return field.values(entry, ctx).includes(filter.value);
+      return false;
     }
     case "range": {
       const field = getFilterField(filter.field);
       if (field?.kind !== "range") return false;
-      const v = field.spec.value(entry, meta);
+      const v = field.spec.value(entry, ctx);
       return v !== null && v >= filter.from && v < filter.to;
     }
   }
@@ -90,14 +110,14 @@ function compareValues(a: number | string, b: number | string): number {
   return naturalCollator.compare(String(a), String(b));
 }
 
-export function applyQuery(
-  entries: FileEntry[],
-  query: Query,
-  meta: Record<string, ImageMeta> = {},
-  scores: Record<string, number> = {},
-): FileEntry[] {
+export function applyQuery(entries: FileEntry[], query: Query, data: QueryData): FileEntry[] {
+  const { meta, scores, labels } = data;
+  const fieldCtx = (e: FileEntry): FieldCtx => ({
+    meta: meta[e.path],
+    labels: labels[e.path] ?? EMPTY_LABELS,
+  });
   const filtered = query.filters.length
-    ? entries.filter((e) => query.filters.every((f) => matches(e, f, meta[e.path])))
+    ? entries.filter((e) => query.filters.every((f) => matches(e, f, fieldCtx(e))))
     : entries;
   const provider = getSort(query.sort.key);
   if (!provider) {
@@ -114,6 +134,7 @@ export function applyQuery(
         meta: meta[e.path],
         sourceIndex: sourceIndex.get(e.path) ?? 0,
         scores,
+        labels: labels[e.path] ?? EMPTY_LABELS,
       }),
     ]),
   );
@@ -139,14 +160,23 @@ export function usesScores(query: Query): boolean {
   return getSort(query.sort.key)?.reads === "scores";
 }
 
-/** True when applying the query needs per-image metadata. */
-export function usesMeta(query: Query): boolean {
-  if (getSort(query.sort.key)?.reads === "meta") return true;
+/** True when any active field-keyed clause's field reads the given channel. */
+function filtersRead(query: Query, channel: "meta" | "labels"): boolean {
   return query.filters.some((f) => {
     if (f.kind !== "select" && f.kind !== "range") return false;
     const field = getFilterField(f.field);
-    return field !== undefined && field.kind !== "action" && field.needsMeta;
+    return field !== undefined && field.kind !== "action" && field.reads === channel;
   });
+}
+
+/** True when applying the query needs per-image metadata. */
+export function usesMeta(query: Query): boolean {
+  return getSort(query.sort.key)?.reads === "meta" || filtersRead(query, "meta");
+}
+
+/** True when applying the query needs user labels (stars, tags). */
+export function usesLabels(query: Query): boolean {
+  return getSort(query.sort.key)?.reads === "labels" || filtersRead(query, "labels");
 }
 
 /* Pure query editing helpers — the store actions apply these. */

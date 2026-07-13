@@ -85,6 +85,30 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async labelsForPaths(paths: string[]) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_for_paths", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async labelsSetStars(path: string, stars: number | null) : Promise<Result<ImageLabels, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_set_stars", { path, stars }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async labelsToggleTag(path: string, tag: string) : Promise<Result<ImageLabels, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_toggle_tag", { path, tag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -142,6 +166,12 @@ export type FileEntry = { path: string; name: string; size: number; modifiedMs: 
  * Lowercased extension, e.g. "png".
  */
 formatHint: string }
+/**
+ * User labels for one image. `stars` is genuinely absent until rated;
+ * `tags` is the (possibly empty) full set. This is the wire type — the
+ * frontend keeps a `path → ImageLabels` map mirroring the database.
+ */
+export type ImageLabels = { stars: number | null; tags: string[] }
 export type ImageMeta = { 
 /**
  * None when no Rust decoder knows the format (e.g. AVIF) — the webview

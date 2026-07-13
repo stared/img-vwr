@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { executeCommand, type CommandContext } from "../../registry/commands";
+import { executeCommand, getCommand, type CommandContext } from "../../registry/commands";
 import { commandForEvent } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
 
@@ -15,7 +15,17 @@ export function useGlobalKeybindings() {
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
 
       const commandId = commandForEvent(e);
-      if (commandId && executeCommand(commandId, ctx)) {
+      if (!commandId) return;
+      // A chord on an argument-taking command collects it in the palette.
+      const command = getCommand(commandId);
+      if (command?.input) {
+        if (!command.when || command.when(ctx)) {
+          useAppStore.getState().promptCommand(commandId);
+          e.preventDefault();
+        }
+        return;
+      }
+      if (executeCommand(commandId, ctx)) {
         e.preventDefault();
       }
     };

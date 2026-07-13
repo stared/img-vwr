@@ -5,6 +5,7 @@ import type {
   DirEntry,
   EmbedModelInfo,
   FileEntry,
+  ImageLabels,
   ImageMeta,
   MetaEntry,
   Result,
@@ -12,7 +13,15 @@ import type {
 } from "./bindings";
 
 export { events };
-export type { DirEntry, EmbedModelInfo, FileEntry, ImageMeta, MetaEntry, SimilarityScore };
+export type {
+  DirEntry,
+  EmbedModelInfo,
+  FileEntry,
+  ImageLabels,
+  ImageMeta,
+  MetaEntry,
+  SimilarityScore,
+};
 
 /** Unwrap a specta Result, throwing on the error branch. */
 function unwrap<T>(result: Result<T, string>): T {
@@ -70,6 +79,25 @@ export async function embeddingRankText(
   paths: string[],
 ): Promise<SimilarityScore[]> {
   return unwrap(await commands.embeddingRankText(query, paths));
+}
+
+/** Stored labels for the given paths; unlabeled paths are absent. */
+export async function labelsForPaths(paths: string[]): Promise<Record<string, ImageLabels>> {
+  const map = unwrap(await commands.labelsForPaths(paths));
+  // specta types HashMap values as possibly-undefined; entries never are.
+  const out: Record<string, ImageLabels> = {};
+  for (const [path, labels] of Object.entries(map)) {
+    if (labels !== undefined) out[path] = labels;
+  }
+  return out;
+}
+
+export async function labelsSetStars(path: string, stars: number | null): Promise<ImageLabels> {
+  return unwrap(await commands.labelsSetStars(path, stars));
+}
+
+export async function labelsToggleTag(path: string, tag: string): Promise<ImageLabels> {
+  return unwrap(await commands.labelsToggleTag(path, tag));
 }
 
 /**

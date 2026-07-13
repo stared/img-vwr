@@ -13,6 +13,7 @@ import { registerCommand } from "./registry/commands";
 import { allPanels, registerPanel } from "./registry/panels";
 import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFilterFields } from "./filters/builtin";
+import { registerLabels } from "./labels";
 import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
@@ -27,6 +28,7 @@ registerSource(redditSource);
 registerSource(commonsSource);
 registerSourceCommands();
 registerSimilarity();
+registerLabels();
 registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
 for (const source of allSources()) {

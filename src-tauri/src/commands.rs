@@ -6,7 +6,10 @@ use imgvwr_embed::EmbedModelInfo;
 use serde::Serialize;
 use tauri::{AppHandle, Manager as _, State};
 
+use std::collections::HashMap;
+
 use crate::services::embeddings::EmbeddingService;
+use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 
 #[tauri::command]
@@ -161,6 +164,47 @@ pub async fn embedding_rank_image(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/* Label commands — the app-local star/tag store. Reads can span thousands
+ * of paths, so everything runs off the main thread like ranking does. */
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_for_paths(
+    service: State<'_, Arc<LabelService>>,
+    paths: Vec<String>,
+) -> Result<HashMap<String, ImageLabels>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.for_paths(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_set_stars(
+    service: State<'_, Arc<LabelService>>,
+    path: String,
+    stars: Option<u8>,
+) -> Result<ImageLabels, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.set_stars(&path, stars))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_toggle_tag(
+    service: State<'_, Arc<LabelService>>,
+    path: String,
+    tag: String,
+) -> Result<ImageLabels, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.toggle_tag(&path, &tag))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

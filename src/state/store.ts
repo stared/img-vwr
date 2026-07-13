@@ -10,14 +10,15 @@ import {
   zoomAtPoint,
   type Point,
 } from "../components/viewer/viewport";
-import type { EmbedModelInfo, FileEntry, ImageMeta, MetaEntry } from "../ipc";
+import type { EmbedModelInfo, FileEntry, ImageLabels, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import { getSort } from "../registry/sorts";
 import { getSource, type SourceItem } from "../registry/sources";
-import type { Query, Sort } from "./query";
+import type { Query, QueryData, Sort } from "./query";
 import {
   applyQuery,
   defaultQuery,
+  usesLabels,
   usesMeta,
   usesScores,
   withFormatToggled,
@@ -72,6 +73,9 @@ export interface AppState {
   dirCounts: Record<string, number>;
   /** path → per-image metadata, streamed in batches for the stats panel. */
   meta: Record<string, ImageMeta>;
+  /** path → user labels (stars, tags), loaded per scope from the app-local
+   * label store; absent = unlabeled. */
+  labels: Record<string, ImageLabels>;
   statsVisible: boolean;
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
@@ -113,6 +117,10 @@ interface AppActions {
   thumbFailed: (path: string, error: string, epoch: number) => void;
   dirCountReady: (path: string, count: number) => void;
   metaBatchReady: (items: MetaEntry[], epoch: number) => void;
+  /** Install the scope's stored labels (epoch-guarded, like meta). */
+  labelsLoaded: (labels: Record<string, ImageLabels>, epoch: number) => void;
+  /** One image's labels changed (rate/tag); mirror the store's response. */
+  labelApplied: (path: string, labels: ImageLabels) => void;
   toggleStats: () => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   openViewer: (index: number) => void;
@@ -159,6 +167,7 @@ export const initialState: AppState = {
   thumbErrors: {},
   dirCounts: {},
   meta: {},
+  labels: {},
   statsVisible: true,
   viewMode: "gallery",
   galleryLayout: "grid",
@@ -191,6 +200,7 @@ export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
     thumbs: {},
     thumbErrors: {},
     meta: {},
+    labels: {},
     viewMode: "gallery",
     selectedIndex: 0,
     // Similarity anchors are per-collection; a new scope starts without one.
@@ -257,15 +267,20 @@ export function movedSelection(
  * Change the query while keeping the same image selected if it survives the
  * new filters; otherwise fall back to the top.
  */
+/** The query's data channels, as the current state provides them. */
+export function queryDataOf(
+  state: Pick<AppState, "meta" | "similarity" | "labels">,
+): QueryData {
+  return { meta: state.meta, scores: state.similarity?.scores ?? {}, labels: state.labels };
+}
+
 export function withQuery(
-  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta" | "similarity">,
+  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta" | "similarity" | "labels">,
   query: Query,
 ): Partial<AppState> {
-  const scores = state.similarity?.scores ?? {};
-  const selectedPath = applyQuery(state.entries, state.query, state.meta, scores)[
-    state.selectedIndex
-  ]?.path;
-  const nextVisible = applyQuery(state.entries, query, state.meta, scores);
+  const data = queryDataOf(state);
+  const selectedPath = applyQuery(state.entries, state.query, data)[state.selectedIndex]?.path;
+  const nextVisible = applyQuery(state.entries, query, data);
   const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
   return { query, selectedIndex: index >= 0 ? index : 0 };
 }
@@ -388,13 +403,19 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     if (next) set(next);
   },
 
+  labelsLoaded: (labels, epoch) => {
+    if (epoch === get().epoch) set({ labels });
+  },
+
+  labelApplied: (path, labels) => set({ labels: { ...get().labels, [path]: labels } }),
+
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
 
   setGalleryLayout: (layout) => set({ galleryLayout: layout }),
 
   openViewer: (index) => {
-    const { entries, query, meta, similarity } = get();
-    const visibleCount = applyQuery(entries, query, meta, similarity?.scores ?? {}).length;
+    const { entries, query } = get();
+    const visibleCount = applyQuery(entries, query, queryDataOf(get())).length;
     if (index >= 0 && index < visibleCount) {
       set({
         viewMode: "viewer",
@@ -409,8 +430,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   closeViewer: () => set({ viewMode: "gallery" }),
 
   navigate: (delta) => {
-    const { entries, query, meta, similarity } = get();
-    const visibleCount = applyQuery(entries, query, meta, similarity?.scores ?? {}).length;
+    const { entries, query } = get();
+    const visibleCount = applyQuery(entries, query, queryDataOf(get())).length;
     set(movedSelection(get(), visibleCount, delta));
   },
 
@@ -514,10 +535,17 @@ export function useVisibleEntries(): FileEntry[] {
   const similarity = useAppStore((s) => s.similarity);
   // Only meta-based filters make streaming metadata batches change the
   // result; otherwise skip re-sorting thousands of entries per batch.
+  const labels = useAppStore((s) => s.labels);
   const metaDep = usesMeta(query) ? meta : null;
   const scoresDep = usesScores(query) ? (similarity?.scores ?? null) : null;
+  const labelsDep = usesLabels(query) ? labels : null;
   return useMemo(
-    () => applyQuery(entries, query, metaDep ?? {}, scoresDep ?? {}),
-    [entries, query, metaDep, scoresDep],
+    () =>
+      applyQuery(entries, query, {
+        meta: metaDep ?? {},
+        scores: scoresDep ?? {},
+        labels: labelsDep ?? {},
+      }),
+    [entries, query, metaDep, scoresDep, labelsDep],
   );
 }

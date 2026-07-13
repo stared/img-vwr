@@ -8,6 +8,7 @@ use tauri::Manager as _;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 use services::embeddings::EmbeddingService;
+use services::labels::LabelService;
 use services::thumbnails::ThumbnailService;
 
 fn specta_builder() -> Builder<tauri::Wry> {
@@ -25,6 +26,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_index,
             commands::embedding_rank_image,
             commands::embedding_rank_text,
+            commands::labels_for_paths,
+            commands::labels_set_stars,
+            commands::labels_toggle_tag,
         ])
         .events(collect_events![
             events::ThumbnailReady,
@@ -77,6 +81,10 @@ pub fn run() {
             let cache_root = app.path().app_cache_dir()?;
             app.manage(Arc::new(ThumbnailService::new(cache_root.join("thumbnails"))?));
             app.manage(Arc::new(EmbeddingService::new(cache_root)?));
+            // Labels are user data, not a cache — they live in app data.
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            app.manage(Arc::new(LabelService::new(&data_dir.join("labels.db"))?));
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -12,6 +12,7 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const cacheFile = useAppStore((s) => s.thumbs[entry.path]);
   const error = useAppStore((s) => s.thumbErrors[entry.path]);
   const selected = useAppStore((s) => s.selectedIndex === index);
+  const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
 
   return (
@@ -22,6 +23,7 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
       onDoubleClick={() => openViewer(index)}
     >
       <div className="thumb-frame" style={{ height: size }}>
+        {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
         {cacheFile !== undefined ? (
           <img src={fileUrl(cacheFile)} alt={entry.name} loading="lazy" draggable={false} />
         ) : error !== undefined ? (

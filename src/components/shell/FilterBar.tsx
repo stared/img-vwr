@@ -53,6 +53,7 @@ function fieldHint(field: FilterField): string {
     case "menu":
       return field.hint;
     case "select":
+    case "flags":
       return "›";
     case "range":
       return field.spec.ops.map((op) => OP_SYMBOL[op]).join(" ");

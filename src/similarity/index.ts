@@ -9,7 +9,7 @@ import { registerCommand, type CommandContext } from "../registry/commands";
 import { registerSort } from "../registry/sorts";
 import { applyQuery } from "../state/query";
 import type { Similarity } from "../state/store";
-import { useAppStore } from "../state/store";
+import { queryDataOf, useAppStore } from "../state/store";
 import { ModelMenu } from "./ModelMenu";
 
 /**
@@ -74,7 +74,7 @@ export async function similarTo(anchor: Similarity["anchor"], label: string): Pr
 /** The image the user is on, within the current (query-applied) view. */
 function selectedEntryPath(): { path: string; name: string } | null {
   const s = useAppStore.getState();
-  const visible = applyQuery(s.entries, s.query, s.meta, s.similarity?.scores ?? {});
+  const visible = applyQuery(s.entries, s.query, queryDataOf(s));
   const entry = visible[s.selectedIndex];
   return entry ? { path: entry.path, name: entry.name } : null;
 }

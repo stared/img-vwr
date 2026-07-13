@@ -31,7 +31,7 @@ export function registerBuiltinFilterFields(): void {
     label: "format",
     hint: "›",
     appliesTo: () => true,
-    needsMeta: false,
+    reads: "entry",
     Menu: FormatMenuItems,
   });
   registerFilterField({
@@ -39,8 +39,8 @@ export function registerBuiltinFilterFields(): void {
     id: "camera",
     label: "camera",
     appliesTo: () => true,
-    needsMeta: true,
-    value: (_entry, meta) => meta?.exif?.camera ?? null,
+    reads: "meta",
+    value: (_entry, { meta }) => meta?.exif?.camera ?? null,
     Menu: CameraMenuItems,
   });
   registerFilterField({
@@ -48,8 +48,8 @@ export function registerBuiltinFilterFields(): void {
     id: "aspect",
     label: "aspect",
     appliesTo: () => true,
-    needsMeta: true,
-    value: (_entry, meta) => {
+    reads: "meta",
+    value: (_entry, { meta }) => {
       const dims = meta ? effectiveDims(meta) : null;
       return dims ? aspectLabelOf(dims) : null;
     },
@@ -60,8 +60,8 @@ export function registerBuiltinFilterFields(): void {
     id: "taken",
     label: "taken",
     appliesTo: () => true,
-    needsMeta: true,
-    spec: dateRangeSpec((_entry, meta) => (meta ? takenMs(meta) : null)),
+    reads: "meta",
+    spec: dateRangeSpec((_entry, { meta }) => (meta ? takenMs(meta) : null)),
     Menu: rangeMenu("taken"),
   });
   registerFilterField({
@@ -69,7 +69,7 @@ export function registerBuiltinFilterFields(): void {
     id: "modified",
     label: "modified",
     appliesTo: () => true,
-    needsMeta: false,
+    reads: "entry",
     spec: dateRangeSpec((entry) => entry.modifiedMs),
     Menu: rangeMenu("modified"),
   });
@@ -78,7 +78,7 @@ export function registerBuiltinFilterFields(): void {
     id: "size",
     label: "size",
     appliesTo: () => true,
-    needsMeta: false,
+    reads: "entry",
     // Exact file size is never a useful question; ranges only.
     spec: numberRangeSpec((entry) => entry.size, {
       unit: "MB",
@@ -93,9 +93,9 @@ export function registerBuiltinFilterFields(): void {
     id: "edge",
     label: "longest edge",
     appliesTo: () => true,
-    needsMeta: true,
+    reads: "meta",
     spec: numberRangeSpec(
-      (_entry, meta) => {
+      (_entry, { meta }) => {
         const dims = meta ? effectiveDims(meta) : null;
         return dims ? Math.max(dims.width, dims.height) : null;
       },

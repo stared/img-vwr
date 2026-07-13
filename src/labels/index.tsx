@@ -1,0 +1,142 @@
+import { RangeMenuForm, SelectMenuItems } from "../components/shell/filterMenus";
+import type { FileEntry } from "../ipc";
+import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../ipc";
+import { registerCommand, type CommandContext } from "../registry/commands";
+import { registerFilterField } from "../registry/filters";
+import { registerSort } from "../registry/sorts";
+import { applyQuery, numberRangeSpec } from "../state/query";
+import { queryDataOf, useAppStore } from "../state/store";
+
+/**
+ * Labels module — the first WRITE path: user-assigned stars and tags,
+ * persisted app-locally in Rust (never touching the image files). Both
+ * label kinds enter the query language purely by registering fields and a
+ * sort; nothing here is special-cased in the engine.
+ *
+ * Keys (Lightroom-style): 1–5 rate, 0 clears, t tags — on the selected
+ * grid cell and in the viewer, where rating auto-advances for culling.
+ */
+
+/** The image the keys act on: the selected one in the query-applied view. */
+function selectedEntry(): FileEntry | null {
+  const s = useAppStore.getState();
+  return applyQuery(s.entries, s.query, queryDataOf(s))[s.selectedIndex] ?? null;
+}
+
+async function rateSelected(stars: number | null): Promise<void> {
+  const entry = selectedEntry();
+  if (!entry) return;
+  const { viewMode, labelApplied, navigate } = useAppStore.getState();
+  labelApplied(entry.path, await labelsSetStars(entry.path, stars));
+  // Culling rhythm: rating in the viewer moves on to the next image.
+  if (viewMode === "viewer" && stars !== null) navigate(1);
+}
+
+async function tagSelected(tag: string): Promise<void> {
+  const entry = selectedEntry();
+  if (!entry) return;
+  useAppStore.getState().labelApplied(entry.path, await labelsToggleTag(entry.path, tag));
+}
+
+function StarsMenu({ close }: { close: () => void }) {
+  return <RangeMenuForm field="stars" close={close} />;
+}
+
+/** Tags present in the current collection, most used first. */
+function TagMenuItems({ close }: { close: () => void }) {
+  const entries = useAppStore((s) => s.entries);
+  const labels = useAppStore((s) => s.labels);
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const tag of labels[entry.path]?.tags ?? []) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  const buckets = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([tag]) => ({ label: tag, value: tag }));
+  return (
+    <SelectMenuItems field="tag" buckets={buckets} empty="nothing tagged (yet)" close={close} />
+  );
+}
+
+const STAR_KEYWORDS = ["stars", "rating", "rate", "label", "cull"];
+
+export function registerLabels(): void {
+  registerFilterField({
+    kind: "range",
+    id: "stars",
+    label: "stars",
+    appliesTo: () => true,
+    reads: "labels",
+    Menu: StarsMenu,
+    spec: numberRangeSpec((_entry, { labels }) => labels.stars, {
+      unit: "★",
+      scale: 1,
+      integer: true,
+      ops: ["<=", "=", ">="],
+    }),
+  });
+
+  registerFilterField({
+    kind: "flags",
+    id: "tag",
+    label: "tag",
+    appliesTo: () => true,
+    reads: "labels",
+    Menu: TagMenuItems,
+    values: (_entry, { labels }) => labels.tags,
+  });
+
+  registerSort({
+    id: "stars",
+    label: "stars",
+    hints: { asc: "lowest rated", desc: "highest rated" },
+    defaultDir: "desc",
+    appliesTo: () => true,
+    reads: "labels",
+    // Unrated images stay visible, after the rated ones.
+    missing: "last",
+    param: null,
+    value: (_entry, ctx) => ctx.labels.stars,
+  });
+
+  const hasSelection = (ctx: CommandContext) => {
+    const s = ctx.store.getState();
+    return s.entries.length > 0;
+  };
+
+  for (let n = 0; n <= 5; n += 1) {
+    registerCommand({
+      id: `labels.stars.${n}`,
+      title: n === 0 ? "Clear Rating" : `Rate ${"★".repeat(n)}`,
+      keywords: STAR_KEYWORDS,
+      when: hasSelection,
+      run: () => rateSelected(n === 0 ? null : n),
+    });
+  }
+
+  registerCommand({
+    id: "labels.tag",
+    title: "Tag Image…",
+    keywords: ["label", "keyword", "add tag", "remove tag"],
+    input: { placeholder: "add or remove a tag, e.g. family" },
+    when: hasSelection,
+    run: async (_ctx, arg) => {
+      const tag = arg?.trim();
+      if (tag) await tagSelected(tag);
+    },
+  });
+
+  // Load the stored labels whenever a scope's entries land (epoch-guarded).
+  let lastEntries: FileEntry[] | null = null;
+  useAppStore.subscribe((state) => {
+    if (state.entries === lastEntries) return;
+    lastEntries = state.entries;
+    if (state.entries.length === 0) return;
+    const epoch = state.epoch;
+    void labelsForPaths(state.entries.map((e) => e.path)).then((labels) => {
+      useAppStore.getState().labelsLoaded(labels, epoch);
+    });
+  });
+}

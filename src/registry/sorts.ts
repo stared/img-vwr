@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
 import type { Scope } from "../state/store";
 
 /**
@@ -27,10 +27,12 @@ export interface SortValueContext {
   /** Computed per-image scores (e.g. similarity), keyed by path; empty
    * unless something put scores into the store. */
   scores: Record<string, number>;
+  /** This image's user labels (stars, tags); the empty set when unlabeled. */
+  labels: ImageLabels;
 }
 
 /** What a sort's value function reads; drives re-sort invalidation. */
-export type SortReads = "entry" | "meta" | "scores";
+export type SortReads = "entry" | "meta" | "scores" | "labels";
 
 /**
  * One token of a parameterized sort's chip. Every token declares its own
