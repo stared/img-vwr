@@ -64,8 +64,11 @@ export async function similarTo(anchor: Similarity["anchor"], label: string): Pr
     entries.map((e) => e.path),
     epoch,
   );
-  const scores = await rankAnchor(anchor);
-  setSimilarity({ label, anchor, scores });
+  // The chip and sort flip to the new anchor NOW; the old phrase's order
+  // must never be shown under the new label. Scores stream in behind it —
+  // a ranked view shows nothing until they land, then fills best-first.
+  setSimilarity({ label, anchor, scores: {} });
+  await refreshScores(anchor);
 }
 
 /** The image the user is on, within the current (query-applied) view. */

@@ -141,30 +141,43 @@ pub struct SimilarityScore {
     pub score: f32,
 }
 
+/* Ranking runs a model forward pass; async + spawn_blocking keeps it off
+ * the main thread so the window never freezes while it computes. */
+
 #[tauri::command]
 #[specta::specta]
-pub fn embedding_rank_image(
+pub async fn embedding_rank_image(
     service: State<'_, Arc<EmbeddingService>>,
     anchor: String,
     paths: Vec<String>,
 ) -> Result<Vec<SimilarityScore>, String> {
-    let scores = service.rank_image(&anchor, &paths)?;
-    Ok(scores
-        .into_iter()
-        .map(|(path, score)| SimilarityScore { path, score })
-        .collect())
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let scores = service.rank_image(&anchor, &paths)?;
+        Ok(scores
+            .into_iter()
+            .map(|(path, score)| SimilarityScore { path, score })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn embedding_rank_text(
+pub async fn embedding_rank_text(
     service: State<'_, Arc<EmbeddingService>>,
     query: String,
     paths: Vec<String>,
 ) -> Result<Vec<SimilarityScore>, String> {
-    let scores = service.rank_text(&query, &paths)?;
-    Ok(scores
-        .into_iter()
-        .map(|(path, score)| SimilarityScore { path, score })
-        .collect())
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let scores = service.rank_text(&query, &paths)?;
+        Ok(scores
+            .into_iter()
+            .map(|(path, score)| SimilarityScore { path, score })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
