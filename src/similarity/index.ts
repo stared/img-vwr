@@ -3,6 +3,7 @@ import {
   embeddingModels,
   embeddingRankImage,
   embeddingRankText,
+  embeddingSelect,
   events,
 } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
@@ -140,15 +141,30 @@ export function registerSimilarity(): void {
 
   registerCommand({
     id: "similar.image",
-    title: "Closest to This Image",
-    keywords: ["similar", "alike", "embedding", "nearest", "resembles"],
+    title: "Find Similar",
+    keywords: ["similar", "alike", "closest", "embedding", "nearest", "resembles"],
     menus: [{ menu: "image", submenu: null, label: "Find Similar" }],
-    when: (ctx: CommandContext) =>
-      inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
-    run: async () => {
+    // No model-ready gate: picking it does whatever is needed to get there.
+    when: (ctx: CommandContext) => inFolderScope() && ctx.store.getState().entries.length > 0,
+    run: async ({ store }) => {
       const selected = selectedEntryPath();
       if (!selected) return;
-      await similarTo({ kind: "image", path: selected.path }, selected.name);
+      const anchor = { kind: "image", path: selected.path } as const;
+      if (modelReady()) {
+        await similarTo(anchor, selected.name);
+        return;
+      }
+      const downloaded = store.getState().embedModels.find((m) => m.downloaded);
+      if (downloaded === undefined) {
+        // Nothing on disk: downloading gigabytes stays an explicit choice —
+        // hand over to the model picker.
+        store.getState().setActivePanel("similarity");
+        return;
+      }
+      // Load the (already downloaded) model with the anchor set; the chip
+      // shows "with loading…" and the ready listener below runs the rank.
+      store.getState().setSimilarity({ label: selected.name, anchor, scores: {} });
+      await embeddingSelect(downloaded.id);
     },
   });
 
