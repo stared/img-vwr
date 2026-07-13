@@ -61,6 +61,10 @@ export function ImageViewer() {
       className="viewer-canvas"
       onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
       <img
         key={entry.path}

@@ -111,6 +111,7 @@ export function registerLabels(): void {
       id: `labels.stars.${n}`,
       title: n === 0 ? "Clear Rating" : `Rate ${"★".repeat(n)}`,
       keywords: STAR_KEYWORDS,
+      menus: ["image"],
       when: hasSelection,
       run: () => rateSelected(n === 0 ? null : n),
     });
@@ -121,6 +122,7 @@ export function registerLabels(): void {
     title: "Tag Image…",
     keywords: ["label", "keyword", "add tag", "remove tag"],
     input: { placeholder: "add or remove a tag, e.g. family" },
+    menus: ["image"],
     when: hasSelection,
     run: async (_ctx, arg) => {
       const tag = arg?.trim();

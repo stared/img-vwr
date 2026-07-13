@@ -10,6 +10,9 @@ export interface CommandContext {
   store: typeof useAppStore;
 }
 
+/** Context menus a command can surface in, besides the palette. */
+export type CommandMenu = "image";
+
 export interface Command {
   id: string;
   title: string;
@@ -17,6 +20,11 @@ export interface Command {
   keywords?: string[];
   /** If set, the palette collects a text argument before running. */
   input?: { placeholder: string };
+  /**
+   * Menus this command appears in — every command states its placements
+   * ([] = palette only). Right-clicking an image lists the "image" ones.
+   */
+  menus: CommandMenu[];
   /** Shown in the palette next to the title (derived from keybindings). */
   when?: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, arg?: string) => void | Promise<void>;
@@ -37,6 +45,13 @@ export function getCommand(id: string): Command | undefined {
 
 export function allCommands(): Command[] {
   return [...registry.values()];
+}
+
+/** Applicable commands for a context menu, in registration order. */
+export function menuCommands(menu: CommandMenu, ctx: CommandContext): Command[] {
+  return allCommands().filter(
+    (c) => c.menus.includes(menu) && (!c.when || c.when(ctx)),
+  );
 }
 
 /** Runs the command if it exists and its `when` guard passes. */

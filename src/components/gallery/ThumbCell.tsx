@@ -21,6 +21,11 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
       style={{ width: size }}
       onClick={() => useAppStore.setState({ selectedIndex: index })}
       onDoubleClick={() => openViewer(index)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useAppStore.setState({ selectedIndex: index });
+        useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
       <div className="thumb-frame" style={{ height: size }}>
         {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}

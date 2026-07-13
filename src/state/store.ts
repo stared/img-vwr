@@ -92,6 +92,8 @@ export interface AppState {
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
+  /** Right-click menu position over the selected image; null = closed. */
+  imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
   similarity: Similarity | null;
   /** Model catalog with downloaded/active flags, for the picker panel. */
@@ -143,6 +145,7 @@ interface AppActions {
   setPaletteOpen: (open: boolean) => void;
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
+  setImageMenu: (pos: { x: number; y: number } | null) => void;
   /** Install similarity scores and switch the sort to "similar". */
   setSimilarity: (similarity: Similarity) => void;
   clearSimilarity: () => void;
@@ -178,6 +181,7 @@ export const initialState: AppState = {
   activePanelId: "folders",
   paletteOpen: false,
   palettePrompt: null,
+  imageMenu: null,
   similarity: null,
   embedModels: [],
   embedStatus: null,
@@ -474,6 +478,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
 
   promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
+
+  setImageMenu: (imageMenu) => set({ imageMenu }),
 
   setSimilarity: (similarity) => {
     // Streaming score updates must not reset a direction the user flipped.

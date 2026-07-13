@@ -12,6 +12,7 @@ export function registerSourceCommands(): void {
       title: source.title,
       keywords: ["source", "open", source.id],
       input: { placeholder: source.placeholder },
+      menus: [],
       run: ({ store }, arg) => {
         if (arg !== undefined && arg.trim() !== "") {
           void store.getState().openSource(source.id, arg.trim());

@@ -52,6 +52,7 @@ for (const panel of allPanels()) {
     id: `view.${panel.id}`,
     title: `Show ${panel.title}`,
     keywords: ["view", "panel", "sidebar"],
+    menus: [],
     run: ({ store }) => store.getState().setActivePanel(panel.id),
   });
 }

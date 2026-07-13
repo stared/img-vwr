@@ -142,6 +142,7 @@ export function registerSimilarity(): void {
     id: "similar.image",
     title: "Closest to This Image",
     keywords: ["similar", "alike", "embedding", "nearest", "resembles"],
+    menus: ["image"],
     when: (ctx: CommandContext) =>
       inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
     run: async () => {
@@ -156,6 +157,7 @@ export function registerSimilarity(): void {
     title: "Closest to Phrase…",
     keywords: ["similar", "semantic", "describe", "embedding", "clip", "search by meaning"],
     input: { placeholder: "describe it, e.g. sunset over mountains" },
+    menus: [],
     when: (ctx: CommandContext) =>
       inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
     run: async (_ctx, arg) => {

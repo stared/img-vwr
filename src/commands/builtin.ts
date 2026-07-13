@@ -20,6 +20,7 @@ export function registerBuiltinCommands(): void {
     id: "folder.open",
     title: "Open Folder…",
     keywords: ["directory", "browse"],
+    menus: [],
     run: async ({ store }) => {
       const selected = await open({ directory: true, title: "Open Folder" });
       if (typeof selected === "string") {
@@ -32,12 +33,14 @@ export function registerBuiltinCommands(): void {
     id: "palette.open",
     title: "Command Palette",
     keywords: ["commands", "search"],
+    menus: [],
     run: ({ store }) => store.getState().setPaletteOpen(true),
   });
 
   registerCommand({
     id: "sidebar.toggle",
     title: "Toggle Sidebar",
+    menus: [],
     run: ({ store }) => store.getState().toggleSidebar(),
   });
 
@@ -45,6 +48,7 @@ export function registerBuiltinCommands(): void {
     id: "stats.toggle",
     title: "Toggle Statistics",
     keywords: ["histogram", "exif", "panel"],
+    menus: [],
     run: ({ store }) => store.getState().toggleStats(),
   });
 
@@ -53,6 +57,7 @@ export function registerBuiltinCommands(): void {
     title: "Toggle Map View",
     keywords: ["geo", "gps", "location", "grid"],
     when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    menus: [],
     run: ({ store }) => {
       const { galleryLayout, setGalleryLayout } = store.getState();
       setGalleryLayout(galleryLayout === "grid" ? "map" : "grid");
@@ -63,6 +68,7 @@ export function registerBuiltinCommands(): void {
     id: "viewer.open",
     title: "Open Image",
     keywords: ["view", "show"],
+    menus: ["image"],
     when: (ctx) => hasImages(ctx) && !inViewer(ctx),
     run: ({ store }) => store.getState().openViewer(store.getState().selectedIndex),
   });
@@ -72,6 +78,7 @@ export function registerBuiltinCommands(): void {
     title: "Back to Gallery",
     keywords: ["escape", "grid"],
     when: inViewer,
+    menus: [],
     run: ({ store }) => store.getState().closeViewer(),
   });
 
@@ -79,6 +86,7 @@ export function registerBuiltinCommands(): void {
     id: "image.next",
     title: "Next Image",
     when: hasImages,
+    menus: [],
     run: ({ store }) => store.getState().navigate(1),
   });
 
@@ -86,6 +94,7 @@ export function registerBuiltinCommands(): void {
     id: "image.prev",
     title: "Previous Image",
     when: hasImages,
+    menus: [],
     run: ({ store }) => store.getState().navigate(-1),
   });
 
@@ -93,6 +102,7 @@ export function registerBuiltinCommands(): void {
     id: "viewer.zoomIn",
     title: "Zoom In",
     when: inViewer,
+    menus: [],
     run: ({ store }) => store.getState().viewerZoom(ZOOM_STEP),
   });
 
@@ -100,6 +110,7 @@ export function registerBuiltinCommands(): void {
     id: "viewer.zoomOut",
     title: "Zoom Out",
     when: inViewer,
+    menus: [],
     run: ({ store }) => store.getState().viewerZoom(1 / ZOOM_STEP),
   });
 
@@ -108,6 +119,7 @@ export function registerBuiltinCommands(): void {
     title: "Zoom to Fit",
     keywords: ["reset"],
     when: inViewer,
+    menus: [],
     run: ({ store }) => store.getState().viewerZoomFit(),
   });
 
@@ -116,6 +128,7 @@ export function registerBuiltinCommands(): void {
     title: "Zoom to 100%",
     keywords: ["actual size", "pixel"],
     when: inViewer,
+    menus: [],
     run: ({ store }) => store.getState().viewerZoomActual(),
   });
 
@@ -124,6 +137,7 @@ export function registerBuiltinCommands(): void {
     title: "Find by Name…",
     keywords: ["search", "filter"],
     when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    menus: [],
     run: ({ store }) => store.getState().setFindOpen(true),
   });
 
@@ -133,7 +147,8 @@ export function registerBuiltinCommands(): void {
       title: `Filter: ${group.label}`,
       keywords: ["type", "format", "toggle"],
       when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-      run: ({ store }) => store.getState().toggleFormatFilter(group.id),
+      menus: [],
+    run: ({ store }) => store.getState().toggleFormatFilter(group.id),
     });
   }
 
@@ -141,6 +156,7 @@ export function registerBuiltinCommands(): void {
     id: "filter.clear",
     title: "Clear Filters",
     when: ({ store }) => store.getState().query.filters.length > 0,
+    menus: [],
     run: ({ store }) => store.getState().clearFilters(),
   });
 }
@@ -162,7 +178,8 @@ export function registerSortCommands(): void {
         const state = ctx.store.getState();
         return state.entries.length > 0 && provider.appliesTo(state.scope);
       },
-      run: ({ store }) => store.getState().sortBy(provider.id),
+      menus: [],
+    run: ({ store }) => store.getState().sortBy(provider.id),
     });
   }
 }

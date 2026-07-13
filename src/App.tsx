@@ -4,6 +4,7 @@ import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { MapGallery } from "./components/gallery/MapGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { FilterBar } from "./components/shell/FilterBar";
+import { ImageContextMenu } from "./components/shell/ImageContextMenu";
 import { DEFAULT_START_FOLDER } from "./config";
 import { RightSidebar } from "./components/shell/RightSidebar";
 import { Sidebar } from "./components/shell/Sidebar";
@@ -74,6 +75,7 @@ function App() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <ImageContextMenu />
     </div>
   );
 }
