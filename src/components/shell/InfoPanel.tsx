@@ -62,8 +62,9 @@ function HistogramCanvas({ stats }: { stats: ImageStats }) {
 
 /**
  * Maxwell triangle, equilateral: blue bottom-left, red bottom-right, green
- * top. Each grid cell maps its barycentric (r, g, b) into the triangle and
- * is painted in its own hue; opacity is log-scaled pixel density.
+ * top, tessellated into N² small ▲/▽ triangles (the natural simplex split).
+ * Each cell is painted in its own hue; opacity is log-scaled pixel density,
+ * fully opaque at the densest cell so sparse single-color cells stay faint.
  */
 function TriangleCanvas({ stats }: { stats: ImageStats }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -73,26 +74,39 @@ function TriangleCanvas({ stats }: { stats: ImageStats }) {
     if (!canvas || !ctx) return;
     const { width: w, height: h } = canvas;
     ctx.clearRect(0, 0, w, h);
-    const grid = stats.triangleGrid;
-    const dot = Math.ceil(w / grid);
-    const maxLog = Math.max(1e-6, ...stats.triangle.map((c) => Math.log1p(c)));
+    const n = stats.triangleN;
+    const maxLog = Math.max(
+      1e-6,
+      ...stats.triUp.map((c) => Math.log1p(c)),
+      ...stats.triDown.map((c) => Math.log1p(c)),
+    );
+    // Barycentric (u = red, v = green) → pixels: blue at bottom-left.
+    const px = (u: number, v: number) => ({ x: u * w + v * (w / 2), y: h - v * h });
 
-    for (let row = 0; row < grid; row += 1) {
-      for (let col = 0; col < grid; col += 1) {
-        const count = stats.triangle[row * grid + col] ?? 0;
-        if (count === 0) continue;
-        const r = (col + 0.5) / grid;
-        const g = (row + 0.5) / grid;
-        const b = Math.max(0, 1 - r - g);
-        const peak = Math.max(r, g, b);
-        const alpha = 0.25 + 0.75 * (Math.log1p(count) / maxLog);
-        ctx.fillStyle = `rgba(${Math.round((255 * r) / peak)}, ${Math.round(
-          (255 * g) / peak,
-        )}, ${Math.round((255 * b) / peak)}, ${alpha})`;
-        // Equilateral mapping: P = r·(w, h) + g·(w/2, 0) + b·(0, h).
-        const x = r * w + g * (w / 2);
-        const y = h - g * h;
-        ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
+    const cell = (a: number, b: number, down: boolean, count: number) => {
+      if (count === 0) return;
+      // Cell centroid in barycentric coordinates gives the hue.
+      const u = (3 * a + (down ? 2 : 1)) / (3 * n);
+      const v = (3 * b + (down ? 2 : 1)) / (3 * n);
+      const bl = Math.max(0, 1 - u - v);
+      const peak = Math.max(u, v, bl);
+      const alpha = Math.pow(Math.log1p(count) / maxLog, 1.5);
+      ctx.fillStyle = `rgba(${Math.round((255 * u) / peak)}, ${Math.round(
+        (255 * v) / peak,
+      )}, ${Math.round((255 * bl) / peak)}, ${alpha})`;
+      const corners = down
+        ? [px((a + 1) / n, b / n), px(a / n, (b + 1) / n), px((a + 1) / n, (b + 1) / n)]
+        : [px(a / n, b / n), px((a + 1) / n, b / n), px(a / n, (b + 1) / n)];
+      ctx.beginPath();
+      corners.forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y)));
+      ctx.closePath();
+      ctx.fill();
+    };
+
+    for (let b = 0; b < n; b += 1) {
+      for (let a = 0; a + b < n; a += 1) {
+        cell(a, b, false, stats.triUp[b * n + a] ?? 0);
+        if (a + b < n - 1) cell(a, b, true, stats.triDown[b * n + a] ?? 0);
       }
     }
   }, [stats]);

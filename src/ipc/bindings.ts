@@ -205,12 +205,13 @@ export type ImageStats = {
  */
 luma: number[]; red: number[]; green: number[]; blue: number[]; 
 /**
- * Maxwell-triangle density: `TRIANGLE_GRID`² cells over barycentric
- * RGB coordinates (x = r/(r+g+b), y = g/(r+g+b)), row-major; cells
- * with x + y > 1 are structurally empty. Grayscale pixels land in the
- * center cell.
+ * Maxwell-triangle density over a simplex tessellation: the triangle
+ * splits into `TRIANGLE_N`² small triangles — "up" cells (▲) indexed
+ * `[b*N + a]` for a + b ≤ N-1 and "down" cells (▽) for a + b ≤ N-2,
+ * where a, b scale the barycentric red/green coordinates by N. Both
+ * vectors are N×N with the structurally empty slots at zero.
  */
-triangle: number[]; triangleGrid: number }
+triangleN: number; triUp: number[]; triDown: number[] }
 /**
  * A batch of per-image metadata read in the background for the stats panel.
  */

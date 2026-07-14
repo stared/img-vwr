@@ -2,8 +2,8 @@ use serde::Serialize;
 
 use crate::codec::DecodedImage;
 
-/// Cells per side of the color-triangle density grid.
-pub const TRIANGLE_GRID: usize = 48;
+/// Rows in the color-triangle tessellation (N² small triangles).
+pub const TRIANGLE_N: usize = 48;
 
 /// Per-image pixel statistics for the info panel, computed from the cached
 /// thumbnail (256 px is plenty for distribution shapes and it is already on
@@ -16,12 +16,14 @@ pub struct ImageStats {
     pub red: Vec<u32>,
     pub green: Vec<u32>,
     pub blue: Vec<u32>,
-    /// Maxwell-triangle density: `TRIANGLE_GRID`² cells over barycentric
-    /// RGB coordinates (x = r/(r+g+b), y = g/(r+g+b)), row-major; cells
-    /// with x + y > 1 are structurally empty. Grayscale pixels land in the
-    /// center cell.
-    pub triangle: Vec<u32>,
-    pub triangle_grid: u32,
+    /// Maxwell-triangle density over a simplex tessellation: the triangle
+    /// splits into `TRIANGLE_N`² small triangles — "up" cells (▲) indexed
+    /// `[b*N + a]` for a + b ≤ N-1 and "down" cells (▽) for a + b ≤ N-2,
+    /// where a, b scale the barycentric red/green coordinates by N. Both
+    /// vectors are N×N with the structurally empty slots at zero.
+    pub triangle_n: u32,
+    pub tri_up: Vec<u32>,
+    pub tri_down: Vec<u32>,
 }
 
 pub fn image_stats(img: &DecodedImage) -> ImageStats {
@@ -29,7 +31,9 @@ pub fn image_stats(img: &DecodedImage) -> ImageStats {
     let mut red = vec![0u32; 256];
     let mut green = vec![0u32; 256];
     let mut blue = vec![0u32; 256];
-    let mut triangle = vec![0u32; TRIANGLE_GRID * TRIANGLE_GRID];
+    let n = TRIANGLE_N;
+    let mut tri_up = vec![0u32; n * n];
+    let mut tri_down = vec![0u32; n * n];
 
     for px in img.rgba.chunks_exact(4) {
         let (r, g, b) = (px[0], px[1], px[2]);
@@ -40,14 +44,27 @@ pub fn image_stats(img: &DecodedImage) -> ImageStats {
         luma[(y.round() as usize).min(255)] += 1;
 
         let sum = u32::from(r) + u32::from(g) + u32::from(b);
-        let (x_frac, y_frac) = if sum == 0 {
+        let (u, v) = if sum == 0 {
             (1.0 / 3.0, 1.0 / 3.0) // pure black is colorless: center
         } else {
             (f32::from(r) / sum as f32, f32::from(g) / sum as f32)
         };
-        let col = ((x_frac * TRIANGLE_GRID as f32) as usize).min(TRIANGLE_GRID - 1);
-        let row = ((y_frac * TRIANGLE_GRID as f32) as usize).min(TRIANGLE_GRID - 1);
-        triangle[row * TRIANGLE_GRID + col] += 1;
+        // Simplex binning: cell (a, b), upward when the fractional parts
+        // stay under the cell's diagonal, downward above it.
+        let (su, sv) = (u * n as f32, v * n as f32);
+        let a = (su as usize).min(n - 1);
+        let mut b = (sv as usize).min(n - 1);
+        if a + b > n - 1 {
+            // Float edge: clamp back onto the simplex boundary.
+            b = n - 1 - a;
+        }
+        // Down cells only exist strictly inside the simplex (a + b ≤ N-2).
+        let up = (su - a as f32) + (sv - b as f32) <= 1.0 || a + b == n - 1;
+        if up {
+            tri_up[b * n + a] += 1;
+        } else {
+            tri_down[b * n + a] += 1;
+        }
     }
 
     ImageStats {
@@ -55,8 +72,9 @@ pub fn image_stats(img: &DecodedImage) -> ImageStats {
         red,
         green,
         blue,
-        triangle,
-        triangle_grid: TRIANGLE_GRID as u32,
+        triangle_n: n as u32,
+        tri_up,
+        tri_down,
     }
 }
 
@@ -86,12 +104,14 @@ mod tests {
     #[test]
     fn triangle_puts_pure_red_in_the_red_corner_and_gray_in_the_center() {
         let stats = image_stats(&img(&[[255, 0, 0, 255], [128, 128, 128, 255]]));
-        let grid = TRIANGLE_GRID;
-        // Pure red: x = 1 → last column of row 0.
-        assert_eq!(stats.triangle[grid - 1], 1);
-        // Gray: x = y = 1/3 → the center-ish cell.
-        let center = grid / 3;
-        assert_eq!(stats.triangle[center * grid + center], 1);
-        assert_eq!(stats.triangle.iter().sum::<u32>(), 2);
+        let n = TRIANGLE_N;
+        // Pure red: u = 1 → the up-cell at the red corner (a = N-1, b = 0).
+        assert_eq!(stats.tri_up[n - 1], 1);
+        // Gray: u = v = 1/3 → an up cell at the center.
+        let center = n / 3;
+        assert_eq!(stats.tri_up[center * n + center], 1);
+        let total: u32 =
+            stats.tri_up.iter().sum::<u32>() + stats.tri_down.iter().sum::<u32>();
+        assert_eq!(total, 2);
     }
 }
