@@ -977,6 +977,34 @@ button.stats-row:hover .stats-label {
   text-align: center;
 }
 
+/* ---- Image info panel ---- */
+
+.info-fact {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.info-fact-label {
+  flex-shrink: 0;
+  width: 72px;
+  color: var(--text-dim);
+}
+
+.info-fact-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-canvas {
+  display: block;
+  margin: 4px 8px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
 /* ---- Viewer ---- */
 
 .viewer-canvas {

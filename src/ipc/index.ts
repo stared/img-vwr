@@ -7,6 +7,7 @@ import type {
   FileEntry,
   ImageLabels,
   ImageMeta,
+  ImageStats,
   MetaEntry,
   Result,
   SimilarityScore,
@@ -19,6 +20,7 @@ export type {
   FileEntry,
   ImageLabels,
   ImageMeta,
+  ImageStats,
   MetaEntry,
   SimilarityScore,
 };
@@ -79,6 +81,11 @@ export async function embeddingRankText(
   paths: string[],
 ): Promise<SimilarityScore[]> {
   return unwrap(await commands.embeddingRankText(query, paths));
+}
+
+/** Pixel statistics (histograms, color triangle) from the cached thumb. */
+export async function imageStats(path: string): Promise<ImageStats> {
+  return unwrap(await commands.imageStats(path));
 }
 
 /** Stored labels for the given paths; unlabeled paths are absent. */

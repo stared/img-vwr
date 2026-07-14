@@ -90,6 +90,18 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Per-image pixel statistics (histograms, color triangle) for the info
+ * panel — computed from the cached thumbnail, off the main thread.
+ */
+async imageStats(path: string) : Promise<Result<ImageStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("image_stats", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async labelsForPaths(paths: string[]) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("labels_for_paths", { paths }) };
@@ -182,6 +194,23 @@ export type ImageMeta = {
  * can still measure the image it renders natively.
  */
 width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null }
+/**
+ * Per-image pixel statistics for the info panel, computed from the cached
+ * thumbnail (256 px is plenty for distribution shapes and it is already on
+ * disk — the original is never re-decoded for this).
+ */
+export type ImageStats = { 
+/**
+ * 256-bin histograms: Rec. 709 luma and the three channels.
+ */
+luma: number[]; red: number[]; green: number[]; blue: number[]; 
+/**
+ * Maxwell-triangle density: `TRIANGLE_GRID`² cells over barycentric
+ * RGB coordinates (x = r/(r+g+b), y = g/(r+g+b)), row-major; cells
+ * with x + y > 1 are structurally empty. Grayscale pixels land in the
+ * center cell.
+ */
+triangle: number[]; triangleGrid: number }
 /**
  * A batch of per-image metadata read in the background for the stats panel.
  */

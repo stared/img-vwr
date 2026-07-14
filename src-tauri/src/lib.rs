@@ -26,6 +26,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_index,
             commands::embedding_rank_image,
             commands::embedding_rank_text,
+            commands::image_stats,
             commands::labels_for_paths,
             commands::labels_set_stars,
             commands::labels_toggle_tag,

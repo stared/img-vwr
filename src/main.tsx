@@ -6,6 +6,7 @@ import { registerBuiltinCommands, registerSortCommands } from "./commands/builti
 import { registerSourceCommands } from "./commands/sources";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
+import { InfoPanel } from "./components/shell/InfoPanel";
 import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
@@ -45,6 +46,7 @@ registerPanel({
   component: SimilarityPanel,
   icon: <SimilarityIcon />,
 });
+registerPanel({ id: "info", title: "Image", component: InfoPanel, side: "right" });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
 // Every left panel is reachable from the palette, like VS Code's view commands.
 for (const panel of allPanels()) {

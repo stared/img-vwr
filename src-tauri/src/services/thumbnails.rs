@@ -94,6 +94,45 @@ impl ThumbnailService {
         });
     }
 
+    /// Cached-thumbnail path for one image, generating it on the spot when
+    /// the gallery has not needed it yet. Errors when no Rust codec supports
+    /// the format (AVIF) — callers needing pixels can't use the fallback.
+    pub fn cached_thumb(&self, path: &str) -> Result<PathBuf, String> {
+        let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        let mtime_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        let cache_file = self.cache_dir.join(format!("{key}.webp"));
+        if cache_file.exists() {
+            return Ok(cache_file);
+        }
+        let ext = Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+            .unwrap_or_default();
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let webp = imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE)
+            .map_err(|e| e.to_string())?;
+        write_atomically(&cache_file, &webp).map_err(|e| e.to_string())?;
+        Ok(cache_file)
+    }
+
+    /// Pixel statistics for the info panel, from the cached 256 px thumb.
+    pub fn image_stats(&self, path: &str) -> Result<imgvwr_core::ImageStats, String> {
+        let thumb = self.cached_thumb(path)?;
+        let bytes = std::fs::read(&thumb).map_err(|e| e.to_string())?;
+        let img = self
+            .registry
+            .decode("webp", &bytes)
+            .map_err(|e| e.to_string())?;
+        Ok(imgvwr_core::image_stats(&img))
+    }
+
     /// Runs on the rayon pool: decode → thumbnail → atomic write → emit.
     fn generate(&self, app: &AppHandle, path: &str, cache_file: &Path, epoch: u64) {
         let ext = Path::new(path)

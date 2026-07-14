@@ -181,6 +181,20 @@ pub async fn embedding_rank_image(
     .map_err(|e| e.to_string())?
 }
 
+/// Per-image pixel statistics (histograms, color triangle) for the info
+/// panel — computed from the cached thumbnail, off the main thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn image_stats(
+    thumbs: State<'_, Arc<ThumbnailService>>,
+    path: String,
+) -> Result<imgvwr_core::ImageStats, String> {
+    let thumbs = Arc::clone(thumbs.inner());
+    tauri::async_runtime::spawn_blocking(move || thumbs.image_stats(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /* Label commands — the app-local star/tag store. Reads can span thousands
  * of paths, so everything runs off the main thread like ranking does. */
 
