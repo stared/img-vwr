@@ -12,14 +12,29 @@ use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 
+/// Async + spawn_blocking: a recursive walk over a big (or cloud-backed)
+/// tree must never run on the main thread.
 #[tauri::command]
 #[specta::specta]
-pub fn scan_folder(app: AppHandle, path: PathBuf) -> Result<Vec<FileEntry>, String> {
+pub async fn scan_folder(
+    app: AppHandle,
+    path: PathBuf,
+    recursive: bool,
+) -> Result<Vec<FileEntry>, String> {
     // Let the webview load originals from this folder via the asset protocol.
     app.asset_protocol_scope()
-        .allow_directory(&path, false)
+        .allow_directory(&path, recursive)
         .map_err(|e| format!("failed to extend asset scope: {e}"))?;
-    imgvwr_core::scan_dir(&path).map_err(|e| format!("failed to scan {}: {e}", path.display()))
+    tauri::async_runtime::spawn_blocking(move || {
+        let scan = if recursive {
+            imgvwr_core::scan_dir_recursive(&path)
+        } else {
+            imgvwr_core::scan_dir(&path)
+        };
+        scan.map_err(|e| format!("failed to scan {}: {e}", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

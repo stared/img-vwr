@@ -8,7 +8,7 @@ import { sortForScope, type Scope } from "./store";
 
 const SOURCE_SCOPE: Scope = { kind: "source", sourceId: "tsrc", arg: "x", label: "x" };
 const OTHER_SOURCE_SCOPE: Scope = { kind: "source", sourceId: "plain", arg: "y", label: "y" };
-const FOLDER_SCOPE: Scope = { kind: "folder", path: "/p" };
+const FOLDER_SCOPE: Scope = { kind: "folder", path: "/p", recursive: false };
 
 beforeAll(() => {
   clearSortsForTest();

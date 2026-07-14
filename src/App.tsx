@@ -28,7 +28,7 @@ function App() {
   useEffect(() => {
     const { status, openFolder } = useAppStore.getState();
     if (DEFAULT_START_FOLDER && status === "idle") {
-      void openFolder(DEFAULT_START_FOLDER);
+      void openFolder(DEFAULT_START_FOLDER, false);
     }
   }, []);
 

@@ -234,7 +234,7 @@ describe("applyQuery", () => {
   });
 
   it("sortsFor filters providers by scope", () => {
-    const folderIds = sortsFor({ kind: "folder", path: "/p" }).map((p) => p.id);
+    const folderIds = sortsFor({ kind: "folder", path: "/p", recursive: false }).map((p) => p.id);
     expect(folderIds).toEqual(expect.arrayContaining(["name", "modified", "size"]));
     expect(folderIds).not.toContain("test.rank");
     const sourceIds = sortsFor({ kind: "source", sourceId: "x", arg: "", label: "" }).map(

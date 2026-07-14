@@ -15,6 +15,8 @@ const CRUMB_SEGMENTS = 2;
  */
 export function FolderTreePanel() {
   const folderPath = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.path : null));
+  // Navigating keeps the include-subfolders mode you are browsing in.
+  const recursive = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.recursive : false));
   const openFolder = useAppStore((s) => s.openFolder);
   const dirCounts = useAppStore((s) => s.dirCounts);
 
@@ -67,7 +69,7 @@ export function FolderTreePanel() {
       <div className="crumbs" title={folderPath}>
         {hidden > 0 && (
           <>
-            <button className="crumb" onClick={() => void openFolder(pathTo(-1))}>
+            <button className="crumb" onClick={() => void openFolder(pathTo(-1), recursive)}>
               …
             </button>
             <span className="crumb-sep">/</span>
@@ -76,7 +78,7 @@ export function FolderTreePanel() {
         {shown.map((segment, i) =>
           i < shown.length - 1 ? (
             <span key={pathTo(i)}>
-              <button className="crumb" onClick={() => void openFolder(pathTo(i))}>
+              <button className="crumb" onClick={() => void openFolder(pathTo(i), recursive)}>
                 {segment}
               </button>
               <span className="crumb-sep">/</span>
@@ -95,7 +97,7 @@ export function FolderTreePanel() {
           <div key={dir.path} className="tree-row">
             <button
               className="tree-label"
-              onClick={() => void openFolder(dir.path)}
+              onClick={() => void openFolder(dir.path, recursive)}
               title={dir.path}
             >
               {dir.name}

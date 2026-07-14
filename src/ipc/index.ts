@@ -31,8 +31,8 @@ function unwrap<T>(result: Result<T, string>): T {
   return result.data;
 }
 
-export async function scanFolder(path: string): Promise<FileEntry[]> {
-  return unwrap(await commands.scanFolder(path));
+export async function scanFolder(path: string, recursive: boolean): Promise<FileEntry[]> {
+  return unwrap(await commands.scanFolder(path, recursive));
 }
 
 export async function listSubdirs(path: string): Promise<DirEntry[]> {

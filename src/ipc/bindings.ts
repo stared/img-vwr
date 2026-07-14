@@ -7,9 +7,13 @@
 
 
 export const commands = {
-async scanFolder(path: string) : Promise<Result<FileEntry[], string>> {
+/**
+ * Async + spawn_blocking: a recursive walk over a big (or cloud-backed)
+ * tree must never run on the main thread.
+ */
+async scanFolder(path: string, recursive: boolean) : Promise<Result<FileEntry[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("scan_folder", { path }) };
+    return { status: "ok", data: await TAURI_INVOKE("scan_folder", { path, recursive }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

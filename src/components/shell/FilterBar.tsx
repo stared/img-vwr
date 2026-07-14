@@ -107,10 +107,12 @@ function EditableChip({
 /** The scope is a clause too: click to change where the images come from. */
 function ScopeChip({ scope }: { scope: Scope }) {
   const promptCommand = useAppStore((s) => s.promptCommand);
+  const openFolder = useAppStore((s) => s.openFolder);
   const chipKey = scope.kind === "folder" ? "path" : scope.sourceId;
   const value =
     scope.kind === "folder"
-      ? scope.path.split("/").filter(Boolean).slice(-2).join("/") + "/"
+      ? scope.path.split("/").filter(Boolean).slice(-2).join("/") +
+        (scope.recursive ? "/**" : "/")
       : scope.label;
   return (
     <EditableChip
@@ -119,6 +121,17 @@ function ScopeChip({ scope }: { scope: Scope }) {
       title={scope.kind === "folder" ? scope.path : scope.arg}
       renderMenu={(close) => (
         <>
+          {scope.kind === "folder" && (
+            <button
+              onClick={() => {
+                void openFolder(scope.path, !scope.recursive);
+                close();
+              }}
+            >
+              Include subfolders <span className="menu-hint">**</span>
+              <span className="menu-check">{scope.recursive ? "✓" : ""}</span>
+            </button>
+          )}
           <button
             onClick={() => {
               executeCommand("folder.open", { store: useAppStore });

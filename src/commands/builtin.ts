@@ -24,7 +24,7 @@ export function registerBuiltinCommands(): void {
     run: async ({ store }) => {
       const selected = await open({ directory: true, title: "Open Folder" });
       if (typeof selected === "string") {
-        await store.getState().openFolder(selected);
+        await store.getState().openFolder(selected, false);
       }
     },
   });

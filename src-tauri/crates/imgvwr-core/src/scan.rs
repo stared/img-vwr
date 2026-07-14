@@ -111,6 +111,75 @@ pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     Ok(entries)
 }
 
+/// Guard against runaway trees; no sane photo library nests deeper.
+const MAX_SCAN_DEPTH: usize = 32;
+
+/// Every image under `dir`, any depth. Hidden directories and symlinks are
+/// skipped (symlinked dirs could cycle); delivery order is the natural sort
+/// of the path relative to `dir`, so one folder's files stay together.
+pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
+    let mut entries = Vec::new();
+    // (path, depth) — the root must exist; deeper unreadable dirs are skipped.
+    let mut queue = vec![(dir.to_path_buf(), 0usize)];
+    let root = std::fs::read_dir(dir)?; // surface a bad root as an error
+    drop(root);
+    while let Some((current, depth)) = queue.pop() {
+        let Ok(read) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in read.filter_map(|e| e.ok()) {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            // file_type() does not follow symlinks, so linked dirs (cycles)
+            // and linked files are both skipped here.
+            if file_type.is_dir() {
+                if !name.starts_with('.') && depth < MAX_SCAN_DEPTH {
+                    queue.push((entry.path(), depth + 1));
+                }
+                continue;
+            }
+            if !file_type.is_file() || !is_image_candidate(&name) {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let format_hint = name
+                .rsplit_once('.')
+                .map(|(_, ext)| ext.to_ascii_lowercase())
+                .unwrap_or_default();
+            let Some(path) = entry.path().to_str().map(str::to_owned) else {
+                continue;
+            };
+            entries.push(FileEntry {
+                path,
+                name,
+                size: meta.len(),
+                modified_ms,
+                format_hint,
+            });
+        }
+    }
+    let prefix = dir.to_str().map(str::to_owned).unwrap_or_default();
+    entries.sort_by(|x, y| {
+        natural_cmp(
+            x.path.strip_prefix(&prefix).unwrap_or(&x.path),
+            y.path.strip_prefix(&prefix).unwrap_or(&y.path),
+        )
+    });
+    Ok(entries)
+}
+
 /// Count image files directly inside `dir`. Cheap: filename filter plus the
 /// dirent file type — no per-file stat. Unreadable dirs count as 0.
 pub fn count_images(dir: &Path) -> u32 {
@@ -190,6 +259,25 @@ mod tests {
             .map(|e| e.name)
             .collect();
         assert_eq!(names, vec!["a.webp", "b2.jpg", "b10.png"]);
+    }
+
+    #[test]
+    fn scan_dir_recursive_walks_subfolders_and_groups_by_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("b/inner")).unwrap();
+        std::fs::create_dir(tmp.path().join(".hidden")).unwrap();
+        std::fs::write(tmp.path().join("top.png"), b"x").unwrap();
+        std::fs::write(tmp.path().join("b/two.jpg"), b"x").unwrap();
+        std::fs::write(tmp.path().join("b/inner/deep.webp"), b"x").unwrap();
+        std::fs::write(tmp.path().join(".hidden/skip.png"), b"x").unwrap();
+        std::fs::write(tmp.path().join("b/skip.txt"), b"x").unwrap();
+
+        let names: Vec<String> = scan_dir_recursive(tmp.path())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["deep.webp", "two.jpg", "top.png"]);
     }
 
     #[test]

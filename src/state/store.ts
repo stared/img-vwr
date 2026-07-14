@@ -38,7 +38,7 @@ export type GalleryLayout = "grid" | "map";
 
 /** What the gallery is a query over: a local folder or a remote source. */
 export type Scope =
-  | { kind: "folder"; path: string }
+  | { kind: "folder"; path: string; recursive: boolean }
   | { kind: "source"; sourceId: string; arg: string; label: string };
 
 /** Computed per-image scores backing a transient sort ("similar to …"). */
@@ -113,7 +113,7 @@ export interface AppState {
 }
 
 interface AppActions {
-  openFolder: (path: string) => Promise<void>;
+  openFolder: (path: string, recursive: boolean) => Promise<void>;
   openSource: (sourceId: string, arg: string) => Promise<void>;
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
@@ -346,16 +346,16 @@ export function pannedBy(state: ViewerState, dx: number, dy: number): Partial<Ap
 export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   ...initialState,
 
-  openFolder: async (path) => {
+  openFolder: async (path, recursive) => {
     const epoch = await newEpoch();
-    const scope: Scope = { kind: "folder", path };
+    const scope: Scope = { kind: "folder", path, recursive };
     const query = get().query;
     set({
       ...scopeLoading(scope, epoch),
       query: { ...query, sort: sortForScope(scope, query.sort) },
     });
     try {
-      const entries = await scanFolder(path);
+      const entries = await scanFolder(path, recursive);
       // Ignore a stale response if the user already opened another scope.
       if (get().epoch === epoch) {
         set(folderLoaded(entries));
