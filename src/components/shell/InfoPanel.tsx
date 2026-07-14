@@ -38,7 +38,7 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Luma as a filled area, R/G/B as lines, all scaled to the tallest bin. */
+/** Intensity (Rec. 709 luma) as a filled area, scaled to the tallest bin. */
 function HistogramCanvas({ stats }: { stats: ImageStats }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -47,40 +47,23 @@ function HistogramCanvas({ stats }: { stats: ImageStats }) {
     if (!canvas || !ctx) return;
     const { width: w, height: h } = canvas;
     ctx.clearRect(0, 0, w, h);
-    const channels = [stats.luma, stats.red, stats.green, stats.blue];
-    const max = Math.max(1, ...channels.flatMap((c) => c));
-    const x = (bin: number) => (bin / 255) * (w - 1);
-    const y = (count: number) => h - (count / max) * (h - 2);
-
-    ctx.fillStyle = "rgba(160, 160, 160, 0.45)";
+    const max = Math.max(1, ...stats.luma);
+    ctx.fillStyle = "rgba(200, 200, 200, 0.7)";
     ctx.beginPath();
     ctx.moveTo(0, h);
-    stats.luma.forEach((count, bin) => ctx.lineTo(x(bin), y(count)));
+    stats.luma.forEach((count, bin) =>
+      ctx.lineTo((bin / 255) * (w - 1), h - (count / max) * (h - 2)),
+    );
     ctx.lineTo(w, h);
     ctx.fill();
-
-    const lines: [number[], string][] = [
-      [stats.red, "rgba(255, 90, 90, 0.9)"],
-      [stats.green, "rgba(90, 220, 90, 0.9)"],
-      [stats.blue, "rgba(110, 140, 255, 0.9)"],
-    ];
-    for (const [bins, color] of lines) {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      bins.forEach((count, bin) =>
-        bin === 0 ? ctx.moveTo(x(bin), y(count)) : ctx.lineTo(x(bin), y(count)),
-      );
-      ctx.stroke();
-    }
   }, [stats]);
   return <canvas ref={ref} className="info-canvas" width={224} height={72} />;
 }
 
 /**
- * Maxwell triangle: each grid cell sits at barycentric (r, g, b) and is
- * painted in that hue; opacity is log-scaled pixel density. Blue corner
- * bottom-left, red bottom-right, green top.
+ * Maxwell triangle, equilateral: blue bottom-left, red bottom-right, green
+ * top. Each grid cell maps its barycentric (r, g, b) into the triangle and
+ * is painted in its own hue; opacity is log-scaled pixel density.
  */
 function TriangleCanvas({ stats }: { stats: ImageStats }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -91,7 +74,7 @@ function TriangleCanvas({ stats }: { stats: ImageStats }) {
     const { width: w, height: h } = canvas;
     ctx.clearRect(0, 0, w, h);
     const grid = stats.triangleGrid;
-    const cell = { w: w / grid, h: h / grid };
+    const dot = Math.ceil(w / grid);
     const maxLog = Math.max(1e-6, ...stats.triangle.map((c) => Math.log1p(c)));
 
     for (let row = 0; row < grid; row += 1) {
@@ -106,22 +89,15 @@ function TriangleCanvas({ stats }: { stats: ImageStats }) {
         ctx.fillStyle = `rgba(${Math.round((255 * r) / peak)}, ${Math.round(
           (255 * g) / peak,
         )}, ${Math.round((255 * b) / peak)}, ${alpha})`;
-        // x → red fraction, y (up) → green fraction.
-        ctx.fillRect(col * cell.w, h - (row + 1) * cell.h, Math.ceil(cell.w), Math.ceil(cell.h));
+        // Equilateral mapping: P = r·(w, h) + g·(w/2, 0) + b·(0, h).
+        const x = r * w + g * (w / 2);
+        const y = h - g * h;
+        ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
       }
     }
-
-    // The triangle's outline: r + g ≤ 1.
-    ctx.strokeStyle = "rgba(128, 128, 128, 0.5)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, h - 1);
-    ctx.lineTo(w - 1, h - 1);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.stroke();
   }, [stats]);
-  return <canvas ref={ref} className="info-canvas" width={224} height={160} />;
+  // Height = width · √3/2 keeps the triangle's angles at 60°.
+  return <canvas ref={ref} className="info-canvas" width={224} height={194} />;
 }
 
 export function InfoPanel() {
