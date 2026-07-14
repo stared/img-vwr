@@ -33,8 +33,9 @@ function unwrap<T>(result: Result<T, string>): T {
   return result.data;
 }
 
-export async function scanFolder(path: string, recursive: boolean): Promise<FileEntry[]> {
-  return unwrap(await commands.scanFolder(path, recursive));
+/** Start a streamed scan; entries arrive as epoch-guarded `scanBatch` events. */
+export async function scanFolder(path: string, recursive: boolean, epoch: number): Promise<void> {
+  unwrap(await commands.scanFolder(path, recursive, epoch));
 }
 
 export async function listSubdirs(path: string): Promise<DirEntry[]> {

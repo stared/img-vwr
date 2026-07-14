@@ -2,6 +2,7 @@ import { useAppStore, useVisibleEntries } from "../../state/store";
 
 export function StatusBar() {
   const scope = useAppStore((s) => s.scope);
+  const status = useAppStore((s) => s.status);
   const total = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
   const index = useAppStore((s) => s.selectedIndex);
@@ -11,8 +12,10 @@ export function StatusBar() {
   const entry = visible[index];
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
 
+  // While a scan streams in, the total is a running count, not a final one.
+  const totalText = status === "loading" ? `${total}…` : `${total}`;
   const countText =
-    visible.length === total ? `${total} images` : `${visible.length} of ${total}`;
+    visible.length === total ? `${totalText} images` : `${visible.length} of ${totalText}`;
   const labelsText = labels
     ? [labels.stars === null ? "" : "★".repeat(labels.stars), ...labels.tags]
         .filter(Boolean)

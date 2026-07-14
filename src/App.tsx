@@ -34,8 +34,12 @@ function App() {
 
   // Stream thumbnail, folder-count and metadata results from Rust into the store.
   useEffect(() => {
-    const { thumbReady, thumbFailed, dirCountReady, metaBatchReady } = useAppStore.getState();
+    const { scanBatch, thumbReady, thumbFailed, dirCountReady, metaBatchReady } =
+      useAppStore.getState();
     const unlisteners = [
+      events.scanBatch.listen(({ payload }) =>
+        scanBatch(payload.entries, payload.epoch, payload.done),
+      ),
       events.thumbnailReady.listen(({ payload }) =>
         thumbReady(payload.path, payload.cacheFile, payload.epoch),
       ),
@@ -63,13 +67,14 @@ function App() {
             <p className="hint">Open a folder or a source from the sidebar, or press ⌘K.</p>
           )}
           {viewMode === "gallery" && <FilterBar />}
-          {status === "loading" && <p className="hint">Loading…</p>}
+          {/* A streaming scan renders as soon as the first batch lands. */}
+          {status === "loading" && count === 0 && <p className="hint">Loading…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images found.</p>}
-          {status === "loaded" && count > 0 && viewMode === "gallery" && (
+          {count > 0 && viewMode === "gallery" && (
             galleryLayout === "map" ? <MapGallery /> : <GalleryGrid />
           )}
-          {status === "loaded" && count > 0 && viewMode === "viewer" && <ImageViewer />}
+          {count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
         <RightSidebar />
       </div>

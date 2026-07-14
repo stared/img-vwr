@@ -8,12 +8,15 @@
 
 export const commands = {
 /**
- * Async + spawn_blocking: a recursive walk over a big (or cloud-backed)
- * tree must never run on the main thread.
+ * Start a streamed folder scan: entries arrive as `ScanBatch` events, the
+ * last one marked `done`. Walking a big (or cloud-backed) tree can take
+ * seconds, so nothing waits for the full result — the first batch is small
+ * for a fast first paint, and the walk is epoch-guarded so opening another
+ * scope cancels it. The command itself only validates the root.
  */
-async scanFolder(path: string, recursive: boolean) : Promise<Result<FileEntry[], string>> {
+async scanFolder(path: string, recursive: boolean, epoch: number) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("scan_folder", { path, recursive }) };
+    return { status: "ok", data: await TAURI_INVOKE("scan_folder", { path, recursive, epoch }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -136,6 +139,7 @@ dirCountReady: DirCountReady,
 embeddingProgress: EmbeddingProgress,
 embeddingStatus: EmbeddingStatus,
 metaBatchReady: MetaBatchReady,
+scanBatch: ScanBatch,
 thumbnailFailed: ThumbnailFailed,
 thumbnailReady: ThumbnailReady
 }>({
@@ -143,6 +147,7 @@ dirCountReady: "dir-count-ready",
 embeddingProgress: "embedding-progress",
 embeddingStatus: "embedding-status",
 metaBatchReady: "meta-batch-ready",
+scanBatch: "scan-batch",
 thumbnailFailed: "thumbnail-failed",
 thumbnailReady: "thumbnail-ready"
 })
@@ -217,6 +222,12 @@ triangleN: number; triUp: number[]; triDown: number[] }
  */
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
+/**
+ * A slice of an in-progress folder scan. Batches stream in walk order as
+ * the tree is traversed — cloud-backed folders can take seconds to walk,
+ * so the gallery fills progressively; `done` marks the final batch.
+ */
+export type ScanBatch = { entries: FileEntry[]; epoch: number; done: boolean }
 export type SimilarityScore = { path: string; score: number }
 export type ThumbnailFailed = { path: string; error: string; epoch: number }
 export type ThumbnailReady = { path: string; 

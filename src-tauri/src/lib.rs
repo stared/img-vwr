@@ -32,6 +32,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::labels_toggle_tag,
         ])
         .events(collect_events![
+            events::ScanBatch,
             events::ThumbnailReady,
             events::ThumbnailFailed,
             events::DirCountReady,

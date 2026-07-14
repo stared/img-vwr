@@ -127,32 +127,30 @@ export function applyQuery(entries: FileEntry[], query: Query, data: QueryData):
   const sign = query.sort.dir === "asc" ? 1 : -1;
   // The pre-filter position IS the source's own order (scan / API rank).
   const sourceIndex = new Map(entries.map((e, i) => [e.path, i]));
-  const values = new Map<string, number | string | null>(
-    filtered.map((e) => [
-      e.path,
-      provider.value(e, {
-        meta: meta[e.path],
-        sourceIndex: sourceIndex.get(e.path) ?? 0,
-        scores,
-        labels: labels[e.path] ?? EMPTY_LABELS,
-      }),
-    ]),
-  );
+  // Decorate-sort-undecorate: the value is computed once per entry, and the
+  // comparator touches plain fields only — on tens of thousands of entries,
+  // per-comparison map lookups would dominate the sort.
+  const valued = filtered.map((e) => ({
+    e,
+    v: provider.value(e, {
+      meta: meta[e.path],
+      sourceIndex: sourceIndex.get(e.path) ?? 0,
+      scores,
+      labels: labels[e.path] ?? EMPTY_LABELS,
+    }),
+  }));
   // A ranked view shows only ranked entries; they appear as values land.
-  const shown =
-    provider.missing === "hide"
-      ? filtered.filter((e) => (values.get(e.path) ?? null) !== null)
-      : filtered;
-  return [...shown].sort((a, b) => {
-    const va = values.get(a.path) ?? null;
-    const vb = values.get(b.path) ?? null;
-    if (va === null || vb === null) {
-      // Unknown values sort last regardless of direction.
-      if (va === null && vb === null) return naturalCollator.compare(a.name, b.name);
-      return va === null ? 1 : -1;
-    }
-    return sign * compareValues(va, vb) || naturalCollator.compare(a.name, b.name);
-  });
+  const shown = provider.missing === "hide" ? valued.filter((x) => x.v !== null) : valued;
+  return shown
+    .sort((a, b) => {
+      if (a.v === null || b.v === null) {
+        // Unknown values sort last regardless of direction.
+        if (a.v === null && b.v === null) return naturalCollator.compare(a.e.name, b.e.name);
+        return a.v === null ? 1 : -1;
+      }
+      return sign * compareValues(a.v, b.v) || naturalCollator.compare(a.e.name, b.e.name);
+    })
+    .map((x) => x.e);
 }
 
 /** True when the active sort reads computed scores from the store. */

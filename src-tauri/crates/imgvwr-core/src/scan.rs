@@ -75,50 +75,46 @@ fn take_number(s: &[u8], start: usize) -> (u128, usize) {
     (value, end)
 }
 
-/// One non-recursive pass over `dir`: image files only, natural-sorted by name.
-pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
-    let mut entries: Vec<FileEntry> = std::fs::read_dir(dir)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let name = entry.file_name().to_str()?.to_owned();
-            if !is_image_candidate(&name) {
-                return None;
-            }
-            let meta = entry.metadata().ok()?;
-            if !meta.is_file() {
-                return None;
-            }
-            let modified_ms = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let format_hint = name
-                .rsplit_once('.')
-                .map(|(_, ext)| ext.to_ascii_lowercase())
-                .unwrap_or_default();
-            Some(FileEntry {
-                path: entry.path().to_str()?.to_owned(),
-                name,
-                size: meta.len(),
-                modified_ms,
-                format_hint,
-            })
-        })
-        .collect();
-    entries.sort_by(|x, y| natural_cmp(&x.name, &y.name));
-    Ok(entries)
-}
-
 /// Guard against runaway trees; no sane photo library nests deeper.
 const MAX_SCAN_DEPTH: usize = 32;
 
-/// Every image under `dir`, any depth. Hidden directories and symlinks are
-/// skipped (symlinked dirs could cycle); delivery order is the natural sort
-/// of the path relative to `dir`, so one folder's files stay together.
-pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
-    let mut entries = Vec::new();
+/// Build a [`FileEntry`] from a dirent whose name already passed the image
+/// filter; `None` when the path is not UTF-8 or the file vanished mid-scan.
+fn file_entry(entry: &std::fs::DirEntry, name: String) -> Option<FileEntry> {
+    let meta = entry.metadata().ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let modified_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let format_hint = name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    Some(FileEntry {
+        path: entry.path().to_str()?.to_owned(),
+        name,
+        size: meta.len(),
+        modified_ms,
+        format_hint,
+    })
+}
+
+/// Walk `dir` calling `sink` for every image file as it is found — the
+/// caller batches and delivers, so a slow (cloud-backed) tree shows its
+/// first files immediately instead of after the full walk. `sink` returns
+/// `false` to cancel. Recursive mode skips hidden directories and symlinks
+/// (linked dirs could cycle); order is the walk order, unsorted — display
+/// order is the frontend's query sort, so no order is promised here.
+pub fn scan_stream(
+    dir: &Path,
+    recursive: bool,
+    sink: &mut dyn FnMut(FileEntry) -> bool,
+) -> std::io::Result<()> {
     // (path, depth) — the root must exist; deeper unreadable dirs are skipped.
     let mut queue = vec![(dir.to_path_buf(), 0usize)];
     let root = std::fs::read_dir(dir)?; // surface a bad root as an error
@@ -131,45 +127,57 @@ pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            // file_type() does not follow symlinks, so linked dirs (cycles)
-            // and linked files are both skipped here.
-            if file_type.is_dir() {
-                if !name.starts_with('.') && depth < MAX_SCAN_DEPTH {
-                    queue.push((entry.path(), depth + 1));
+            if recursive {
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                // file_type() does not follow symlinks, so linked dirs
+                // (cycles) and linked files are both skipped here.
+                if file_type.is_dir() {
+                    if !name.starts_with('.') && depth < MAX_SCAN_DEPTH {
+                        queue.push((entry.path(), depth + 1));
+                    }
+                    continue;
                 }
+                if !file_type.is_file() {
+                    continue;
+                }
+            }
+            if !is_image_candidate(&name) {
                 continue;
             }
-            if !file_type.is_file() || !is_image_candidate(&name) {
+            // Non-recursive keeps following symlinked files (metadata()
+            // resolves them), matching the original single-dir behavior.
+            let Some(file) = file_entry(&entry, name) else {
                 continue;
+            };
+            if !sink(file) {
+                return Ok(());
             }
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            let modified_ms = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let format_hint = name
-                .rsplit_once('.')
-                .map(|(_, ext)| ext.to_ascii_lowercase())
-                .unwrap_or_default();
-            let Some(path) = entry.path().to_str().map(str::to_owned) else {
-                continue;
-            };
-            entries.push(FileEntry {
-                path,
-                name,
-                size: meta.len(),
-                modified_ms,
-                format_hint,
-            });
         }
     }
+    Ok(())
+}
+
+/// One non-recursive pass over `dir`: image files only, natural-sorted by name.
+pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
+    let mut entries = Vec::new();
+    scan_stream(dir, false, &mut |entry| {
+        entries.push(entry);
+        true
+    })?;
+    entries.sort_by(|x, y| natural_cmp(&x.name, &y.name));
+    Ok(entries)
+}
+
+/// Every image under `dir`, any depth, natural-sorted by the path relative
+/// to `dir` so one folder's files stay together.
+pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
+    let mut entries = Vec::new();
+    scan_stream(dir, true, &mut |entry| {
+        entries.push(entry);
+        true
+    })?;
     let prefix = dir.to_str().map(str::to_owned).unwrap_or_default();
     entries.sort_by(|x, y| {
         natural_cmp(

@@ -4,8 +4,8 @@ import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { registerFilterField } from "../registry/filters";
 import { registerSort } from "../registry/sorts";
-import { applyQuery, numberRangeSpec } from "../state/query";
-import { queryDataOf, useAppStore } from "../state/store";
+import { numberRangeSpec } from "../state/query";
+import { useAppStore, visibleOf } from "../state/store";
 
 /**
  * Labels module — the first WRITE path: user-assigned stars and tags,
@@ -20,7 +20,7 @@ import { queryDataOf, useAppStore } from "../state/store";
 /** The image the keys act on: the selected one in the query-applied view. */
 function selectedEntry(): FileEntry | null {
   const s = useAppStore.getState();
-  return applyQuery(s.entries, s.query, queryDataOf(s))[s.selectedIndex] ?? null;
+  return visibleOf(s, s.query)[s.selectedIndex] ?? null;
 }
 
 async function rateSelected(stars: number | null): Promise<void> {
@@ -131,14 +131,24 @@ export function registerLabels(): void {
     },
   });
 
-  // Load the stored labels whenever a scope's entries land (epoch-guarded).
+  // Load stored labels as a scope's entries land. Within one epoch entries
+  // only ever grow (streamed scan batches), so each pass queries just the
+  // new tail; labelsLoaded merges the slices (epoch-guarded).
   let lastEntries: FileEntry[] | null = null;
+  let lastEpoch = -1;
+  let fetched = 0;
   useAppStore.subscribe((state) => {
     if (state.entries === lastEntries) return;
     lastEntries = state.entries;
-    if (state.entries.length === 0) return;
+    if (state.epoch !== lastEpoch) {
+      lastEpoch = state.epoch;
+      fetched = 0;
+    }
+    const fresh = state.entries.slice(fetched);
+    fetched = state.entries.length;
+    if (fresh.length === 0) return;
     const epoch = state.epoch;
-    void labelsForPaths(state.entries.map((e) => e.path)).then((labels) => {
+    void labelsForPaths(fresh.map((e) => e.path)).then((labels) => {
       useAppStore.getState().labelsLoaded(labels, epoch);
     });
   });

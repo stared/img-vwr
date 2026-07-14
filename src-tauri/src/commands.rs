@@ -12,29 +12,54 @@ use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 
-/// Async + spawn_blocking: a recursive walk over a big (or cloud-backed)
-/// tree must never run on the main thread.
+/// Start a streamed folder scan: entries arrive as `ScanBatch` events, the
+/// last one marked `done`. Walking a big (or cloud-backed) tree can take
+/// seconds, so nothing waits for the full result — the first batch is small
+/// for a fast first paint, and the walk is epoch-guarded so opening another
+/// scope cancels it. The command itself only validates the root.
 #[tauri::command]
 #[specta::specta]
-pub async fn scan_folder(
+pub fn scan_folder(
     app: AppHandle,
+    service: State<'_, Arc<ThumbnailService>>,
     path: PathBuf,
     recursive: bool,
-) -> Result<Vec<FileEntry>, String> {
+    epoch: u64,
+) -> Result<(), String> {
     // Let the webview load originals from this folder via the asset protocol.
     app.asset_protocol_scope()
         .allow_directory(&path, recursive)
         .map_err(|e| format!("failed to extend asset scope: {e}"))?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let scan = if recursive {
-            imgvwr_core::scan_dir_recursive(&path)
-        } else {
-            imgvwr_core::scan_dir(&path)
-        };
-        scan.map_err(|e| format!("failed to scan {}: {e}", path.display()))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    // Surface an unreadable root as an immediate error, not an empty scan.
+    std::fs::read_dir(&path).map_err(|e| format!("failed to scan {}: {e}", path.display()))?;
+    let service = Arc::clone(&service);
+    std::thread::spawn(move || {
+        use tauri_specta::Event as _;
+        const FIRST_BATCH: usize = 64;
+        const BATCH: usize = 512;
+        const MAX_LATENCY: std::time::Duration = std::time::Duration::from_millis(200);
+        let mut batch: Vec<FileEntry> = Vec::new();
+        let mut sent_any = false;
+        let mut last_flush = std::time::Instant::now();
+        let _ = imgvwr_core::scan_stream(&path, recursive, &mut |entry| {
+            if service.is_stale(epoch) {
+                return false;
+            }
+            batch.push(entry);
+            let full = batch.len() >= if sent_any { BATCH } else { FIRST_BATCH };
+            if full || last_flush.elapsed() >= MAX_LATENCY {
+                let entries = std::mem::take(&mut batch);
+                let _ = crate::events::ScanBatch { entries, epoch, done: false }.emit(&app);
+                sent_any = true;
+                last_flush = std::time::Instant::now();
+            }
+            true
+        });
+        if !service.is_stale(epoch) {
+            let _ = crate::events::ScanBatch { entries: batch, epoch, done: true }.emit(&app);
+        }
+    });
+    Ok(())
 }
 
 #[tauri::command]

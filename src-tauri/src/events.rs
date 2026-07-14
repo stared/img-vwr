@@ -1,5 +1,16 @@
-use imgvwr_core::ImageMeta;
+use imgvwr_core::{FileEntry, ImageMeta};
 use serde::{Deserialize, Serialize};
+
+/// A slice of an in-progress folder scan. Batches stream in walk order as
+/// the tree is traversed — cloud-backed folders can take seconds to walk,
+/// so the gallery fills progressively; `done` marks the final batch.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanBatch {
+    pub entries: Vec<FileEntry>,
+    pub epoch: u64,
+    pub done: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]

@@ -4,7 +4,7 @@ import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
-import { sortForScope, type Scope } from "./store";
+import { scanBatchArrived, sortForScope, type Scope } from "./store";
 
 const SOURCE_SCOPE: Scope = { kind: "source", sourceId: "tsrc", arg: "x", label: "x" };
 const OTHER_SOURCE_SCOPE: Scope = { kind: "source", sourceId: "plain", arg: "y", label: "y" };
@@ -104,5 +104,40 @@ describe("sortForScope", () => {
     expect(sortForScope(FOLDER_SCOPE, { key: "test.similar", dir: "desc" })).toEqual(
       defaultQuery.sort,
     );
+  });
+});
+
+describe("scanBatchArrived", () => {
+  const entry = (path: string) => ({
+    path,
+    name: path.split("/").pop() ?? path,
+    size: 1,
+    modifiedMs: 0,
+    formatHint: "png",
+  });
+
+  it("appends batches without flipping the status", () => {
+    const first = scanBatchArrived({ entries: [] }, [entry("/p/a.png")], false);
+    expect(first.entries?.map((e) => e.path)).toEqual(["/p/a.png"]);
+    expect(first.status).toBeUndefined();
+
+    const second = scanBatchArrived(
+      { entries: first.entries ?? [] },
+      [entry("/p/b.png")],
+      false,
+    );
+    expect(second.entries?.map((e) => e.path)).toEqual(["/p/a.png", "/p/b.png"]);
+  });
+
+  it("the final batch marks the scan loaded", () => {
+    const done = scanBatchArrived({ entries: [entry("/p/a.png")] }, [entry("/p/b.png")], true);
+    expect(done.entries).toHaveLength(2);
+    expect(done.status).toBe("loaded");
+  });
+
+  it("an empty final batch still completes the scan", () => {
+    const done = scanBatchArrived({ entries: [] }, [], true);
+    expect(done.entries).toBeUndefined();
+    expect(done.status).toBe("loaded");
   });
 });

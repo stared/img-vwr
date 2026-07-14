@@ -8,9 +8,8 @@ import {
 } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { registerSort } from "../registry/sorts";
-import { applyQuery } from "../state/query";
 import type { Similarity } from "../state/store";
-import { queryDataOf, useAppStore } from "../state/store";
+import { useAppStore, visibleOf } from "../state/store";
 import { ModelMenu } from "./ModelMenu";
 
 /**
@@ -94,7 +93,7 @@ async function anchorTo(anchor: Similarity["anchor"], label: string): Promise<vo
 /** The image the user is on, within the current (query-applied) view. */
 function selectedEntryPath(): { path: string; name: string } | null {
   const s = useAppStore.getState();
-  const visible = applyQuery(s.entries, s.query, queryDataOf(s));
+  const visible = visibleOf(s, s.query);
   const entry = visible[s.selectedIndex];
   return entry ? { path: entry.path, name: entry.name } : null;
 }
