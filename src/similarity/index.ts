@@ -72,6 +72,25 @@ export async function similarTo(anchor: Similarity["anchor"], label: string): Pr
   await refreshScores(anchor);
 }
 
+/**
+ * Every "similar to …" entry point lands here: rank right away when the
+ * model is ready, otherwise set the anchor and load the already-downloaded
+ * model (the ready listener runs the rank), and with nothing on disk hand
+ * over to the model picker — multi-GB downloads stay an explicit choice.
+ */
+async function anchorTo(anchor: Similarity["anchor"], label: string): Promise<void> {
+  if (modelReady()) {
+    await similarTo(anchor, label);
+    return;
+  }
+  const { embedModels, setSimilarity, setActivePanel } = useAppStore.getState();
+  // The clause is set either way; the chip shows what it is still waiting on.
+  setSimilarity({ label, anchor, scores: {} });
+  const downloaded = embedModels.find((m) => m.downloaded);
+  if (downloaded) await embeddingSelect(downloaded.id);
+  else setActivePanel("similarity");
+}
+
 /** The image the user is on, within the current (query-applied) view. */
 function selectedEntryPath(): { path: string; name: string } | null {
   const s = useAppStore.getState();
@@ -98,9 +117,9 @@ export function registerSimilarity(): void {
     label: "closest",
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
-    // Only local folders can be indexed; without an anchor the sort menu
-    // offers the collect row instead of direction rows.
-    appliesTo: (scope) => scope?.kind === "folder" && modelReady(),
+    // Only local folders can be indexed. No model-ready gate: collecting
+    // the phrase loads the model on demand, like Find Similar does.
+    appliesTo: (scope) => scope?.kind === "folder",
     reads: "scores",
     // A ranked view shows only what has been ranked: images without a
     // vector yet stay hidden and appear as their embeddings land.
@@ -124,7 +143,7 @@ export function registerSimilarity(): void {
             placeholder: "describe it…",
             commit: (value) => {
               const query = value.trim();
-              if (query) void similarTo({ kind: "text", query }, `"${query}"`);
+              if (query) void anchorTo({ kind: "text", query }, `"${query}"`);
             },
           },
           { kind: "text", text: "with" },
@@ -146,25 +165,10 @@ export function registerSimilarity(): void {
     menus: [{ menu: "image", submenu: null, label: "Find Similar" }],
     // No model-ready gate: picking it does whatever is needed to get there.
     when: (ctx: CommandContext) => inFolderScope() && ctx.store.getState().entries.length > 0,
-    run: async ({ store }) => {
+    run: async () => {
       const selected = selectedEntryPath();
       if (!selected) return;
-      const anchor = { kind: "image", path: selected.path } as const;
-      if (modelReady()) {
-        await similarTo(anchor, selected.name);
-        return;
-      }
-      const downloaded = store.getState().embedModels.find((m) => m.downloaded);
-      if (downloaded === undefined) {
-        // Nothing on disk: downloading gigabytes stays an explicit choice —
-        // hand over to the model picker.
-        store.getState().setActivePanel("similarity");
-        return;
-      }
-      // Load the (already downloaded) model with the anchor set; the chip
-      // shows "with loading…" and the ready listener below runs the rank.
-      store.getState().setSimilarity({ label: selected.name, anchor, scores: {} });
-      await embeddingSelect(downloaded.id);
+      await anchorTo({ kind: "image", path: selected.path }, selected.name);
     },
   });
 
@@ -174,12 +178,11 @@ export function registerSimilarity(): void {
     keywords: ["similar", "semantic", "describe", "embedding", "clip", "search by meaning"],
     input: { placeholder: "describe it, e.g. sunset over mountains" },
     menus: [],
-    when: (ctx: CommandContext) =>
-      inFolderScope() && modelReady() && ctx.store.getState().entries.length > 0,
+    when: (ctx: CommandContext) => inFolderScope() && ctx.store.getState().entries.length > 0,
     run: async (_ctx, arg) => {
       const query = arg?.trim();
       if (!query) return;
-      await similarTo({ kind: "text", query }, `"${query}"`);
+      await anchorTo({ kind: "text", query }, `"${query}"`);
     },
   });
 
