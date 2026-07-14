@@ -126,6 +126,11 @@ impl ThumbnailService {
 
 /// Write via temp file + rename so a concurrent reader never sees a half-written thumb.
 fn write_atomically(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // macOS may purge ~/Library/Caches while the app runs; recreate the
+    // cache dir rather than fail every write until restart.
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let tmp = target.with_extension("webp.tmp");
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, target)

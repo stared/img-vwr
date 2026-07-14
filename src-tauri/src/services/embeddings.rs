@@ -215,6 +215,7 @@ impl EmbeddingService {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let webp = imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE)
             .map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&self.thumbs_dir).map_err(|e| e.to_string())?;
         let tmp = cache_file.with_extension("webp.tmp");
         std::fs::write(&tmp, webp).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &cache_file).map_err(|e| e.to_string())?;
@@ -236,6 +237,11 @@ fn read_vector(file: &Path, dim: usize) -> Option<Vec<f32>> {
 }
 
 fn write_vector(file: &Path, v: &[f32]) -> std::io::Result<()> {
+    // The cache dir is created at startup, but macOS may purge ~/Library/
+    // Caches while the app runs — recreate it rather than fail every write.
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut bytes = Vec::with_capacity(v.len() * 4);
     for x in v {
         bytes.extend_from_slice(&x.to_le_bytes());
