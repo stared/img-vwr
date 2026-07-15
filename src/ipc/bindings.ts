@@ -8,11 +8,12 @@
 
 export const commands = {
 /**
- * Start a streamed folder scan: entries arrive as `ScanBatch` events, the
+ * Run a streamed folder scan: entries arrive as `ScanBatch` events, the
  * last one marked `done`. Walking a big (or cloud-backed) tree can take
- * seconds, so nothing waits for the full result — the first batch is small
- * for a fast first paint, and the walk is epoch-guarded so opening another
- * scope cancels it. The command itself only validates the root.
+ * seconds, so nothing here may touch the main thread — the command is
+ * async and the walk runs on the blocking pool, epoch-guarded so opening
+ * another scope cancels it. The first batch is small for a fast first
+ * paint. Resolves when the walk ends; an unreadable root rejects.
  */
 async scanFolder(path: string, recursive: boolean, epoch: number) : Promise<Result<null, string>> {
     try {
@@ -22,6 +23,10 @@ async scanFolder(path: string, recursive: boolean, epoch: number) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Async: listing a cloud-backed directory can block for seconds, and this
+ * runs on every folder-tree navigation.
+ */
 async listSubdirs(path: string) : Promise<Result<DirEntry[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_subdirs", { path }) };

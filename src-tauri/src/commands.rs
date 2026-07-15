@@ -12,14 +12,15 @@ use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 
-/// Start a streamed folder scan: entries arrive as `ScanBatch` events, the
+/// Run a streamed folder scan: entries arrive as `ScanBatch` events, the
 /// last one marked `done`. Walking a big (or cloud-backed) tree can take
-/// seconds, so nothing waits for the full result — the first batch is small
-/// for a fast first paint, and the walk is epoch-guarded so opening another
-/// scope cancels it. The command itself only validates the root.
+/// seconds, so nothing here may touch the main thread — the command is
+/// async and the walk runs on the blocking pool, epoch-guarded so opening
+/// another scope cancels it. The first batch is small for a fast first
+/// paint. Resolves when the walk ends; an unreadable root rejects.
 #[tauri::command]
 #[specta::specta]
-pub fn scan_folder(
+pub async fn scan_folder(
     app: AppHandle,
     service: State<'_, Arc<ThumbnailService>>,
     path: PathBuf,
@@ -30,10 +31,8 @@ pub fn scan_folder(
     app.asset_protocol_scope()
         .allow_directory(&path, recursive)
         .map_err(|e| format!("failed to extend asset scope: {e}"))?;
-    // Surface an unreadable root as an immediate error, not an empty scan.
-    std::fs::read_dir(&path).map_err(|e| format!("failed to scan {}: {e}", path.display()))?;
     let service = Arc::clone(&service);
-    std::thread::spawn(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         use tauri_specta::Event as _;
         const FIRST_BATCH: usize = 64;
         const BATCH: usize = 512;
@@ -41,7 +40,7 @@ pub fn scan_folder(
         let mut batch: Vec<FileEntry> = Vec::new();
         let mut sent_any = false;
         let mut last_flush = std::time::Instant::now();
-        let _ = imgvwr_core::scan_stream(&path, recursive, &mut |entry| {
+        imgvwr_core::scan_stream(&path, recursive, &mut |entry| {
             if service.is_stale(epoch) {
                 return false;
             }
@@ -54,19 +53,28 @@ pub fn scan_folder(
                 last_flush = std::time::Instant::now();
             }
             true
-        });
+        })
+        .map_err(|e| format!("failed to scan {}: {e}", path.display()))?;
         if !service.is_stale(epoch) {
             let _ = crate::events::ScanBatch { entries: batch, epoch, done: true }.emit(&app);
         }
-    });
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
+/// Async: listing a cloud-backed directory can block for seconds, and this
+/// runs on every folder-tree navigation.
 #[tauri::command]
 #[specta::specta]
-pub fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
-    imgvwr_core::list_subdirs(&path)
-        .map_err(|e| format!("failed to list {}: {e}", path.display()))
+pub async fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        imgvwr_core::list_subdirs(&path)
+            .map_err(|e| format!("failed to list {}: {e}", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Count images per folder off the main thread, emitting one event per

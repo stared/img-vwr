@@ -91,6 +91,8 @@ export function FolderTreePanel() {
         )}
       </div>
 
+      {/* Cloud-backed folders can list slowly; the wait must be visible. */}
+      {subdirs === null && <span className="tree-empty">listing…</span>}
       {subdirs?.map((dir) => {
         const count = dirCounts[dir.path];
         return (

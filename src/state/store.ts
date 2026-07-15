@@ -195,6 +195,13 @@ export const initialState: AppState = {
 
 /* Pure transitions — actions only apply these. */
 
+/**
+ * Epoch of a scope that flipped optimistically and is still waiting for its
+ * real epoch from the backend. Matches no event's epoch (backend epochs are
+ * positive counters), so stragglers from the previous scope are dropped.
+ */
+export const EPOCH_PENDING = -1;
+
 export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
   return {
     scope,
@@ -365,19 +372,24 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   ...initialState,
 
   openFolder: async (path, recursive) => {
-    const epoch = await newEpoch();
     const scope: Scope = { kind: "folder", path, recursive };
     const query = get().query;
+    // The UI flips before ANY round-trip: a click must never wait on IPC.
     set({
-      ...scopeLoading(scope, epoch),
+      ...scopeLoading(scope, EPOCH_PENDING),
       query: { ...query, sort: sortForScope(scope, query.sort) },
     });
+    const epoch = await newEpoch();
+    // Another scope was opened while the epoch was being fetched.
+    if (get().scope !== scope) return;
+    set({ epoch });
     try {
-      // Entries stream in as scanBatch events; this only starts the walk.
+      // Entries stream in as scanBatch events; this resolves when the walk
+      // ends, so only the error branch matters here.
       await scanFolder(path, recursive, epoch);
     } catch (error) {
       // Ignore a stale failure if the user already opened another scope.
-      if (get().epoch === epoch) {
+      if (get().scope === scope) {
         set(scopeFailed(error instanceof Error ? error.message : String(error)));
       }
     }
@@ -409,20 +421,22 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   openSource: async (sourceId, arg) => {
     const source = getSource(sourceId);
     if (!source) return;
-    const epoch = await newEpoch();
     const scope: Scope = { kind: "source", sourceId, arg, label: source.label(arg) };
     const query = get().query;
     set({
-      ...scopeLoading(scope, epoch),
+      ...scopeLoading(scope, EPOCH_PENDING),
       query: { ...query, sort: sortForScope(scope, query.sort) },
     });
+    const epoch = await newEpoch();
+    if (get().scope !== scope) return;
+    set({ epoch });
     try {
       const items = await source.fetch(arg);
-      if (get().epoch === epoch) {
+      if (get().scope === scope) {
         set(sourceLoaded(items));
       }
     } catch (error) {
-      if (get().epoch === epoch) {
+      if (get().scope === scope) {
         set(scopeFailed(error instanceof Error ? error.message : String(error)));
       }
     }
