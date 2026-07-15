@@ -33,7 +33,8 @@ import {
 
 export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 export type ViewMode = "gallery" | "viewer";
-export type GalleryLayout = "grid" | "map";
+export type GalleryLayout = "grid" | "timeline" | "map";
+export type TimelineOrientation = "vertical" | "horizontal";
 
 /** What the gallery is a query over: a local folder or a remote source. */
 export type Scope =
@@ -79,6 +80,8 @@ export interface AppState {
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
   galleryLayout: GalleryLayout;
+  /** Which way the timeline's time axis runs. */
+  timelineOrientation: TimelineOrientation;
   /** Index into the VISIBLE (query-applied) list of the selected image. */
   selectedIndex: number;
   /** Filters + sort applied to the scanned folder; survives folder changes. */
@@ -126,6 +129,7 @@ interface AppActions {
   labelApplied: (path: string, labels: ImageLabels) => void;
   toggleStats: () => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
+  setTimelineOrientation: (orientation: TimelineOrientation) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -175,6 +179,7 @@ export const initialState: AppState = {
   statsVisible: true,
   viewMode: "gallery",
   galleryLayout: "grid",
+  timelineOrientation: "vertical",
   selectedIndex: 0,
   query: defaultQuery,
   findOpen: false,
@@ -484,6 +489,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
 
   setGalleryLayout: (layout) => set({ galleryLayout: layout }),
+
+  setTimelineOrientation: (orientation) => set({ timelineOrientation: orientation }),
 
   openViewer: (index) => {
     const visibleCount = visibleOf(get(), get().query).length;

@@ -60,7 +60,19 @@ export function registerBuiltinCommands(): void {
     menus: [],
     run: ({ store }) => {
       const { galleryLayout, setGalleryLayout } = store.getState();
-      setGalleryLayout(galleryLayout === "grid" ? "map" : "grid");
+      setGalleryLayout(galleryLayout === "map" ? "grid" : "map");
+    },
+  });
+
+  registerCommand({
+    id: "gallery.timeline",
+    title: "Toggle Timeline View",
+    keywords: ["date", "taken", "time", "chronological", "grid"],
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    menus: [],
+    run: ({ store }) => {
+      const { galleryLayout, setGalleryLayout } = store.getState();
+      setGalleryLayout(galleryLayout === "timeline" ? "grid" : "timeline");
     },
   });
 

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { MapGallery } from "./components/gallery/MapGallery";
+import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { FilterBar } from "./components/shell/FilterBar";
 import { ImageContextMenu } from "./components/shell/ImageContextMenu";
@@ -72,7 +73,13 @@ function App() {
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images found.</p>}
           {count > 0 && viewMode === "gallery" && (
-            galleryLayout === "map" ? <MapGallery /> : <GalleryGrid />
+            galleryLayout === "map" ? (
+              <MapGallery />
+            ) : galleryLayout === "timeline" ? (
+              <TimelineGallery />
+            ) : (
+              <GalleryGrid />
+            )
           )}
           {count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>

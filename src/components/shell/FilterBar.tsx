@@ -6,7 +6,7 @@ import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../reg
 import { allSources } from "../../registry/sources";
 import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
-import type { Scope } from "../../state/store";
+import type { GalleryLayout, Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
 import { FormatMenuItems } from "./filterMenus";
 
@@ -44,6 +44,13 @@ function sortOptions(scope: Scope | null): SortRow[] {
 }
 
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
+
+/** Renderings of the query result the view chip offers. */
+const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
+  { layout: "grid", hint: "thumbnails" },
+  { layout: "timeline", hint: "by date" },
+  { layout: "map", hint: "geolocated" },
+];
 
 /** Right-side hint in the "+" menu, by field kind. */
 function fieldHint(field: FilterField): string {
@@ -503,15 +510,30 @@ export function FilterBar() {
 
       <AddFilterMenu scope={scope} />
 
-      {/* View is part of how the query renders — grid, or a map of the
-          geolocated results. Clicking flips between the two. */}
-      <button
-        className="chip chip-view"
-        title={galleryLayout === "grid" ? "show on a map" : "back to the grid"}
-        onClick={() => setGalleryLayout(galleryLayout === "grid" ? "map" : "grid")}
-      >
-        <span className="chip-key">view:</span> {galleryLayout}
-      </button>
+      {/* View is part of how the query renders: a grid of thumbnails, a
+          timeline by date, or a map of the geolocated results. */}
+      <EditableChip
+        chipKey="view"
+        value={galleryLayout}
+        title="change how the results render"
+        renderMenu={(close) => (
+          <>
+            {VIEW_OPTIONS.map(({ layout, hint }) => (
+              <button
+                key={layout}
+                onClick={() => {
+                  setGalleryLayout(layout);
+                  close();
+                }}
+              >
+                {galleryLayout === layout ? "✓ " : ""}
+                {layout}
+                <span className="menu-hint">{hint}</span>
+              </button>
+            ))}
+          </>
+        )}
+      />
 
       <SortChip scope={scope} sort={query.sort} />
     </div>
