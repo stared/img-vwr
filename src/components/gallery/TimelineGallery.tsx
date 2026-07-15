@@ -5,7 +5,7 @@ import { fileUrl, requestThumbnails } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 import type { TimeWindow } from "./timeline";
-import { fitWindow, packLanes, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
+import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
 /**
  * The gallery as a timeline: every visible entry sits on a time axis at its
@@ -63,6 +63,7 @@ export function TimelineGallery() {
   );
   const tMin = timed[0]?.t ?? 0;
   const tMax = timed[timed.length - 1]?.t ?? 0;
+  const takenCount = useMemo(() => timed.reduce((n, i) => n + (i.taken ? 1 : 0), 0), [timed]);
 
   // A new scope starts back at the full range.
   useEffect(() => setWin(null), [epoch]);
@@ -89,12 +90,13 @@ export function TimelineGallery() {
   const thumb = Math.min(thumbPref, thumbMax);
   const lane = thumb + LANE_GAP;
 
-  // Lane packing spans the whole collection at the current zoom, so lanes
-  // are stable while panning; only the assignment depends on msPerPx.
-  const packed = useMemo(
-    () => packLanes(timed.map((i) => i.t), lane * view.msPerPx),
-    [timed, lane, view.msPerPx],
-  );
+  const ts = useMemo(() => timed.map((i) => i.t), [timed]);
+
+  // Lane packing spans the whole collection, so lanes are stable while
+  // panning. The span is snapped to a log grid: a continuous pinch re-packs
+  // only on crossing a grid step, not on every wheel event.
+  const spanMs = packSpan(lane * view.msPerPx);
+  const packed = useMemo(() => packLanes(ts, spanMs), [ts, spanMs]);
 
   // Wheel: plain = pan along time, ⌘/ctrl (and trackpad pinch) = zoom at
   // the cursor. Native listener — React's is passive, preventDefault needs this.
@@ -107,14 +109,18 @@ export function TimelineGallery() {
       const alongMain = vertical ? e.clientY - rect.top : e.clientX - rect.left;
       const viewPx = vertical ? el.clientHeight : el.clientWidth;
       if (e.ctrlKey || e.metaKey) {
-        const factor = Math.exp(e.deltaY * 0.01);
+        // Clamp one event's zoom: a mouse-wheel notch reports ±120, which
+        // raw would jump 3.3x — cap it near the trackpad's smooth range.
+        const factor = Math.exp(Math.max(-40, Math.min(40, e.deltaY)) * 0.01);
         setWin((w) =>
-          zoomedWindow(w ?? fitWindow(tMin, tMax, viewPx), factor, alongMain, tMin, tMax, viewPx),
+          replaceWin(w, zoomedWindow(w ?? fitWindow(tMin, tMax, viewPx), factor, alongMain, tMin, tMax, viewPx)),
         );
       } else {
         const mainDelta = vertical ? e.deltaY : e.deltaX || e.deltaY;
         const crossDelta = vertical ? e.deltaX : e.deltaX ? e.deltaY : 0;
-        setWin((w) => pannedWindow(w ?? fitWindow(tMin, tMax, viewPx), mainDelta, tMin, tMax, viewPx));
+        setWin((w) =>
+          replaceWin(w, pannedWindow(w ?? fitWindow(tMin, tMax, viewPx), mainDelta, tMin, tMax, viewPx)),
+        );
         if (crossDelta !== 0) {
           if (vertical) el.scrollLeft += crossDelta;
           else el.scrollTop += crossDelta;
@@ -138,7 +144,7 @@ export function TimelineGallery() {
     if (!start || !el) return;
     const main = vertical ? e.clientY : e.clientX;
     const cross = vertical ? e.clientX : e.clientY;
-    setWin((w) => pannedWindow(w ?? fit, start.main - main, tMin, tMax, viewSize.main));
+    setWin((w) => replaceWin(w, pannedWindow(w ?? fit, start.main - main, tMin, tMax, viewSize.main)));
     if (vertical) el.scrollLeft += start.cross - cross;
     else el.scrollTop += start.cross - cross;
     drag.current = { main, cross };
@@ -186,7 +192,7 @@ export function TimelineGallery() {
 
   const ticks = timeTicks(tA, tB, view.msPerPx);
   const crossContent = GUTTER + packed.laneCount * lane + LANE_GAP;
-  const takenCount = timed.reduce((n, i) => n + (i.taken ? 1 : 0), 0);
+
 
   return (
     <div className={`timeline-gallery ${vertical ? "vertical" : "horizontal"}`}>
@@ -308,6 +314,12 @@ function TimelineThumb({
       )}
     </figure>
   );
+}
+
+/** The previous window when nothing moved (a clamped edge), else the next —
+ * so holding a pinch against a bound doesn't re-render per event. */
+function replaceWin(prev: TimeWindow | null, next: TimeWindow): TimeWindow | null {
+  return prev !== null && prev.t0 === next.t0 && prev.msPerPx === next.msPerPx ? prev : next;
 }
 
 /** First index in time-sorted `items` with t >= target. */

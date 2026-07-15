@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DAY_MS,
+  PACK_STEP,
+  packSpan,
   fitWindow,
   HOUR_MS,
   MIN_MS_PER_PX,
@@ -46,6 +48,31 @@ describe("packLanes", () => {
       if (prev !== undefined) expect(t - prev).toBeGreaterThanOrEqual(span);
       lastInLane.set(lane, t);
     });
+  });
+});
+
+describe("packSpan", () => {
+  it("never returns less than the true span (no overlap, ever)", () => {
+    for (let x = 1; x < 1e12; x *= 3.7) {
+      expect(packSpan(x)).toBeGreaterThanOrEqual(x);
+    }
+  });
+
+  it("stays within one grid step of the true span", () => {
+    for (let x = 1; x < 1e12; x *= 3.7) {
+      expect(packSpan(x)).toBeLessThanOrEqual(x * PACK_STEP * 1.0001);
+    }
+  });
+
+  it("is constant between grid steps, so zooming re-packs only at crossings", () => {
+    const base = packSpan(1000);
+    // Nudging the span slightly must not change the snapped value.
+    expect(packSpan(base * 0.99)).toBe(base);
+    expect(packSpan(base)).toBe(base);
+    const distinct = new Set<number>();
+    for (let f = 1; f <= 10; f *= 1.02) distinct.add(packSpan(1000 * f));
+    // A 10x zoom sweep at 2% steps (~116 events) crosses only ~11 grid steps.
+    expect(distinct.size).toBeLessThanOrEqual(12);
   });
 });
 

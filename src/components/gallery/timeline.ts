@@ -86,6 +86,21 @@ export function pannedWindow(
   );
 }
 
+/** Log-grid step for `packSpan`. */
+export const PACK_STEP = 1.25;
+
+/**
+ * Snap a packing span UP onto a coarse log grid. Continuous zooming then
+ * re-packs lanes only when crossing a grid step — never per wheel event —
+ * and items still never overlap, because the snapped span is at least the
+ * true one (they just sit up to one step further apart).
+ */
+export function packSpan(spanMs: number): number {
+  let out = PACK_STEP ** Math.ceil(Math.log(spanMs) / Math.log(PACK_STEP));
+  while (out < spanMs) out *= PACK_STEP; // float-edge guard
+  return out;
+}
+
 /**
  * Assign non-overlapping lanes to time-sorted items: each item occupies
  * `spanMs` of axis; an item landing on an occupied stretch goes to the
