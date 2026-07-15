@@ -22,9 +22,11 @@ import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow }
 const LANE_GAP = 6;
 /** Room for the axis line and its date labels. */
 const GUTTER = 76;
+/** Edge of the cached thumbnails (Rust THUMB_MAX_EDGE). */
+const THUMB_SOURCE_EDGE = 256;
 const OVERSCAN_PX = 200;
 const REQUEST_DEBOUNCE_MS = 50;
-const THUMB_MIN = 40;
+const THUMB_MIN = 80;
 
 interface TimedItem {
   entry: FileEntry;
@@ -290,6 +292,10 @@ function TimelineThumb({
   const openViewer = useAppStore((s) => s.openViewer);
   const pos = vertical ? { top: main, left: cross } : { left: main, top: cross };
   const when = new Date(item.t).toLocaleString();
+  // Beyond what the 256px cached thumb can fill (device pixels), the items
+  // on view lazily load the original on top of the thumb — the photo
+  // upgrades from soft to sharp in place, never to a blank.
+  const wantsFull = size * window.devicePixelRatio > THUMB_SOURCE_EDGE;
   return (
     <figure
       className={`tl-item${selected ? " selected" : ""}`}
@@ -304,7 +310,18 @@ function TimelineThumb({
       }}
     >
       {cacheFile !== undefined ? (
-        <img src={fileUrl(cacheFile)} alt={item.entry.name} loading="lazy" draggable={false} />
+        <>
+          <img src={fileUrl(cacheFile)} alt={item.entry.name} loading="lazy" draggable={false} />
+          {wantsFull && (
+            <img
+              className="tl-full"
+              src={fileUrl(item.entry.path)}
+              alt=""
+              loading="lazy"
+              draggable={false}
+            />
+          )}
+        </>
       ) : error !== undefined ? (
         <span className="thumb-error" title={error}>
           ⚠
