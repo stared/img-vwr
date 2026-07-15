@@ -65,24 +65,29 @@ describe("time window", () => {
     const fit = fitWindow(0, DAY_MS, 1000);
     const anchorPx = 400;
     const before = fit.t0 + anchorPx * fit.msPerPx;
-    const zoomed = zoomedWindow(fit, 0.5, anchorPx, fit);
+    const zoomed = zoomedWindow(fit, 0.5, anchorPx, 0, DAY_MS, 1000);
     const after = zoomed.t0 + anchorPx * zoomed.msPerPx;
     expect(after).toBeCloseTo(before, 6);
     expect(zoomed.msPerPx).toBeCloseTo(fit.msPerPx / 2, 6);
   });
 
-  it("zoom clamps at the deepest level and near the fit", () => {
+  it("zoom clamps at the deepest level and cannot leave the fit range", () => {
     const fit = fitWindow(0, DAY_MS, 1000);
-    expect(zoomedWindow(fit, 1e-12, 0, fit).msPerPx).toBe(MIN_MS_PER_PX);
-    expect(zoomedWindow(fit, 1e12, 0, fit).msPerPx).toBeCloseTo(fit.msPerPx * 1.2, 6);
+    expect(zoomedWindow(fit, 1e-12, 0, 0, DAY_MS, 1000).msPerPx).toBe(MIN_MS_PER_PX);
+    // Zooming out stops AT fit: the range plus its margin, nothing beyond.
+    const out = zoomedWindow(fit, 1e12, 0, 0, DAY_MS, 1000);
+    expect(out.msPerPx).toBeCloseTo(fit.msPerPx, 6);
+    expect(out.t0).toBeCloseTo(fit.t0, 6);
   });
 
-  it("pan cannot push the data fully out of view", () => {
-    const fit = fitWindow(0, DAY_MS, 1000);
-    const far = pannedWindow(fit, 1e9, 0, DAY_MS, 1000);
-    expect(far.t0).toBeLessThanOrEqual(DAY_MS);
-    const back = pannedWindow(fit, -1e9, 0, DAY_MS, 1000);
-    expect(back.t0 + 1000 * back.msPerPx).toBeGreaterThanOrEqual(0);
+  it("pan is capped to the data range plus the margin", () => {
+    const margin = DAY_MS * 0.05;
+    const win = zoomedWindow(fitWindow(0, DAY_MS, 1000), 0.1, 500, 0, DAY_MS, 1000);
+    const viewSpan = 1000 * win.msPerPx;
+    const far = pannedWindow(win, 1e9, 0, DAY_MS, 1000);
+    expect(far.t0 + viewSpan).toBeCloseTo(DAY_MS + margin, 3);
+    const back = pannedWindow(win, -1e9, 0, DAY_MS, 1000);
+    expect(back.t0).toBeCloseTo(-margin, 3);
   });
 });
 

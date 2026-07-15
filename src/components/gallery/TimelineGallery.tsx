@@ -98,23 +98,16 @@ export function TimelineGallery() {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const alongMain = vertical ? e.clientY - rect.top : e.clientX - rect.left;
+      const viewPx = vertical ? el.clientHeight : el.clientWidth;
       if (e.ctrlKey || e.metaKey) {
         const factor = Math.exp(e.deltaY * 0.01);
         setWin((w) =>
-          zoomedWindow(w ?? fitWindow(tMin, tMax, vertical ? el.clientHeight : el.clientWidth), factor, alongMain, fitWindow(tMin, tMax, vertical ? el.clientHeight : el.clientWidth)),
+          zoomedWindow(w ?? fitWindow(tMin, tMax, viewPx), factor, alongMain, tMin, tMax, viewPx),
         );
       } else {
         const mainDelta = vertical ? e.deltaY : e.deltaX || e.deltaY;
         const crossDelta = vertical ? e.deltaX : e.deltaX ? e.deltaY : 0;
-        setWin((w) =>
-          pannedWindow(
-            w ?? fitWindow(tMin, tMax, vertical ? el.clientHeight : el.clientWidth),
-            mainDelta,
-            tMin,
-            tMax,
-            vertical ? el.clientHeight : el.clientWidth,
-          ),
-        );
+        setWin((w) => pannedWindow(w ?? fitWindow(tMin, tMax, viewPx), mainDelta, tMin, tMax, viewPx));
         if (crossDelta !== 0) {
           if (vertical) el.scrollLeft += crossDelta;
           else el.scrollTop += crossDelta;
@@ -188,7 +181,7 @@ export function TimelineGallery() {
   const crossContent = GUTTER + packed.laneCount * LANE + LANE_GAP;
   const takenCount = timed.reduce((n, i) => n + (i.taken ? 1 : 0), 0);
   const zoomAtCenter = (factor: number) =>
-    setWin((w) => zoomedWindow(w ?? fit, factor, viewSize.main / 2, fit));
+    setWin((w) => zoomedWindow(w ?? fit, factor, viewSize.main / 2, tMin, tMax, viewSize.main));
 
   return (
     <div className={`timeline-gallery ${vertical ? "vertical" : "horizontal"}`}>

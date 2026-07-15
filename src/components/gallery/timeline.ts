@@ -27,31 +27,50 @@ export const MIN_MS_PER_PX = MINUTE_MS / 240;
 /** Shortest range treated as the full span (a folder shot in one burst). */
 export const MIN_SPAN_MS = HOUR_MS;
 
-/** The window that fits [tMin, tMax] into `viewPx` with breathing room. */
-export function fitWindow(tMin: number, tMax: number, viewPx: number): TimeWindow {
+/** Margin around the data range, each side, as a fraction of its span. */
+const RANGE_MARGIN = 0.05;
+
+/** The navigable time bounds: the data range plus the margin. Zooming and
+ * panning never leave these — there is nothing to see out there. */
+function rangeBounds(tMin: number, tMax: number): { lo: number; hi: number } {
   const span = Math.max(tMax - tMin, MIN_SPAN_MS);
-  const pad = span * 0.05;
-  const msPerPx = (span + 2 * pad) / Math.max(viewPx, 1);
-  return { t0: tMin - pad, msPerPx };
+  return { lo: tMin - span * RANGE_MARGIN, hi: tMin + span * (1 + RANGE_MARGIN) };
 }
 
-/** Zoom the window by `factor` keeping the time under `anchorPx` fixed. */
+/** Keep the window inside the navigable bounds (centered when it's wider). */
+function clampWindow(win: TimeWindow, tMin: number, tMax: number, viewPx: number): TimeWindow {
+  const { lo, hi } = rangeBounds(tMin, tMax);
+  const viewSpan = Math.max(viewPx, 1) * win.msPerPx;
+  const t0 =
+    viewSpan >= hi - lo
+      ? lo - (viewSpan - (hi - lo)) / 2
+      : Math.min(Math.max(win.t0, lo), hi - viewSpan);
+  return { t0, msPerPx: win.msPerPx };
+}
+
+/** The window showing the whole navigable range in `viewPx`. */
+export function fitWindow(tMin: number, tMax: number, viewPx: number): TimeWindow {
+  const { lo, hi } = rangeBounds(tMin, tMax);
+  return { t0: lo, msPerPx: (hi - lo) / Math.max(viewPx, 1) };
+}
+
+/** Zoom the window by `factor` keeping the time under `anchorPx` fixed.
+ * Fit is the far end of zooming out; MIN_MS_PER_PX the near end. */
 export function zoomedWindow(
   win: TimeWindow,
   factor: number,
   anchorPx: number,
-  fit: TimeWindow,
+  tMin: number,
+  tMax: number,
+  viewPx: number,
 ): TimeWindow {
-  // Fit (slightly loose) is the far end of zooming out; MIN_MS_PER_PX is in.
-  const msPerPx = Math.min(
-    Math.max(win.msPerPx * factor, MIN_MS_PER_PX),
-    fit.msPerPx * 1.2,
-  );
+  const fit = fitWindow(tMin, tMax, viewPx);
+  const msPerPx = Math.min(Math.max(win.msPerPx * factor, MIN_MS_PER_PX), fit.msPerPx);
   const anchorT = win.t0 + anchorPx * win.msPerPx;
-  return { t0: anchorT - anchorPx * msPerPx, msPerPx };
+  return clampWindow({ t0: anchorT - anchorPx * msPerPx, msPerPx }, tMin, tMax, viewPx);
 }
 
-/** Pan by `deltaPx`, clamped so the data range can't leave the viewport. */
+/** Pan by `deltaPx`, staying inside the navigable bounds. */
 export function pannedWindow(
   win: TimeWindow,
   deltaPx: number,
@@ -59,12 +78,12 @@ export function pannedWindow(
   tMax: number,
   viewPx: number,
 ): TimeWindow {
-  const viewSpan = viewPx * win.msPerPx;
-  const t0 = Math.min(
-    Math.max(win.t0 + deltaPx * win.msPerPx, tMin - viewSpan * 0.9),
-    tMax - viewSpan * 0.1,
+  return clampWindow(
+    { t0: win.t0 + deltaPx * win.msPerPx, msPerPx: win.msPerPx },
+    tMin,
+    tMax,
+    viewPx,
   );
-  return { t0, msPerPx: win.msPerPx };
 }
 
 /**
