@@ -11,20 +11,21 @@ import { fitWindow, packLanes, pannedWindow, timeTicks, zoomedWindow } from "./t
  * The gallery as a timeline: every visible entry sits on a time axis at its
  * date taken (EXIF; falls back to modified). Photos never overlap — one
  * landing on an occupied stretch shifts a lane further from the axis. The
- * axis runs vertically or horizontally; wheel (or drag) pans along time,
- * ⌘/ctrl+wheel and the ± buttons zoom around the cursor. Time is a
- * pan/zoom window, not a scrollable canvas — a deeply zoomed year is more
- * pixels than an element can be.
+ * axis runs vertically or horizontally (labeled toggle); wheel (or drag)
+ * pans along time, ⌘/ctrl+wheel zooms around the cursor. The size slider
+ * changes only how large the photos draw — the time window stays put; the
+ * photos re-pack into lanes at their new size. Time is a pan/zoom window,
+ * not a scrollable canvas — a deeply zoomed year is more pixels than an
+ * element can be.
  */
 
-const THUMB = 64;
 const LANE_GAP = 6;
-const LANE = THUMB + LANE_GAP;
 /** Room for the axis line and its date labels. */
 const GUTTER = 76;
 const OVERSCAN_PX = 200;
 const REQUEST_DEBOUNCE_MS = 50;
-const ZOOM_STEP = 1.5;
+const THUMB_MIN = 40;
+const THUMB_MAX = 160;
 
 interface TimedItem {
   entry: FileEntry;
@@ -41,6 +42,9 @@ export function TimelineGallery() {
   const epoch = useAppStore((s) => s.epoch);
   const vertical = useAppStore((s) => s.timelineOrientation === "vertical");
   const setTimelineOrientation = useAppStore((s) => s.setTimelineOrientation);
+  const thumb = useAppStore((s) => s.timelineThumbPx);
+  const setTimelineThumbPx = useAppStore((s) => s.setTimelineThumbPx);
+  const lane = thumb + LANE_GAP;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ main: 0, cross: 0 });
@@ -85,8 +89,8 @@ export function TimelineGallery() {
   // Lane packing spans the whole collection at the current zoom, so lanes
   // are stable while panning; only the assignment depends on msPerPx.
   const packed = useMemo(
-    () => packLanes(timed.map((i) => i.t), LANE * view.msPerPx),
-    [timed, view.msPerPx],
+    () => packLanes(timed.map((i) => i.t), lane * view.msPerPx),
+    [timed, lane, view.msPerPx],
   );
 
   // Wheel: plain = pan along time, ⌘/ctrl (and trackpad pinch) = zoom at
@@ -144,7 +148,7 @@ export function TimelineGallery() {
 
   // Only the window (± overscan) renders; `timed` is time-sorted, so the
   // main-axis slice is a binary search.
-  const tA = view.t0 - (OVERSCAN_PX + LANE) * view.msPerPx;
+  const tA = view.t0 - (OVERSCAN_PX + lane) * view.msPerPx;
   const tB = view.t0 + (viewSize.main + OVERSCAN_PX) * view.msPerPx;
   const visible = useMemo(() => {
     const from = lowerBound(timed, tA);
@@ -154,12 +158,12 @@ export function TimelineGallery() {
     for (let i = from; i < timed.length; i += 1) {
       const item = timed[i];
       if (!item || item.t > tB) break;
-      const lane = packed.lanes[i] ?? 0;
-      const crossPos = GUTTER + lane * LANE;
-      if (crossPos + THUMB >= crossA && crossPos <= crossB) out.push({ item, lane });
+      const itemLane = packed.lanes[i] ?? 0;
+      const crossPos = GUTTER + itemLane * lane;
+      if (crossPos + thumb >= crossA && crossPos <= crossB) out.push({ item, lane: itemLane });
     }
     return out;
-  }, [timed, packed, tA, tB, crossScroll, viewSize.cross]);
+  }, [timed, packed, tA, tB, crossScroll, viewSize.cross, lane, thumb]);
 
   // Ask Rust for thumbnails of what's on screen (debounced while panning).
   useEffect(() => {
@@ -178,35 +182,45 @@ export function TimelineGallery() {
   }
 
   const ticks = timeTicks(tA, tB, view.msPerPx);
-  const crossContent = GUTTER + packed.laneCount * LANE + LANE_GAP;
+  const crossContent = GUTTER + packed.laneCount * lane + LANE_GAP;
   const takenCount = timed.reduce((n, i) => n + (i.taken ? 1 : 0), 0);
-  const zoomAtCenter = (factor: number) =>
-    setWin((w) => zoomedWindow(w ?? fit, factor, viewSize.main / 2, tMin, tMax, viewSize.main));
 
   return (
     <div className={`timeline-gallery ${vertical ? "vertical" : "horizontal"}`}>
       <div className="tl-toolbar">
-        <button
-          title={vertical ? "horizontal timeline" : "vertical timeline"}
-          onClick={() => {
-            setTimelineOrientation(vertical ? "horizontal" : "vertical");
-            setWin(null);
-          }}
-        >
-          {vertical ? "⇅" : "⇆"}
-        </button>
-        <button title="zoom out (⌘+wheel)" onClick={() => zoomAtCenter(ZOOM_STEP)}>
-          −
-        </button>
-        <button title="zoom in (⌘+wheel)" onClick={() => zoomAtCenter(1 / ZOOM_STEP)}>
-          +
-        </button>
-        <button title="fit the whole range" onClick={() => setWin(null)}>
+        <div className="tl-seg" role="group" aria-label="timeline orientation">
+          {(["vertical", "horizontal"] as const).map((orientation) => (
+            <button
+              key={orientation}
+              className={vertical === (orientation === "vertical") ? "active" : ""}
+              onClick={() => {
+                if (vertical === (orientation === "vertical")) return;
+                setTimelineOrientation(orientation);
+                setWin(null); // the axis length changed; refit
+              }}
+            >
+              {orientation}
+            </button>
+          ))}
+        </div>
+        <label className="tl-size" title="photo size — the time scale stays put">
+          size
+          <input
+            type="range"
+            min={THUMB_MIN}
+            max={THUMB_MAX}
+            step={8}
+            value={thumb}
+            onChange={(e) => setTimelineThumbPx(Number(e.target.value))}
+          />
+        </label>
+        <button className="tl-fit" title="show the whole range" onClick={() => setWin(null)}>
           fit
         </button>
         <span className="tl-note">
           {timed.length} on the timeline
           {takenCount < timed.length && ` · ${timed.length - takenCount} by modified date`}
+          {" · ⌘ scroll zooms"}
         </span>
       </div>
       <div
@@ -238,12 +252,13 @@ export function TimelineGallery() {
             );
           })}
           <div className="tl-axis" style={vertical ? { left: GUTTER - 6 } : { top: GUTTER - 6 }} />
-          {visible.map(({ item, lane }) => (
+          {visible.map(({ item, lane: itemLane }) => (
             <TimelineThumb
               key={item.entry.path}
               item={item}
               main={mainPx(item.t)}
-              cross={GUTTER + lane * LANE}
+              cross={GUTTER + itemLane * lane}
+              size={thumb}
               vertical={vertical}
             />
           ))}
@@ -257,11 +272,13 @@ function TimelineThumb({
   item,
   main,
   cross,
+  size,
   vertical,
 }: {
   item: TimedItem;
   main: number;
   cross: number;
+  size: number;
   vertical: boolean;
 }) {
   const cacheFile = useAppStore((s) => s.thumbs[item.entry.path]);
@@ -273,7 +290,7 @@ function TimelineThumb({
   return (
     <figure
       className={`tl-item${selected ? " selected" : ""}`}
-      style={{ ...pos, width: THUMB, height: THUMB }}
+      style={{ ...pos, width: size, height: size }}
       title={`${item.entry.name} · ${when}${item.taken ? "" : " (modified)"}`}
       onClick={() => useAppStore.setState({ selectedIndex: item.index })}
       onDoubleClick={() => openViewer(item.index)}

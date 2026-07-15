@@ -1159,9 +1159,8 @@ button.stats-row:hover .stats-label {
 }
 
 .tl-toolbar button {
-  min-width: 26px;
   height: 22px;
-  padding: 0 6px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: transparent;
@@ -1172,6 +1171,49 @@ button.stats-row:hover .stats-label {
 
 .tl-toolbar button:hover {
   border-color: var(--accent);
+}
+
+/* Orientation as a labeled segmented control: both states visible, the
+   active one filled — no glyphs to decode. */
+.tl-seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.tl-seg button {
+  border: none;
+  border-radius: 0;
+  color: var(--text-dim);
+}
+
+.tl-seg button + button {
+  border-left: 1px solid var(--border);
+}
+
+.tl-seg button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Photo size: presentation only — sliding never moves the time window. */
+.tl-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.tl-size input[type="range"] {
+  width: 110px;
+  accent-color: var(--accent);
+}
+
+.tl-fit {
+  margin-left: 8px;
 }
 
 .tl-note {

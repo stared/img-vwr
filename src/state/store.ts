@@ -82,6 +82,8 @@ export interface AppState {
   galleryLayout: GalleryLayout;
   /** Which way the timeline's time axis runs. */
   timelineOrientation: TimelineOrientation;
+  /** Thumbnail edge on the timeline, px — presentation only, never zoom. */
+  timelineThumbPx: number;
   /** Index into the VISIBLE (query-applied) list of the selected image. */
   selectedIndex: number;
   /** Filters + sort applied to the scanned folder; survives folder changes. */
@@ -130,6 +132,7 @@ interface AppActions {
   toggleStats: () => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
+  setTimelineThumbPx: (px: number) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -180,6 +183,7 @@ export const initialState: AppState = {
   viewMode: "gallery",
   galleryLayout: "grid",
   timelineOrientation: "vertical",
+  timelineThumbPx: 64,
   selectedIndex: 0,
   query: defaultQuery,
   findOpen: false,
@@ -491,6 +495,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setGalleryLayout: (layout) => set({ galleryLayout: layout }),
 
   setTimelineOrientation: (orientation) => set({ timelineOrientation: orientation }),
+
+  setTimelineThumbPx: (px) => set({ timelineThumbPx: px }),
 
   openViewer: (index) => {
     const visibleCount = visibleOf(get(), get().query).length;
