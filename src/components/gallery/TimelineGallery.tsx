@@ -25,7 +25,6 @@ const GUTTER = 76;
 const OVERSCAN_PX = 200;
 const REQUEST_DEBOUNCE_MS = 50;
 const THUMB_MIN = 40;
-const THUMB_MAX = 160;
 
 interface TimedItem {
   entry: FileEntry;
@@ -42,9 +41,8 @@ export function TimelineGallery() {
   const epoch = useAppStore((s) => s.epoch);
   const vertical = useAppStore((s) => s.timelineOrientation === "vertical");
   const setTimelineOrientation = useAppStore((s) => s.setTimelineOrientation);
-  const thumb = useAppStore((s) => s.timelineThumbPx);
+  const thumbPref = useAppStore((s) => s.timelineThumbPx);
   const setTimelineThumbPx = useAppStore((s) => s.setTimelineThumbPx);
-  const lane = thumb + LANE_GAP;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ main: 0, cross: 0 });
@@ -85,6 +83,11 @@ export function TimelineGallery() {
 
   const fit = fitWindow(tMin, tMax, viewSize.main);
   const view = win ?? fit;
+
+  // Photos may grow to about half the viewport across the lanes.
+  const thumbMax = Math.max(120, Math.round(viewSize.cross / 2));
+  const thumb = Math.min(thumbPref, thumbMax);
+  const lane = thumb + LANE_GAP;
 
   // Lane packing spans the whole collection at the current zoom, so lanes
   // are stable while panning; only the assignment depends on msPerPx.
@@ -188,34 +191,28 @@ export function TimelineGallery() {
   return (
     <div className={`timeline-gallery ${vertical ? "vertical" : "horizontal"}`}>
       <div className="tl-toolbar">
-        <div className="tl-seg" role="group" aria-label="timeline orientation">
-          {(["vertical", "horizontal"] as const).map((orientation) => (
-            <button
-              key={orientation}
-              className={vertical === (orientation === "vertical") ? "active" : ""}
-              onClick={() => {
-                if (vertical === (orientation === "vertical")) return;
-                setTimelineOrientation(orientation);
-                setWin(null); // the axis length changed; refit
-              }}
-            >
-              {orientation}
-            </button>
-          ))}
-        </div>
+        <button
+          title={`switch to ${vertical ? "horizontal" : "vertical"}`}
+          onClick={() => {
+            setTimelineOrientation(vertical ? "horizontal" : "vertical");
+            setWin(null); // the axis length changed; refit
+          }}
+        >
+          {vertical ? "vertical" : "horizontal"}
+        </button>
         <label className="tl-size" title="photo size — the time scale stays put">
           size
           <input
             type="range"
             min={THUMB_MIN}
-            max={THUMB_MAX}
-            step={8}
+            max={thumbMax}
+            step={4}
             value={thumb}
             onChange={(e) => setTimelineThumbPx(Number(e.target.value))}
           />
         </label>
-        <button className="tl-fit" title="show the whole range" onClick={() => setWin(null)}>
-          fit
+        <button className="tl-fit" title="zoom out to the whole time range" onClick={() => setWin(null)}>
+          show all
         </button>
         <span className="tl-note">
           {timed.length} on the timeline
