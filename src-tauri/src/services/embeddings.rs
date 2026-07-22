@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
-use imgvwr_embed::{dot, is_downloaded, model_spec, Embedder, EmbedModelInfo, MODELS};
+use imgvwr_embed::{dot, is_downloaded, model_spec, EmbedModelInfo, Embedder, MODELS};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
 
@@ -17,8 +18,13 @@ use crate::services::thumbnails::ThumbnailService;
 pub struct EmbeddingService {
     /// The active model; long-running work locks per image, not per run.
     embedder: Mutex<Option<Arc<Embedder>>>,
-    /// path → normalized vector for everything indexed this session.
-    vectors: Mutex<HashMap<String, Arc<Vec<f32>>>>,
+    /// (model id, path) → normalized vector for everything indexed this
+    /// session. Keeping models side by side makes switching back instant and
+    /// prevents an older indexing pass from contaminating the active model.
+    vectors: Mutex<HashMap<(String, String), Arc<Vec<f32>>>>,
+    /// Monotonic model-selection request id. Model loading cannot be cancelled,
+    /// but only the latest request is allowed to become active or emit status.
+    selection_generation: AtomicU64,
     /// Hugging Face download cache (app-owned, no global installs).
     models_dir: PathBuf,
     /// Per-image vector files: {thumb_key}-{model_id}.vec (f32 LE).
@@ -40,6 +46,7 @@ impl EmbeddingService {
         Ok(Self {
             embedder: Mutex::new(None),
             vectors: Mutex::new(HashMap::new()),
+            selection_generation: AtomicU64::new(0),
             models_dir,
             vectors_dir,
             thumbs_dir,
@@ -76,6 +83,7 @@ impl EmbeddingService {
             emit_status(app, &model_id, "error", Some("unknown model".into()));
             return;
         };
+        let generation = self.selection_generation.fetch_add(1, Ordering::SeqCst) + 1;
         let service = Arc::clone(self);
         let app = app.clone();
         std::thread::spawn(move || {
@@ -84,15 +92,22 @@ impl EmbeddingService {
             } else {
                 "downloading"
             };
-            emit_status(&app, spec.id, phase, None);
+            if service.selection_generation.load(Ordering::SeqCst) == generation {
+                emit_status(&app, spec.id, phase, None);
+            }
             match Embedder::load(spec, &service.models_dir) {
                 Ok(embedder) => {
+                    if service.selection_generation.load(Ordering::SeqCst) != generation {
+                        return;
+                    }
                     *service.embedder.lock().unwrap() = Some(Arc::new(embedder));
-                    // Vectors from another model must never mix into ranking.
-                    service.vectors.lock().unwrap().clear();
                     emit_status(&app, spec.id, "ready", None);
                 }
-                Err(e) => emit_status(&app, spec.id, "error", Some(e.to_string())),
+                Err(e) => {
+                    if service.selection_generation.load(Ordering::SeqCst) == generation {
+                        emit_status(&app, spec.id, "error", Some(e.to_string()));
+                    }
+                }
             }
         });
     }
@@ -137,15 +152,17 @@ impl EmbeddingService {
     /// omitted (the sort puts them last).
     pub fn rank_image(&self, anchor: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
-        let anchor_vec = self.vector_for(&embedder, anchor).map_err(|e| e.to_string())?;
-        Ok(self.rank(&anchor_vec, paths))
+        let anchor_vec = self
+            .vector_for(&embedder, anchor)
+            .map_err(|e| e.to_string())?;
+        Ok(self.rank(embedder.model_id, &anchor_vec, paths))
     }
 
     /// Rank `paths` by similarity to a text phrase.
     pub fn rank_text(&self, query: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
         let query_vec = embedder.embed_text(query).map_err(|e| e.to_string())?;
-        Ok(self.rank(&query_vec, paths))
+        Ok(self.rank(embedder.model_id, &query_vec, paths))
     }
 
     fn active(&self) -> Result<Arc<Embedder>, String> {
@@ -156,18 +173,23 @@ impl EmbeddingService {
             .ok_or_else(|| "no embedding model loaded".to_string())
     }
 
-    fn rank(&self, anchor: &[f32], paths: &[String]) -> Vec<(String, f32)> {
+    fn rank(&self, model_id: &str, anchor: &[f32], paths: &[String]) -> Vec<(String, f32)> {
         let vectors = self.vectors.lock().unwrap();
         paths
             .iter()
-            .filter_map(|p| vectors.get(p).map(|v| (p.clone(), dot(anchor, v))))
+            .filter_map(|p| {
+                vectors
+                    .get(&(model_id.to_string(), p.clone()))
+                    .map(|v| (p.clone(), dot(anchor, v)))
+            })
             .collect()
     }
 
     /// The vector for one image: session memory → disk cache → compute from
     /// the cached thumbnail (generating that thumbnail if it doesn't exist).
     fn vector_for(&self, embedder: &Embedder, path: &str) -> Result<Arc<Vec<f32>>, String> {
-        if let Some(v) = self.vectors.lock().unwrap().get(path) {
+        let memory_key = (embedder.model_id.to_string(), path.to_string());
+        if let Some(v) = self.vectors.lock().unwrap().get(&memory_key) {
             return Ok(Arc::clone(v));
         }
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
@@ -178,13 +200,17 @@ impl EmbeddingService {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
-        let vec_file = self.vectors_dir.join(format!("{key}-{}.vec", embedder.model_id));
+        let vec_file = self
+            .vectors_dir
+            .join(format!("{key}-{}.vec", embedder.model_id));
 
         let vector = match read_vector(&vec_file, embedder.dim) {
             Some(v) => v,
             None => {
                 let thumb = self.thumb_file(path, &key)?;
-                let v = embedder.embed_image_file(&thumb).map_err(|e| e.to_string())?;
+                let v = embedder
+                    .embed_image_file(&thumb)
+                    .map_err(|e| e.to_string())?;
                 if let Err(e) = write_vector(&vec_file, &v) {
                     eprintln!("vector cache write failed for {}: {e}", vec_file.display());
                 }
@@ -195,7 +221,7 @@ impl EmbeddingService {
         self.vectors
             .lock()
             .unwrap()
-            .insert(path.to_string(), Arc::clone(&vector));
+            .insert(memory_key, Arc::clone(&vector));
         Ok(vector)
     }
 
