@@ -1,7 +1,5 @@
-/**
- * Opinionated testing default: open this folder on launch so the app is
- * usable (and drivable) without touching the native folder dialog.
- * Set to null to disable. TODO: replace with persisted last-opened folder.
- */
+/** Optional development convenience for automated/manual testing. Production
+ * builds always start without opening a machine-specific folder. */
+const configuredStartFolder = import.meta.env.VITE_START_FOLDER?.trim();
 export const DEFAULT_START_FOLDER: string | null =
-  "/Users/pmigdal/Library/CloudStorage/Dropbox/Photos";
+  import.meta.env.DEV && configuredStartFolder ? configuredStartFolder : null;
