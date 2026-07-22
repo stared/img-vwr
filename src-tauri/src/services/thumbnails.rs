@@ -16,7 +16,9 @@ pub struct ThumbnailService {
     pool: rayon::ThreadPool,
     registry: Arc<CodecRegistry>,
     cache_dir: PathBuf,
-    in_flight: Mutex<HashSet<String>>,
+    /// Work is deduplicated within one collection epoch. The same file may be
+    /// requested again by a newer epoch while stale work is winding down.
+    in_flight: Mutex<HashSet<(String, u64)>>,
 }
 
 impl ThumbnailService {
@@ -80,7 +82,8 @@ impl ThumbnailService {
         }
 
         // Dedupe: skip if an identical job is already queued or running.
-        if !self.in_flight.lock().unwrap().insert(key.clone()) {
+        let flight_key = (key.clone(), epoch);
+        if !self.in_flight.lock().unwrap().insert(flight_key.clone()) {
             return;
         }
 
@@ -90,7 +93,7 @@ impl ThumbnailService {
             if !service.is_stale(epoch) {
                 service.generate(&app, &path, &cache_file, epoch);
             }
-            service.in_flight.lock().unwrap().remove(&key);
+            service.in_flight.lock().unwrap().remove(&flight_key);
         });
     }
 
@@ -141,17 +144,19 @@ impl ThumbnailService {
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
 
-        let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| {
-            match imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
-                Ok(webp) => write_atomically(cache_file, &webp)
-                    .map(|()| cache_file.to_path_buf())
-                    .map_err(|e| e.to_string()),
-                // No Rust codec (e.g. AVIF): serve the original file and let
-                // the webview decode and downscale it natively.
-                Err(ThumbError::Codec(CodecError::Unsupported)) => Ok(PathBuf::from(path)),
-                Err(e) => Err(e.to_string()),
-            }
-        });
+        let result = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                match imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
+                    Ok(webp) => write_atomically(cache_file, &webp)
+                        .map(|()| cache_file.to_path_buf())
+                        .map_err(|e| e.to_string()),
+                    // No Rust codec (e.g. AVIF): serve the original file and let
+                    // the webview decode and downscale it natively.
+                    Err(ThumbError::Codec(CodecError::Unsupported)) => Ok(PathBuf::from(path)),
+                    Err(e) => Err(e.to_string()),
+                }
+            });
 
         if self.is_stale(epoch) {
             return;
@@ -170,9 +175,17 @@ fn write_atomically(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = target.with_extension("webp.tmp");
+    static TEMP_ID: AtomicU64 = AtomicU64::new(0);
+    let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
+    let tmp = target.with_extension(format!("webp.{}.{}.tmp", std::process::id(), id));
     std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, target)
+    match std::fs::rename(&tmp, target) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(error)
+        }
+    }
 }
 
 fn emit_ready(app: &AppHandle, path: &str, cache_file: &Path, epoch: u64) {
@@ -209,6 +222,14 @@ mod tests {
         assert!(second > first);
         assert!(service.is_stale(first));
         assert!(!service.is_stale(second));
+    }
+
+    #[test]
+    fn in_flight_deduplication_is_scoped_to_an_epoch() {
+        let mut in_flight = HashSet::new();
+        assert!(in_flight.insert(("same-cache-key".to_string(), 1)));
+        assert!(!in_flight.insert(("same-cache-key".to_string(), 1)));
+        assert!(in_flight.insert(("same-cache-key".to_string(), 2)));
     }
 
     #[test]
