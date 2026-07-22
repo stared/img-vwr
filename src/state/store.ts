@@ -11,8 +11,17 @@ import {
 } from "../components/viewer/viewport";
 import type { EmbedModelInfo, FileEntry, ImageLabels, ImageMeta, MetaEntry } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
-import { getSort } from "../registry/sorts";
-import { getSource, type SourceItem } from "../registry/sources";
+import { getSource } from "../registry/sources";
+import {
+  EPOCH_PENDING,
+  scanBatchArrived,
+  scopeFailed,
+  scopeLoading,
+  sortForScope,
+  sourceLoaded,
+  type FolderStatus,
+  type Scope,
+} from "./collection";
 import type { Query, Sort } from "./query";
 import {
   applyQuery,
@@ -31,15 +40,12 @@ import {
   withSort,
 } from "./query";
 
-export type FolderStatus = "idle" | "loading" | "loaded" | "error";
 export type ViewMode = "gallery" | "viewer";
 export type GalleryLayout = "grid" | "timeline" | "map";
 export type TimelineOrientation = "vertical" | "horizontal";
 
-/** What the gallery is a query over: a local folder or a remote source. */
-export type Scope =
-  | { kind: "folder"; path: string; recursive: boolean }
-  | { kind: "source"; sourceId: string; arg: string; label: string };
+export type { FolderStatus, Scope } from "./collection";
+export { scanBatchArrived, sortForScope } from "./collection";
 
 /** Computed per-image scores backing a transient sort ("similar to …"). */
 export interface Similarity {
@@ -203,84 +209,6 @@ export const initialState: AppState = {
 };
 
 /* Pure transitions — actions only apply these. */
-
-/**
- * Epoch of a scope that flipped optimistically and is still waiting for its
- * real epoch from the backend. Matches no event's epoch (backend epochs are
- * positive counters), so stragglers from the previous scope are dropped.
- */
-export const EPOCH_PENDING = -1;
-
-export function scopeLoading(scope: Scope, epoch: number): Partial<AppState> {
-  return {
-    scope,
-    entries: [],
-    status: "loading",
-    error: null,
-    epoch,
-    thumbs: {},
-    thumbErrors: {},
-    meta: {},
-    labels: {},
-    viewMode: "gallery",
-    selectedIndex: 0,
-    // Similarity anchors are per-collection; a new scope starts without one.
-    similarity: null,
-    embedProgress: null,
-    viewerView: null,
-    viewerImg: null,
-  };
-}
-
-/**
- * Append a streamed scan batch; the final one flips the status. Entries
- * arrive in walk order — display order is the query's sort, applied in
- * useVisibleEntries, so no order is kept here.
- */
-export function scanBatchArrived(
-  state: Pick<AppState, "entries">,
-  batch: FileEntry[],
-  done: boolean,
-): Partial<AppState> {
-  const grown = batch.length > 0 ? { entries: [...state.entries, ...batch] } : {};
-  return done ? { ...grown, status: "loaded" } : grown;
-}
-
-/**
- * A remote source arrives with thumbnails and metadata already known —
- * prefilling them means the background Rust readers have nothing to do.
- */
-export function sourceLoaded(items: SourceItem[]): Partial<AppState> {
-  const thumbs: Record<string, string> = {};
-  const meta: Record<string, ImageMeta> = {};
-  for (const item of items) {
-    thumbs[item.entry.path] = item.thumbUrl;
-    meta[item.entry.path] = item.meta;
-  }
-  return { entries: items.map((i) => i.entry), thumbs, meta, status: "loaded" };
-}
-
-export function scopeFailed(message: string): Partial<AppState> {
-  return { entries: [], status: "error", error: message };
-}
-
-/**
- * Sort for a freshly opened scope. A source's declared default wins — its
- * API order (hot rank, relevance) is usually why you opened it. Otherwise
- * the current sort survives wherever it still applies (folder → folder
- * keeps your choice), and falls back to the app default when it doesn't
- * (e.g. "hot" makes no sense on a local folder).
- */
-export function sortForScope(scope: Scope, current: Sort): Sort {
-  if (scope.kind === "source") {
-    const declared = getSource(scope.sourceId)?.defaultSort;
-    if (declared) return declared;
-  }
-  const provider = getSort(current.key);
-  // Parameterized sorts (similarity) lose their anchor with the scope.
-  if (provider && provider.param === null && provider.appliesTo(scope)) return current;
-  return defaultQuery.sort;
-}
 
 /** Move the selection by `delta` within `count` items; a real move resets the viewport. */
 export function movedSelection(
