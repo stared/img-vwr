@@ -76,6 +76,14 @@ impl EmbeddingService {
             .collect()
     }
 
+    fn begin_selection(&self) -> u64 {
+        self.selection_generation.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    fn is_current_selection(&self, generation: u64) -> bool {
+        self.selection_generation.load(Ordering::SeqCst) == generation
+    }
+
     /// Download (if needed) and load a model on a background thread,
     /// reporting phases as events. Replaces the active model on success.
     pub fn select(self: &Arc<Self>, app: &AppHandle, model_id: String) {
@@ -83,7 +91,7 @@ impl EmbeddingService {
             emit_status(app, &model_id, "error", Some("unknown model".into()));
             return;
         };
-        let generation = self.selection_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let generation = self.begin_selection();
         let service = Arc::clone(self);
         let app = app.clone();
         std::thread::spawn(move || {
@@ -92,19 +100,19 @@ impl EmbeddingService {
             } else {
                 "downloading"
             };
-            if service.selection_generation.load(Ordering::SeqCst) == generation {
+            if service.is_current_selection(generation) {
                 emit_status(&app, spec.id, phase, None);
             }
             match Embedder::load(spec, &service.models_dir) {
                 Ok(embedder) => {
-                    if service.selection_generation.load(Ordering::SeqCst) != generation {
+                    if !service.is_current_selection(generation) {
                         return;
                     }
                     *service.embedder.lock().unwrap() = Some(Arc::new(embedder));
                     emit_status(&app, spec.id, "ready", None);
                 }
                 Err(e) => {
-                    if service.selection_generation.load(Ordering::SeqCst) == generation {
+                    if service.is_current_selection(generation) {
                         emit_status(&app, spec.id, "error", Some(e.to_string()));
                     }
                 }
@@ -284,4 +292,44 @@ fn emit_status(app: &AppHandle, model_id: &str, phase: &str, error: Option<Strin
         error,
     }
     .emit(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vectors_for_different_models_stay_isolated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
+        let path = "/photo.jpg".to_string();
+        service.vectors.lock().unwrap().insert(
+            ("model-a".to_string(), path.clone()),
+            Arc::new(vec![1.0, 0.0]),
+        );
+        service.vectors.lock().unwrap().insert(
+            ("model-b".to_string(), path.clone()),
+            Arc::new(vec![0.0, 1.0]),
+        );
+
+        assert_eq!(
+            service.rank("model-a", &[1.0, 0.0], &[path.clone()]),
+            vec![(path.clone(), 1.0)]
+        );
+        assert_eq!(
+            service.rank("model-b", &[1.0, 0.0], &[path.clone()]),
+            vec![(path, 0.0)]
+        );
+    }
+
+    #[test]
+    fn only_the_latest_model_selection_is_current() {
+        let tmp = tempfile::tempdir().unwrap();
+        let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
+        let first = service.begin_selection();
+        let second = service.begin_selection();
+
+        assert!(!service.is_current_selection(first));
+        assert!(service.is_current_selection(second));
+    }
 }
