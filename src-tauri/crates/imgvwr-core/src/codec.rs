@@ -75,7 +75,21 @@ impl ImageCodec for ImageCrateCodec {
     }
 
     fn probe(&self, ext: &str, magic: &[u8]) -> bool {
-        SUPPORTED_EXTS.contains(&ext) || image::guess_format(magic).is_ok()
+        if SUPPORTED_EXTS.contains(&ext) {
+            return true;
+        }
+        // `guess_format` recognises formats this build has no decoder for.
+        // That matters for camera raw: a NEF is a TIFF container, so magic
+        // alone would claim it here, fail to decode, and never reach the raw
+        // plugin that can actually read it. Probing must promise only what
+        // `decode` can deliver.
+        matches!(
+            image::guess_format(magic),
+            Ok(image::ImageFormat::Png
+                | image::ImageFormat::Jpeg
+                | image::ImageFormat::WebP
+                | image::ImageFormat::Gif)
+        )
     }
 
     fn decode(&self, bytes: &[u8]) -> Result<DecodedImage, CodecError> {
@@ -110,6 +124,17 @@ mod tests {
     fn probe_accepts_by_magic_bytes() {
         // Wrong extension but recognizable PNG magic.
         assert!(ImageCrateCodec.probe("dat", PNG_MAGIC));
+    }
+
+    #[test]
+    fn probe_declines_formats_this_build_cannot_decode() {
+        // TIFF magic, which is also how every camera raw file starts. The
+        // crate recognises the container but has no decoder for it, and
+        // claiming it here would shadow the raw plugin.
+        const TIFF_MAGIC: &[u8] = &[0x49, 0x49, 0x2a, 0x00, 0x08, 0, 0, 0];
+        assert!(!ImageCrateCodec.probe("nef", TIFF_MAGIC));
+        assert!(!ImageCrateCodec.probe("tif", TIFF_MAGIC));
+        assert!(CodecRegistry::builtin().find("nef", TIFF_MAGIC).is_none());
     }
 
     #[test]

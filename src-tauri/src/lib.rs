@@ -7,9 +7,24 @@ use std::sync::Arc;
 use tauri::Manager as _;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
+use imgvwr_core::SceneRegistry;
+use services::develop::DevelopService;
 use services::embeddings::EmbeddingService;
 use services::labels::LabelService;
 use services::thumbnails::ThumbnailService;
+
+/// The develop-capable formats, in probe order.
+///
+/// This is the whole format-plugin wiring: the RAW plugin goes first because
+/// it claims a disjoint set of extensions, and the built-in one handles
+/// everything the codec registry can decode. Adding a format means adding a
+/// line here, not touching the pipeline.
+fn scene_registry() -> SceneRegistry {
+    SceneRegistry::new(vec![
+        Arc::from(imgvwr_raw::raw_format()),
+        Arc::new(imgvwr_core::ImageCrateFormat::new()),
+    ])
+}
 
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
@@ -30,6 +45,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::labels_for_paths,
             commands::labels_set_stars,
             commands::labels_toggle_tag,
+            commands::develop_state,
+            commands::develop_render,
+            commands::develop_save,
+            commands::develop_reset,
+            commands::develop_edited_paths,
+            commands::develop_export,
         ])
         .events(collect_events![
             events::ScanBatch,
@@ -77,16 +98,51 @@ pub fn run() {
     }
 
     app_builder
+        // Developed previews are served here rather than written to disk:
+        // a slider drag produces a frame every ~20 ms, and each one is
+        // addressed by a fresh token so the webview's image cache can never
+        // hand back the previous edit.
+        .register_asynchronous_uri_scheme_protocol("develop", |ctx, request, responder| {
+            let service = ctx.app_handle().state::<Arc<DevelopService>>();
+            let service = Arc::clone(&service);
+            let uri = request.uri().clone();
+            std::thread::spawn(move || {
+                let token = services::develop::parse_frame_token(uri.path());
+                let response = match token.and_then(|t| service.frame(t)) {
+                    Some(bytes) => tauri::http::Response::builder()
+                        .header(tauri::http::header::CONTENT_TYPE, "image/jpeg")
+                        // Frames are immutable and single-use; the token in
+                        // the URL is what changes.
+                        .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                        .body(bytes),
+                    None => tauri::http::Response::builder()
+                        .status(tauri::http::StatusCode::NOT_FOUND)
+                        .body(Vec::new()),
+                };
+                if let Ok(response) = response {
+                    responder.respond(response);
+                }
+            });
+        })
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
             let cache_root = app.path().app_cache_dir()?;
-            app.manage(Arc::new(ThumbnailService::new(cache_root.join("thumbnails"))?));
+            let scenes = Arc::new(scene_registry());
+            app.manage(Arc::new(ThumbnailService::new(
+                cache_root.join("thumbnails"),
+                Arc::clone(&scenes),
+            )?));
             app.manage(Arc::new(EmbeddingService::new(cache_root)?));
-            // Labels are user data, not a cache — they live in app data.
+            // Labels and edits are user data, not a cache — they live in app
+            // data, and deliberately never beside the user's photos.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             app.manage(Arc::new(LabelService::new(&data_dir.join("labels.db"))?));
+            app.manage(Arc::new(DevelopService::new(
+                scenes,
+                &data_dir.join("develop.db"),
+            )?));
             Ok(())
         })
         .run(tauri::generate_context!())

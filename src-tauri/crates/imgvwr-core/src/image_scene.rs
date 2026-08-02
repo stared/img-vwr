@@ -1,0 +1,296 @@
+//! The built-in [`SceneFormat`] for ordinary formats — whatever the codec
+//! registry can decode (JPEG, PNG, WebP, GIF).
+//!
+//! These files are already demosaiced, already white-balanced and already
+//! gamma-encoded, so this plugin's job is the inverse of a RAW plugin's: undo
+//! the sRGB transfer function to get back to linear light, and treat white
+//! balance as a chromatic adaptation away from the D65 the file was encoded
+//! against. It is an approximation of what a RAW plugin does properly, but it
+//! is the honest best available for an 8-bit delivery file — and it means the
+//! develop panel behaves identically no matter what the user opened.
+
+use std::path::Path;
+
+use crate::codec::CodecRegistry;
+use crate::scene::{
+    srgb_to_linear, white_balance_gains, LinearImage, RenderRequest, SceneError, SceneFormat,
+    SceneImage, WhiteBalance,
+};
+use crate::thumbs::{apply_orientation, exif_orientation, thumb_dimensions};
+
+pub struct ImageCrateFormat {
+    codecs: CodecRegistry,
+}
+
+impl Default for ImageCrateFormat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ImageCrateFormat {
+    pub fn new() -> Self {
+        Self {
+            codecs: CodecRegistry::builtin(),
+        }
+    }
+}
+
+impl SceneFormat for ImageCrateFormat {
+    fn id(&self) -> &'static str {
+        "image-crate"
+    }
+
+    fn probe(&self, ext: &str, magic: &[u8]) -> bool {
+        self.codecs.find(ext, magic).is_some()
+    }
+
+    fn open(&self, path: &Path) -> Result<Box<dyn SceneImage>, SceneError> {
+        let bytes = std::fs::read(path).map_err(|e| SceneError::Open(e.to_string()))?;
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let decoded = self
+            .codecs
+            .decode(&ext, &bytes)
+            .map_err(|e| SceneError::Open(e.to_string()))?;
+
+        let img = image::RgbaImage::from_raw(decoded.width, decoded.height, decoded.rgba)
+            .ok_or_else(|| SceneError::Open("pixel buffer size mismatch".into()))?;
+        let img = apply_orientation(img, exif_orientation(&bytes));
+
+        Ok(Box::new(ImageCrateScene {
+            width: img.width(),
+            height: img.height(),
+            // Kept 8-bit on purpose: the source has no more precision than
+            // this, and a full-resolution float buffer would cost ~290 MB for
+            // a 24 MP file. Linearisation happens during resampling instead.
+            rgba: img.into_raw(),
+        }))
+    }
+}
+
+struct ImageCrateScene {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+impl SceneImage for ImageCrateScene {
+    fn native_size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn as_shot(&self) -> WhiteBalance {
+        // A delivery file carries no camera white balance to recover; it was
+        // encoded against D65 and that is the neutral the UI starts from.
+        WhiteBalance::D65
+    }
+
+    fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
+        let (dst_w, dst_h) = thumb_dimensions(self.width, self.height, req.max_edge.max(1));
+        if dst_w == 0 || dst_h == 0 {
+            return Err(SceneError::Render("empty image".into()));
+        }
+        let mut rgb = resample_to_linear(&self.rgba, self.width, self.height, dst_w, dst_h);
+
+        let gains = white_balance_gains(self.as_shot(), req.white_balance);
+        if gains != [1.0, 1.0, 1.0] {
+            for px in rgb.chunks_exact_mut(3) {
+                px[0] *= gains[0];
+                px[1] *= gains[1];
+                px[2] *= gains[2];
+            }
+        }
+
+        Ok(LinearImage {
+            width: dst_w,
+            height: dst_h,
+            rgb,
+        })
+    }
+}
+
+/// 256-entry sRGB→linear lookup: the transfer function is the hot path of
+/// every resample, and an 8-bit source only has 256 distinct inputs.
+fn srgb_lut() -> [f32; 256] {
+    let mut lut = [0f32; 256];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        *slot = srgb_to_linear(i as f32 / 255.0);
+    }
+    lut
+}
+
+/// Area-average downscale that converts to linear light *during* accumulation.
+///
+/// Averaging gamma-encoded values (what a naive resize does) darkens detailed
+/// regions; doing it in linear light is correct and costs nothing extra here,
+/// because the conversion is a table lookup we have to do anyway.
+fn resample_to_linear(
+    rgba: &[u8],
+    src_w: u32,
+    src_h: u32,
+    dst_w: u32,
+    dst_h: u32,
+) -> Vec<f32> {
+    let lut = srgb_lut();
+    let (sw, sh) = (src_w as usize, src_h as usize);
+    let (dw, dh) = (dst_w as usize, dst_h as usize);
+    let mut out = vec![0f32; dw * dh * 3];
+
+    if dw == sw && dh == sh {
+        for (dst, src) in out.chunks_exact_mut(3).zip(rgba.chunks_exact(4)) {
+            dst[0] = lut[src[0] as usize];
+            dst[1] = lut[src[1] as usize];
+            dst[2] = lut[src[2] as usize];
+        }
+        return out;
+    }
+
+    for dy in 0..dh {
+        // Source row span covered by this destination row.
+        let y0 = dy * sh / dh;
+        let y1 = (((dy + 1) * sh).div_ceil(dh)).min(sh).max(y0 + 1);
+        for dx in 0..dw {
+            let x0 = dx * sw / dw;
+            let x1 = (((dx + 1) * sw).div_ceil(dw)).min(sw).max(x0 + 1);
+            let (mut r, mut g, mut b) = (0f32, 0f32, 0f32);
+            for y in y0..y1 {
+                let row = y * sw;
+                for x in x0..x1 {
+                    let px = (row + x) * 4;
+                    r += lut[rgba[px] as usize];
+                    g += lut[rgba[px + 1] as usize];
+                    b += lut[rgba[px + 2] as usize];
+                }
+            }
+            let n = ((y1 - y0) * (x1 - x0)) as f32;
+            let o = (dy * dw + dx) * 3;
+            out[o] = r / n;
+            out[o + 1] = g / n;
+            out[o + 2] = b / n;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scene::linear_to_srgb;
+
+    fn solid(w: u32, h: u32, colour: [u8; 4]) -> Vec<u8> {
+        colour
+            .iter()
+            .copied()
+            .cycle()
+            .take((w * h * 4) as usize)
+            .collect()
+    }
+
+    #[test]
+    fn resample_preserves_a_solid_colour() {
+        let src = solid(8, 8, [128, 64, 32, 255]);
+        let out = resample_to_linear(&src, 8, 8, 2, 2);
+        assert_eq!(out.len(), 2 * 2 * 3);
+        let expect = srgb_to_linear(128.0 / 255.0);
+        for px in out.chunks_exact(3) {
+            assert!((px[0] - expect).abs() < 1e-5, "{px:?}");
+        }
+    }
+
+    #[test]
+    fn resample_averages_in_linear_light_not_gamma() {
+        // Half black, half white: the linear mean is 0.5, which re-encodes to
+        // ~0.735 in sRGB — visibly brighter than the naive 0.5 a gamma-space
+        // average would give. This is the whole point of the LUT.
+        let src: Vec<u8> = [[0u8, 0, 0, 255], [255, 255, 255, 255]]
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let out = resample_to_linear(&src, 2, 1, 1, 1);
+        assert!((out[0] - 0.5).abs() < 1e-4, "linear mean: {}", out[0]);
+        let encoded = linear_to_srgb(out[0]);
+        assert!((encoded - 0.735).abs() < 0.01, "encoded: {encoded}");
+    }
+
+    #[test]
+    fn identity_resample_takes_the_fast_path() {
+        let src = solid(3, 2, [10, 20, 30, 255]);
+        let out = resample_to_linear(&src, 3, 2, 3, 2);
+        assert_eq!(out.len(), 3 * 2 * 3);
+        assert!((out[1] - srgb_to_linear(20.0 / 255.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scene_reports_native_size_and_d65() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.png");
+        image::DynamicImage::new_rgb8(40, 20).save(&path).unwrap();
+
+        let scene = ImageCrateFormat::new().open(&path).unwrap();
+        assert_eq!(scene.native_size(), (40, 20));
+        assert_eq!(scene.as_shot(), WhiteBalance::D65);
+    }
+
+    #[test]
+    fn render_honours_the_size_cap_and_never_upscales() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.png");
+        image::DynamicImage::new_rgb8(40, 20).save(&path).unwrap();
+        let scene = ImageCrateFormat::new().open(&path).unwrap();
+
+        let small = scene
+            .render(RenderRequest {
+                max_edge: 10,
+                white_balance: WhiteBalance::D65,
+            })
+            .unwrap();
+        assert_eq!((small.width, small.height), (10, 5));
+        assert_eq!(small.rgb.len(), small.pixel_count() * 3);
+
+        let capped = scene
+            .render(RenderRequest {
+                max_edge: 4000,
+                white_balance: WhiteBalance::D65,
+            })
+            .unwrap();
+        assert_eq!((capped.width, capped.height), (40, 20));
+    }
+
+    #[test]
+    fn render_applies_white_balance() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grey.png");
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            4,
+            4,
+            image::Rgb([128, 128, 128]),
+        ))
+        .save(&path)
+        .unwrap();
+        let scene = ImageCrateFormat::new().open(&path).unwrap();
+
+        let neutral = scene
+            .render(RenderRequest {
+                max_edge: 4,
+                white_balance: WhiteBalance::D65,
+            })
+            .unwrap();
+        assert!((neutral.rgb[0] - neutral.rgb[2]).abs() < 1e-5, "grey stays grey");
+
+        let warm = scene
+            .render(RenderRequest {
+                max_edge: 4,
+                white_balance: WhiteBalance {
+                    temperature: 9000.0,
+                    tint: 0.0,
+                },
+            })
+            .unwrap();
+        assert!(warm.rgb[0] > warm.rgb[2], "warm render is red-heavy");
+    }
+}

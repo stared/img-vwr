@@ -3,7 +3,9 @@ import ReactDOM from "react-dom/client";
 
 import App from "./App";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
+import { registerDevelopCommands } from "./commands/develop";
 import { registerSourceCommands } from "./commands/sources";
+import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
 import { InfoPanel } from "./components/shell/InfoPanel";
@@ -30,6 +32,7 @@ registerSource(commonsSource);
 registerSourceCommands();
 registerSimilarity();
 registerLabels();
+registerDevelopCommands();
 registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
 for (const source of allSources()) {
@@ -46,6 +49,7 @@ registerPanel({
   component: SimilarityPanel,
   icon: <SimilarityIcon />,
 });
+registerPanel({ id: "develop", title: "Develop", component: DevelopPanel, side: "right" });
 registerPanel({ id: "info", title: "Image", component: InfoPanel, side: "right" });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
 // Every left panel is reachable from the palette, like VS Code's view commands.

@@ -14,6 +14,23 @@ React frontend, glued by Tauri v2 with fully typed IPC.
 - Formats: PNG, JPEG, WebP, GIF; AVIF via the webview's native decoder
 - macOS first (Apple Silicon)
 
+## Develop
+
+Non-destructive editing over scene-linear pixels: white balance (temperature
+and tint), exposure, contrast, highlights, shadows, whites, blacks, vibrance
+and saturation, with a live histogram of the developed result and a focus-map
+overlay that marks which regions resolve fine detail. Edits are stored
+app-locally in `develop.db`, never beside the originals; `Export Developed
+Image…` renders at full resolution to a destination you pick.
+
+Camera raw (NEF and friends) decodes through the raw plugin. On macOS that is
+Core Image, because recent Nikon bodies write High Efficiency / HE\* NEFs — a
+licensed compression that no open-source decoder reads (rawler rejects them;
+LibRaw, and so darktable and RawTherapee, cannot either). The plugin uses the
+system decoder for demosaicing and sensor-space white balance only; every
+tonal control belongs to `imgvwr-develop` and behaves the same for every
+format. Same precedent as AVIF, which is likewise left to the platform.
+
 ## Development
 
 Prerequisites: Rust (rustup), pnpm, Xcode CLT.
@@ -45,11 +62,25 @@ src/                    strict-TS React UI
   state/store.ts        zustand store; transitions are pure functions
   ipc/                  generated bindings + thin typed wrappers
 src-tauri/
-  crates/imgvwr-core/   PURE Rust: scan, codecs, thumbnails, cache keys, meta
-  src/                  Tauri wiring: commands (thin adapters), events,
-                        ThumbnailService (rayon pool + epoch cancellation)
+  crates/imgvwr-core/     PURE Rust: scan, codecs, thumbnails, cache keys,
+                          meta, and the develop-side contracts (scene.rs)
+  crates/imgvwr-develop/  format-agnostic pipeline: tone, colour, histogram,
+                          focus map — knows nothing about file formats
+  crates/imgvwr-raw/      raw format plugin (Core Image on macOS)
+  src/                    Tauri wiring: commands (thin adapters), events,
+                          ThumbnailService (rayon pool + epoch cancellation),
+                          DevelopService + the `develop:` preview protocol
 ```
 
-Extension seams exercised by v1 (future plugin API maps onto these):
-`ImageCodec` trait + `CodecRegistry` (Rust), the command/panel/keybinding
-registries (TS), and the typed event bus (tauri-specta).
+Extension seams exercised so far (the future plugin API maps onto these):
+`ImageCodec` + `CodecRegistry` and `SceneFormat` + `SceneRegistry` (Rust), the
+command/panel/keybinding registries (TS), and the typed event bus
+(tauri-specta).
+
+Two Rust seams because they answer different questions. A codec answers "what
+do these bytes look like" and stops at display-ready RGBA8. A `SceneFormat`
+opens a file that can be re-rendered at any size under any white balance into
+scene-linear floats, which is what editing needs — exposure is only meaningful
+in linear light, and white balance is only correct when the plugin applies it
+in the space the sensor recorded. Everything downstream of that is
+format-agnostic.

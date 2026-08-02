@@ -2,27 +2,41 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { commands, events } from "./bindings";
 import type {
+  DevelopFrame,
+  DevelopParams,
+  DevelopSettings,
+  DevelopState,
   DirEntry,
   EmbedModelInfo,
   FileEntry,
+  Histogram,
   ImageLabels,
   ImageMeta,
   ImageStats,
   MetaEntry,
+  Overlay,
   Result,
   SimilarityScore,
+  WhiteBalance,
 } from "./bindings";
 
 export { events };
 export type {
+  DevelopFrame,
+  DevelopParams,
+  DevelopSettings,
+  DevelopState,
   DirEntry,
   EmbedModelInfo,
   FileEntry,
+  Histogram,
   ImageLabels,
   ImageMeta,
   ImageStats,
   MetaEntry,
+  Overlay,
   SimilarityScore,
+  WhiteBalance,
 };
 
 /** Unwrap a specta Result, throwing on the error branch. */
@@ -106,6 +120,53 @@ export async function labelsSetStars(path: string, stars: number | null): Promis
 
 export async function labelsToggleTag(path: string, tag: string): Promise<ImageLabels> {
   return unwrap(await commands.labelsToggleTag(path, tag));
+}
+
+/* Develop — opening an image for editing, rendering it, and getting pixels
+ * back out. Rendering is the interactive path; everything else is rare. */
+
+/** Open an image for editing. Slow on a raw file's first call. */
+export async function developState(path: string): Promise<DevelopState> {
+  return unwrap(await commands.developState(path));
+}
+
+/** Render a preview; the pixels are then loaded from `developFrameUrl`. */
+export async function developRender(
+  path: string,
+  settings: DevelopSettings,
+  maxEdge: number,
+  overlay: Overlay,
+): Promise<DevelopFrame> {
+  return unwrap(await commands.developRender(path, settings, maxEdge, overlay));
+}
+
+export async function developSave(path: string, settings: DevelopSettings): Promise<void> {
+  unwrap(await commands.developSave(path, settings));
+}
+
+/** Discard an image's edit; returns its freshly neutral state. */
+export async function developReset(path: string): Promise<DevelopState> {
+  return unwrap(await commands.developReset(path));
+}
+
+export async function developEditedPaths(paths: string[]): Promise<string[]> {
+  return unwrap(await commands.developEditedPaths(paths));
+}
+
+export async function developExport(
+  path: string,
+  settings: DevelopSettings,
+  destination: string,
+): Promise<void> {
+  unwrap(await commands.developExport(path, settings, destination));
+}
+
+/**
+ * URL for a rendered frame. The token changes on every render, which is what
+ * stops the webview's image cache from serving the previous edit.
+ */
+export function developFrameUrl(token: number): string {
+  return `develop://localhost/frame/${token}`;
 }
 
 /**

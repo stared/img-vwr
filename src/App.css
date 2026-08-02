@@ -1308,3 +1308,130 @@ button.stats-row:hover .stats-label {
   object-fit: cover;
   pointer-events: none;
 }
+
+/* ---- Develop panel ---- */
+
+.develop-panel {
+  padding-bottom: 8px;
+  font-size: 11px;
+}
+
+.develop-histogram {
+  padding-top: 4px;
+}
+
+.develop-clipping {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 0 8px 4px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.develop-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px 6px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.develop-error {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--danger);
+}
+
+.develop-group {
+  padding: 6px 0 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.develop-group h4 {
+  margin: 0 0 2px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.develop-note {
+  margin: 2px 0 4px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.develop-slider {
+  display: block;
+  padding: 2px 8px 4px;
+}
+
+.develop-slider-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.develop-slider-label {
+  color: var(--text-dim);
+}
+
+/* The current value is the point of the control, so it reads as text and
+   turns bright the moment it stops being the neutral one. */
+.develop-slider-value {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.develop-slider-value.changed {
+  color: var(--text);
+}
+
+.develop-slider input[type="range"] {
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: ew-resize;
+}
+
+.develop-reset,
+.develop-toggle {
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.develop-toggle {
+  margin: 2px 8px 4px;
+}
+
+.develop-reset:hover:not(:disabled),
+.develop-toggle:hover {
+  border-color: var(--accent);
+}
+
+.develop-reset:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* The develop panel is long by nature — a dozen controls plus a histogram.
+   The right sidebar therefore scrolls as a whole instead of letting flex
+   shrink its sections into one another. */
+.sidebar.right:not(.collapsed) {
+  overflow-y: auto;
+}
+
+.sidebar.right > .sidebar-panel:not(.fill) {
+  flex-shrink: 0;
+}

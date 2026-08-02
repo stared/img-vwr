@@ -4,7 +4,34 @@ use serde::{Deserialize, Serialize};
 
 /// Extensions the viewer knows how to display. AVIF has no Rust decoder in v1
 /// but WKWebView renders it natively, so it is listed here.
-pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "avif"];
+pub const DISPLAY_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "avif"];
+
+/// Camera raw extensions. The list lives here rather than in the RAW plugin
+/// because scanning has to recognise these files before any plugin is
+/// consulted — a folder of NEFs must not look empty. Which of them can
+/// actually be decoded is the plugin's business, and platform-dependent.
+pub const RAW_EXTENSIONS: &[&str] = &[
+    "nef", "nrw", // Nikon
+    "cr2", "cr3", "crw", // Canon
+    "arw", "srf", "sr2", // Sony
+    "raf", // Fujifilm
+    "orf", // Olympus / OM
+    "rw2", // Panasonic
+    "pef", // Pentax
+    "srw", // Samsung
+    "dng", // Adobe / Apple / Leica
+    "3fr", "fff", // Hasselblad
+    "erf", "mrw", "kdc", "dcr", "mos", "iiq", "x3f", "raw",
+];
+
+pub fn is_raw_extension(ext: &str) -> bool {
+    RAW_EXTENSIONS.contains(&ext)
+}
+
+/// Everything the gallery lists.
+pub fn is_supported_extension(ext: &str) -> bool {
+    DISPLAY_EXTENSIONS.contains(&ext) || RAW_EXTENSIONS.contains(&ext)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +57,7 @@ pub fn is_image_candidate(name: &str) -> bool {
         return false;
     }
     match name.rsplit_once('.') {
-        Some((_, ext)) => IMAGE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()),
+        Some((_, ext)) => is_supported_extension(&ext.to_ascii_lowercase()),
         None => false,
     }
 }

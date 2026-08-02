@@ -8,9 +8,11 @@ use tauri::{AppHandle, Manager as _, State};
 
 use std::collections::HashMap;
 
+use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
+use imgvwr_develop::{DevelopSettings, Overlay};
 
 /// Run a streamed folder scan: entries arrive as `ScanBatch` events, the
 /// last one marked `done`. Walking a big (or cloud-backed) tree can take
@@ -112,7 +114,7 @@ pub fn request_meta(
             if service.is_stale(epoch) {
                 return;
             }
-            if let Ok(meta) = imgvwr_core::read_meta(std::path::Path::new(&path)) {
+            if let Ok(meta) = read_meta_composed(std::path::Path::new(&path)) {
                 items.push(crate::events::MetaEntry { path, meta });
             }
             if items.len() >= BATCH {
@@ -126,10 +128,26 @@ pub fn request_meta(
     });
 }
 
+/// Metadata for one file, with raw dimensions filled in by the raw plugin.
+///
+/// No Rust decoder can measure a raw file, and `imgvwr-core` must not depend
+/// on a platform plugin to find out — so the two are composed here, at the
+/// layer that already knows about both.
+fn read_meta_composed(path: &std::path::Path) -> std::io::Result<ImageMeta> {
+    let mut meta = imgvwr_core::read_meta(path)?;
+    if meta.width.is_none() {
+        if let Some((width, height)) = imgvwr_raw::raw_dimensions(path) {
+            meta.width = Some(width);
+            meta.height = Some(height);
+        }
+    }
+    Ok(meta)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
-    imgvwr_core::read_meta(&path)
+    read_meta_composed(&path)
         .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
 }
 
@@ -283,6 +301,105 @@ pub async fn embedding_rank_text(
             .into_iter()
             .map(|(path, score)| SimilarityScore { path, score })
             .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/* Develop commands — thin adapters over DevelopService. Opening a raw file
+ * and rendering it are both real compute, so every one of these is async +
+ * spawn_blocking: a forward pass on the main thread freezes the window. */
+
+/// Open an image for editing and report its size, camera white balance and
+/// any stored edit. Slow on first call for a raw file (the decoder parses and
+/// sets up demosaicing); every later render of the same image is cheap.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_state(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+) -> Result<DevelopState, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.state(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Render a preview at `max_edge` under `settings`. The pixels are fetched
+/// separately over the `develop:` protocol using the returned token; the
+/// histogram of those same pixels comes back here.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_render(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+    max_edge: u32,
+    overlay: Overlay,
+) -> Result<DevelopFrame, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        service.render(&path, &settings, max_edge, overlay)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_save(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+) -> Result<(), String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.save_settings(&path, &settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Drop an image's edit so it counts as untouched again.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_reset(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+) -> Result<DevelopState, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        service.clear_settings(&path)?;
+        service.state(&path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Which of these paths have a stored edit — for badging the gallery.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_edited_paths(
+    service: State<'_, Arc<DevelopService>>,
+    paths: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.edited_paths(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Develop at full resolution and write to `destination`, which the user
+/// picked in a save dialog. Nothing is ever written beside the original.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_export(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+    destination: String,
+) -> Result<(), String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        service.export(&path, &settings, std::path::Path::new(&destination))
     })
     .await
     .map_err(|e| e.to_string())?

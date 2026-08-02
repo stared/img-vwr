@@ -3,11 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use imgvwr_core::{thumb_cache_key, CodecError, CodecRegistry, ThumbError, THUMB_MAX_EDGE};
+use imgvwr_core::{
+    thumb_cache_key, CodecError, CodecRegistry, SceneRegistry, ThumbError, THUMB_MAX_EDGE,
+};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
 
 use crate::events::{ThumbnailFailed, ThumbnailReady};
+use crate::services::develop::thumbnail_via_develop;
 
 /// Owns all mutable thumbnailing state: the folder epoch, the decode pool and
 /// the in-flight set. Everything it calls in `imgvwr-core` is pure.
@@ -15,6 +18,9 @@ pub struct ThumbnailService {
     epoch: AtomicU64,
     pool: rayon::ThreadPool,
     registry: Arc<CodecRegistry>,
+    /// Fallback for formats no codec can decode — RAW files go through the
+    /// develop pipeline instead, so a folder of NEFs looks like any other.
+    scenes: Arc<SceneRegistry>,
     cache_dir: PathBuf,
     /// Work is deduplicated within one collection epoch. The same file may be
     /// requested again by a newer epoch while stale work is winding down.
@@ -22,7 +28,7 @@ pub struct ThumbnailService {
 }
 
 impl ThumbnailService {
-    pub fn new(cache_dir: PathBuf) -> std::io::Result<Self> {
+    pub fn new(cache_dir: PathBuf, scenes: Arc<SceneRegistry>) -> std::io::Result<Self> {
         std::fs::create_dir_all(&cache_dir)?;
         let threads = std::thread::available_parallelism()
             .map(|n| n.get().saturating_sub(1).max(1))
@@ -36,6 +42,7 @@ impl ThumbnailService {
             epoch: AtomicU64::new(0),
             pool,
             registry: Arc::new(CodecRegistry::builtin()),
+            scenes,
             cache_dir,
             in_flight: Mutex::new(HashSet::new()),
         })
@@ -118,11 +125,36 @@ impl ThumbnailService {
             .and_then(|e| e.to_str())
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-        let webp = imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE)
-            .map_err(|e| e.to_string())?;
+        let webp = self
+            .thumbnail_bytes(path, &ext)?
+            .ok_or_else(|| format!("no decoder can produce pixels for {path}"))?;
         write_atomically(&cache_file, &webp).map_err(|e| e.to_string())?;
         Ok(cache_file)
+    }
+
+    /// Encoded thumbnail bytes for one file, or `None` when no Rust pipeline
+    /// can decode it at all and the caller should fall back to serving the
+    /// original for the webview to handle (AVIF).
+    ///
+    /// Two pipelines, tried in cost order: the codec registry, then — for RAW,
+    /// which no codec handles — the develop pipeline. RAW thumbnails render at
+    /// the camera's own white balance with no edit applied, so the thumbnail
+    /// cache stays valid while the user works on the image.
+    fn thumbnail_bytes(&self, path: &str, ext: &str) -> Result<Option<Vec<u8>>, String> {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        match imgvwr_core::make_thumbnail(ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
+            Ok(webp) => Ok(Some(webp)),
+            Err(ThumbError::Codec(CodecError::Unsupported)) => {
+                if self.scenes.supports(ext) {
+                    // First open of a 24 MP raw file costs a couple of
+                    // seconds; it happens once and is cached from then on.
+                    thumbnail_via_develop(&self.scenes, Path::new(path), THUMB_MAX_EDGE).map(Some)
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// Pixel statistics for the info panel, from the cached 256 px thumb.
@@ -144,19 +176,14 @@ impl ThumbnailService {
             .map(|e| e.to_ascii_lowercase())
             .unwrap_or_default();
 
-        let result = std::fs::read(path)
-            .map_err(|e| e.to_string())
-            .and_then(|bytes| {
-                match imgvwr_core::make_thumbnail(&ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
-                    Ok(webp) => write_atomically(cache_file, &webp)
-                        .map(|()| cache_file.to_path_buf())
-                        .map_err(|e| e.to_string()),
-                    // No Rust codec (e.g. AVIF): serve the original file and let
-                    // the webview decode and downscale it natively.
-                    Err(ThumbError::Codec(CodecError::Unsupported)) => Ok(PathBuf::from(path)),
-                    Err(e) => Err(e.to_string()),
-                }
-            });
+        let result = self.thumbnail_bytes(path, &ext).and_then(|bytes| match bytes {
+            Some(webp) => write_atomically(cache_file, &webp)
+                .map(|()| cache_file.to_path_buf())
+                .map_err(|e| e.to_string()),
+            // No Rust pipeline at all (e.g. AVIF): serve the original file and
+            // let the webview decode and downscale it natively.
+            None => Ok(PathBuf::from(path)),
+        });
 
         if self.is_stale(epoch) {
             return;
@@ -213,7 +240,10 @@ mod tests {
     #[test]
     fn epoch_bump_invalidates_older_requests() {
         let tmp = tempfile::tempdir().unwrap();
-        let service = ThumbnailService::new(tmp.path().to_path_buf()).unwrap();
+        let scenes = Arc::new(SceneRegistry::new(vec![Arc::new(
+            imgvwr_core::ImageCrateFormat::new(),
+        )]));
+        let service = ThumbnailService::new(tmp.path().to_path_buf(), scenes).unwrap();
 
         let first = service.bump_epoch();
         assert!(!service.is_stale(first));

@@ -133,6 +133,74 @@ async labelsToggleTag(path: string, tag: string) : Promise<Result<ImageLabels, s
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Open an image for editing and report its size, camera white balance and
+ * any stored edit. Slow on first call for a raw file (the decoder parses and
+ * sets up demosaicing); every later render of the same image is cheap.
+ */
+async developState(path: string) : Promise<Result<DevelopState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_state", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Render a preview at `max_edge` under `settings`. The pixels are fetched
+ * separately over the `develop:` protocol using the returned token; the
+ * histogram of those same pixels comes back here.
+ */
+async developRender(path: string, settings: DevelopSettings, maxEdge: number, overlay: Overlay) : Promise<Result<DevelopFrame, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_render", { path, settings, maxEdge, overlay }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async developSave(path: string, settings: DevelopSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_save", { path, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Drop an image's edit so it counts as untouched again.
+ */
+async developReset(path: string) : Promise<Result<DevelopState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_reset", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Which of these paths have a stored edit — for badging the gallery.
+ */
+async developEditedPaths(paths: string[]) : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_edited_paths", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Develop at full resolution and write to `destination`, which the user
+ * picked in a save dialog. Nothing is ever written beside the original.
+ */
+async developExport(path: string, settings: DevelopSettings, destination: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_export", { path, settings, destination }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -164,6 +232,78 @@ thumbnailReady: "thumbnail-ready"
 /** user-defined types **/
 
 /**
+ * A rendered preview: the pixels live in the service under `token` and are
+ * fetched by the `develop:` protocol; the histogram comes back inline.
+ */
+export type DevelopFrame = { token: number; width: number; height: number; histogram: Histogram }
+/**
+ * Tone and colour adjustments, all format-agnostic: they act on scene-linear
+ * pixels whatever plugin produced them.
+ * 
+ * Every slider is centred on zero meaning "unchanged", so [`Default`] is the
+ * identity edit and resetting is just replacing the struct. Ranges match the
+ * familiar ±100 of a photo editor, except exposure which is in stops.
+ */
+export type DevelopParams = { 
+/**
+ * Stops of exposure; ±5 EV.
+ */
+exposure: number; 
+/**
+ * S-curve strength around middle grey; ±100.
+ */
+contrast: number; 
+/**
+ * Recovers (negative) or opens up (positive) the bright end; ±100.
+ */
+highlights: number; 
+/**
+ * Lifts (positive) or deepens (negative) the dark end; ±100.
+ */
+shadows: number; 
+/**
+ * Moves the white point; ±100.
+ */
+whites: number; 
+/**
+ * Moves the black point; ±100.
+ */
+blacks: number; 
+/**
+ * Saturation weighted towards already-dull colours; ±100.
+ */
+vibrance: number; 
+/**
+ * Flat saturation; ±100.
+ */
+saturation: number }
+/**
+ * The complete persisted state of one image's edit: what neutral to render
+ * against, plus everything layered on top.
+ */
+export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams }
+/**
+ * Everything the develop UI needs to show an image before any edit is made.
+ */
+export type DevelopState = { width: number; height: number; 
+/**
+ * The white balance the camera chose — the neutral the sliders start at.
+ */
+asShot: WhiteBalance; 
+/**
+ * Stored edit, or the neutral one if this image has never been touched.
+ */
+settings: DevelopSettings; 
+/**
+ * True when the settings came from the database rather than being neutral.
+ */
+edited: boolean; 
+/**
+ * True when the webview cannot display this file itself, so the viewer
+ * must go through the develop pipeline to show anything at all.
+ */
+needsRender: boolean }
+/**
  * Direct image count of one folder, computed in the background. Keyed by
  * absolute path, so it is never stale — no epoch needed.
  */
@@ -192,6 +332,16 @@ export type FileEntry = { path: string; name: string; size: number; modifiedMs: 
  * Lowercased extension, e.g. "png".
  */
 formatHint: string }
+/**
+ * 256-bin distributions of the *developed* image — what the user is actually
+ * looking at, so clipping shown here is clipping they can see. (The info
+ * panel's histogram is a different thing: it describes the file on disk.)
+ */
+export type Histogram = { luma: number[]; red: number[]; green: number[]; blue: number[]; 
+/**
+ * Pixels pinned at 0 and at 255 — the numbers behind a clipping warning.
+ */
+clippedShadows: number; clippedHighlights: number }
 /**
  * User labels for one image. `stars` is genuinely absent until rated;
  * `tags` is the (possibly empty) full set. This is the wire type — the
@@ -228,6 +378,20 @@ triangleN: number; triUp: number[]; triDown: number[] }
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
 /**
+ * Which analysis overlay to composite over the developed pixels. A closed
+ * enum rather than a bag of booleans: overlays are mutually exclusive, and a
+ * plugin adding one extends this in exactly one place.
+ */
+export type Overlay = 
+/**
+ * Just the photograph.
+ */
+"none" | 
+/**
+ * Tint regions by how much fine detail they resolve — the focus map.
+ */
+"sharpness"
+/**
  * A slice of an in-progress folder scan. Batches stream in walk order as
  * the tree is traversed — cloud-backed folders can take seconds to walk,
  * so the gallery fills progressively; `done` marks the final batch.
@@ -241,6 +405,13 @@ export type ThumbnailReady = { path: string;
  * matched and the webview should decode it natively).
  */
 cacheFile: string; epoch: number }
+/**
+ * Colour temperature in kelvin plus a green–magenta tint, the two numbers a
+ * photographer actually reasons about. Higher `temperature` renders warmer;
+ * positive `tint` renders more magenta — the Lightroom convention, which is
+ * also what Core Image's RAW pipeline implements.
+ */
+export type WhiteBalance = { temperature: number; tint: number }
 
 /** tauri-specta globals **/
 

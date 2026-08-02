@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/imgvwr-core", "crates/imgvwr-embed"]
+members = ["crates/imgvwr-core", "crates/imgvwr-develop", "crates/imgvwr-embed", "crates/imgvwr-raw"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -38,7 +38,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 imgvwr-core = { path = "crates/imgvwr-core" }
+imgvwr-develop = { path = "crates/imgvwr-develop" }
 imgvwr-embed = { path = "crates/imgvwr-embed" }
+imgvwr-raw = { path = "crates/imgvwr-raw" }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -52,6 +54,9 @@ tauri-plugin-mcp-bridge = "0.12.0"
 tauri-plugin-http = "2.5.9"
 # Bundled: SQLite compiled from source, no system dependency.
 rusqlite = { version = "0.37", features = ["bundled"] }
+# Encoding developed previews (JPEG) and exports (JPEG/PNG).
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+webp = "0.3.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
