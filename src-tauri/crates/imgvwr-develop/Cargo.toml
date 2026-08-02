@@ -11,5 +11,5 @@ serde = { workspace = true }
 specta = { workspace = true }
 
 [dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 imgvwr-raw = { path = "../imgvwr-raw" }
