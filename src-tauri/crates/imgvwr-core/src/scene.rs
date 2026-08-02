@@ -216,6 +216,26 @@ impl SceneRegistry {
 /// The shared implementation of [`SceneImage::neutral_at`]. Averaging a patch
 /// rather than sampling one pixel matters — a single pixel of a photograph is
 /// substantially noise, and the user is pointing at a surface.
+///
+/// ## Why this measures more than once
+///
+/// [`white_balance_for_sample`] answers with *our* illuminant model, and a
+/// plugin is free to implement temperature by some other one. The raw plugin
+/// hands the setting to Core Image, which — measured against real NEFs by
+/// `cargo run -p imgvwr-raw --example audit` — moves red against blue about
+/// half again as far per kelvin as our model expects. A single solve therefore
+/// lands well past the mark: on a real file it overshoots hard enough to
+/// reverse the cast it was asked to remove.
+///
+/// So the answer is checked against the plugin rather than trusted. Each round
+/// renders the patch again, and the size of the move that produced the change
+/// gives the plugin's actual sensitivity — after which the next proposal is
+/// scaled by it. That is a secant step, and it converges for any plugin whose
+/// response merely points the right way; plain re-solving does not, because a
+/// plugin twice as strong as the model oscillates instead of settling.
+///
+/// None of this needs to know that Core Image is on the other side, which is
+/// the point of the seam.
 pub fn neutral_by_measurement(
     scene: &dyn SceneImage,
     x: f32,
@@ -223,22 +243,89 @@ pub fn neutral_by_measurement(
     current: WhiteBalance,
 ) -> Result<WhiteBalance, SceneError> {
     const PATCH: f32 = 0.01;
-    let sampled = scene.render(RenderRequest {
-        max_edge: 1,
-        white_balance: current,
-        region: Region {
-            x: x - PATCH / 2.0,
-            y: y - PATCH / 2.0,
-            width: PATCH,
-            height: PATCH,
-        },
-    })?;
-    let rgb = [
-        *sampled.rgb.first().unwrap_or(&0.0),
-        *sampled.rgb.get(1).unwrap_or(&0.0),
-        *sampled.rgb.get(2).unwrap_or(&0.0),
-    ];
-    Ok(white_balance_for_sample(current, rgb))
+    /// One uncalibrated step plus a few corrected ones. Each is a one-pixel
+    /// render of a hundredth of the frame, so this is cheap even on RAW.
+    const ROUNDS: usize = 4;
+    /// A patch this close to neutral is neutral; further rounds would be
+    /// chasing sensor noise.
+    const CLOSE_ENOUGH: f32 = 0.005;
+    /// How far the plugin's sensitivity is allowed to be believed. A wild
+    /// estimate from a near-zero move must not throw the search.
+    const SENSITIVITY: std::ops::Range<f32> = 0.25..4.0;
+
+    let region = Region {
+        x: x - PATCH / 2.0,
+        y: y - PATCH / 2.0,
+        width: PATCH,
+        height: PATCH,
+    };
+    let measure = |balance: WhiteBalance| -> Result<[f32; 3], SceneError> {
+        let sampled = scene.render(RenderRequest {
+            max_edge: 1,
+            white_balance: balance,
+            region,
+        })?;
+        Ok([
+            *sampled.rgb.first().unwrap_or(&0.0),
+            *sampled.rgb.get(1).unwrap_or(&0.0),
+            *sampled.rgb.get(2).unwrap_or(&0.0),
+        ])
+    };
+
+    let mut balance = current;
+    let mut rgb = measure(balance)?;
+    // Where the previous round stood, and how warm the patch was there —
+    // the two points a secant step is drawn through.
+    let mut previous: Option<(WhiteBalance, f32)> = None;
+
+    for _ in 0..ROUNDS {
+        let max = rgb[0].max(rgb[1]).max(rgb[2]);
+        let min = rgb[0].min(rgb[1]).min(rgb[2]);
+        if max <= 1e-6 {
+            break; // black patch: nothing to balance against
+        }
+        if (max - min) / max <= CLOSE_ENOUGH {
+            break;
+        }
+
+        // How strongly the plugin answered the last move, relative to what our
+        // model predicted for it. Unknown on the first round, when the model
+        // is the only guess available.
+        let sensitivity = previous
+            .and_then(|(from, was)| {
+                let gains = white_balance_gains(from, balance);
+                let predicted = safe_ratio(gains[0], gains[2]).ln();
+                let observed = warmth(rgb) - was;
+                (predicted.abs() > 1e-3).then_some(observed / predicted)
+            })
+            .filter(|s| SENSITIVITY.contains(s))
+            .unwrap_or(1.0);
+
+        let proposed = white_balance_for_sample(balance, rgb);
+        // Scaled in log-temperature, because temperature acts multiplicatively
+        // — 500 K is a large move at 3000 K and a small one at 9000 K.
+        let next = WhiteBalance {
+            temperature: (balance.temperature.ln()
+                + (proposed.temperature.ln() - balance.temperature.ln()) / sensitivity)
+                .exp()
+                .clamp(1667.0, 25000.0),
+            tint: balance.tint + (proposed.tint - balance.tint) / sensitivity,
+        };
+        if next == balance {
+            break; // the solver has nothing left to move
+        }
+
+        previous = Some((balance, warmth(rgb)));
+        balance = next;
+        rgb = measure(balance)?;
+    }
+    Ok(balance)
+}
+
+/// Red against blue, in log terms — the axis colour temperature moves along.
+/// Log because the controls are multiplicative and the errors compose.
+fn warmth(rgb: [f32; 3]) -> f32 {
+    safe_ratio(rgb[0], rgb[2]).ln()
 }
 
 fn read_magic(path: &Path) -> Result<Vec<u8>, SceneError> {
@@ -610,6 +697,120 @@ mod tests {
         let max = rgb[0].max(rgb[1]).max(rgb[2]);
         let min = rgb[0].min(rgb[1]).min(rgb[2]);
         (max - min) / max.max(1e-6)
+    }
+
+    /// A one-patch scene that answers a temperature change with `strength`
+    /// times the gains our model predicts — in log terms, so a strength of 1.5
+    /// moves red against blue half again as far per kelvin.
+    ///
+    /// This is not a hypothetical: measured against real NEFs, Core Image runs
+    /// at about 1.5. The point of the seam is that the eyedropper must work
+    /// without knowing that number, so the test states a number the solver has
+    /// no way to learn.
+    struct StrongerThanOurModel {
+        patch: [f32; 3],
+        reference: WhiteBalance,
+        strength: f32,
+    }
+
+    impl SceneImage for StrongerThanOurModel {
+        fn native_size(&self) -> (u32, u32) {
+            (100, 100)
+        }
+
+        fn as_shot(&self) -> WhiteBalance {
+            self.reference
+        }
+
+        fn neutral_at(
+            &self,
+            x: f32,
+            y: f32,
+            current: WhiteBalance,
+        ) -> Result<WhiteBalance, SceneError> {
+            neutral_by_measurement(self, x, y, current)
+        }
+
+        fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
+            let g = white_balance_gains(self.reference, req.white_balance);
+            let rgb = (0..3)
+                .map(|c| self.patch[c] * g[c].powf(self.strength))
+                .collect();
+            Ok(LinearImage {
+                width: 1,
+                height: 1,
+                rgb,
+            })
+        }
+    }
+
+    #[test]
+    fn the_eyedropper_lands_even_when_the_plugin_disagrees_with_our_model() {
+        let reference = WhiteBalance::D65;
+        for patch in [[0.5, 0.3, 0.18], [0.18, 0.3, 0.5], [0.34, 0.3, 0.27]] {
+            // Core Image measures around 1.5; the others bracket it on both
+            // sides, including a plugin weaker than the model rather than
+            // stronger, which the same secant step has to handle.
+            for strength in [0.6, 1.0, 1.5, 1.9] {
+                let scene = StrongerThanOurModel {
+                    patch,
+                    reference,
+                    strength,
+                };
+                let picked = scene.neutral_at(0.5, 0.5, reference).unwrap();
+                let after = scene
+                    .render(RenderRequest {
+                        max_edge: 1,
+                        white_balance: picked,
+                        region: Region::FULL,
+                    })
+                    .unwrap();
+                let landed = spread([after.rgb[0], after.rgb[1], after.rgb[2]]);
+                // A weak plugin can need a temperature the scale does not go
+                // to — neutralising a strongly blue patch at strength 0.6 wants
+                // more than 25000 K. Running out of scale is a real answer;
+                // stopping short while the scale still has room is not.
+                let out_of_range =
+                    picked.temperature >= 24999.0 || picked.temperature <= 1668.0;
+                assert!(
+                    landed < 0.02 || out_of_range,
+                    "patch {patch:?} at strength {strength}: still {landed:.3} off neutral \
+                     with room left on the scale (picked {picked:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_solve_alone_would_overshoot_a_stronger_plugin() {
+        // The regression this guards: a single pass was what shipped, and on a
+        // plugin that moves further than our model it lands past neutral —
+        // reversing the cast rather than removing it.
+        let reference = WhiteBalance::D65;
+        let patch = [0.5, 0.3, 0.18];
+        let scene = StrongerThanOurModel {
+            patch,
+            reference,
+            strength: 1.5,
+        };
+        let once = white_balance_for_sample(reference, patch);
+        let single_pass = scene
+            .render(RenderRequest {
+                max_edge: 1,
+                white_balance: once,
+                region: Region::FULL,
+            })
+            .unwrap();
+        let before = spread(patch);
+        let after_once = spread([
+            single_pass.rgb[0],
+            single_pass.rgb[1],
+            single_pass.rgb[2],
+        ]);
+        assert!(
+            patch[0] / patch[2] > 1.0 && single_pass.rgb[0] / single_pass.rgb[2] < 1.0,
+            "a single solve should overshoot past neutral: {before:.3} → {after_once:.3}"
+        );
     }
 
     #[test]

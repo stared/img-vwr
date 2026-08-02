@@ -11,8 +11,12 @@
 //!     samples, which is only true if no tone curve is being applied.
 //!  3. How far outside the sRGB gamut the data lands, since the pipeline
 //!     works in sRGB primaries.
+//!  4. The eyedropper lands: picking a point must actually render that point
+//!     grey. The unit tests can only check the model against itself, because
+//!     for a raw file the gains are applied by Core Image rather than by
+//!     `white_balance_gains` — only a real render closes that loop.
 
-use imgvwr_core::{Region, RenderRequest, SceneFormat};
+use imgvwr_core::{Region, RenderRequest, SceneFormat, SceneImage, WhiteBalance};
 use imgvwr_raw::{raw_dimensions, CoreImageRawFormat};
 
 fn main() {
@@ -84,7 +88,141 @@ fn main() {
     if let Some(path) = files.first() {
         println!("\nlinearity check on {path}:");
         linearity(&format, std::path::Path::new(path));
+
+        println!("\neyedropper check on {path}:");
+        eyedropper(&format, std::path::Path::new(path));
     }
+}
+
+/// Pick a point, apply the answer, and look at the point again.
+///
+/// `neutral_at` measures the patch and inverts our illuminant model to get a
+/// temperature. Core Image then applies that temperature with *its* model, in
+/// sensor space. If the two disagree the picker overshoots or undershoots, and
+/// the only way to see it is to render again and measure what came back.
+fn eyedropper(format: &CoreImageRawFormat, path: &std::path::Path) {
+    let scene = format.open(path).unwrap();
+    let as_shot = scene.as_shot();
+
+    // How far a colour is from grey, as the fraction of its brightest channel
+    // that separates it from its dimmest. Zero is neutral.
+    let cast = |rgb: [f32; 3]| {
+        let max = rgb[0].max(rgb[1]).max(rgb[2]);
+        let min = rgb[0].min(rgb[1]).min(rgb[2]);
+        (max - min) / max.max(1e-6)
+    };
+    let patch_at = |x: f32, y: f32, wb: WhiteBalance| -> [f32; 3] {
+        let img = scene
+            .render(RenderRequest {
+                max_edge: 1,
+                white_balance: wb,
+                region: Region {
+                    x: x - 0.005,
+                    y: y - 0.005,
+                    width: 0.01,
+                    height: 0.01,
+                },
+            })
+            .unwrap();
+        [img.rgb[0], img.rgb[1], img.rgb[2]]
+    };
+
+    // Patches that are already close to grey and properly exposed. Probing a
+    // black or blown patch measures rounding error, and asking the picker to
+    // neutralise a saturated leaf proves nothing — no temperature and tint can
+    // make a leaf grey.
+    let candidates = neutral_candidates(&*scene, as_shot);
+    let Some(&(px, py)) = candidates.first() else {
+        println!("  no usable patch in this frame");
+        return;
+    };
+
+    // Root cause first: does moving the temperature do what our model says it
+    // does? The picker inverts this relationship, so if the prediction is off
+    // by a factor, every pick is off by that same factor.
+    let reference = patch_at(px, py, as_shot);
+    println!("  our model's prediction against the decoder, at ({px:.2},{py:.2}):");
+    for factor in [0.8f32, 0.9, 1.1, 1.25] {
+        let target = WhiteBalance {
+            temperature: as_shot.temperature * factor,
+            tint: as_shot.tint,
+        };
+        let actual = patch_at(px, py, target);
+        let gains = imgvwr_core::scene::white_balance_gains(as_shot, target);
+        // Red over blue, green-normalised out: the axis temperature moves.
+        let measured = (actual[0] / actual[2]) / (reference[0] / reference[2]);
+        let predicted = gains[0] / gains[2];
+        let strength = measured.ln() / predicted.ln();
+        println!(
+            "    {:>5.0} K   R/B moves ×{measured:.3}, model says ×{predicted:.3}   \
+             (decoder is {strength:.2}× as strong){}",
+            target.temperature,
+            if strength <= 0.0 {
+                "   WRONG DIRECTION"
+            } else {
+                ""
+            }
+        );
+    }
+
+    println!("  picking the most neutral patches in the frame:");
+    for (x, y) in candidates {
+        let before = patch_at(x, y, as_shot);
+        // Timed because the loop costs several renders rather than one, and a
+        // click has to stay a click.
+        let started = std::time::Instant::now();
+        let picked = scene.neutral_at(x, y, as_shot).unwrap();
+        let took = started.elapsed();
+        let after = patch_at(x, y, picked);
+        let (b, a) = (cast(before), cast(after));
+        // A residual that both changed sign and is still visible means the
+        // move went past the target. One that changed sign at a thousandth of
+        // a stop is simply converged, and calling that an overshoot would be
+        // reporting arithmetic noise as a defect.
+        let flipped = (before[0] / before[2] > 1.0) != (after[0] / after[2] > 1.0);
+        println!(
+            "    ({x:.2},{y:.2}) {:.0} K → {:.0} K   cast {b:.3} → {a:.3}   {:>4} ms{}",
+            as_shot.temperature,
+            picked.temperature,
+            took.as_millis(),
+            if a > b {
+                "   WORSE"
+            } else if flipped && a > 0.02 {
+                "   OVERSHOT (cast reversed)"
+            } else {
+                ""
+            }
+        );
+    }
+}
+
+/// Locations of the four least colourful mid-brightness patches in the frame —
+/// the kind of surface a user would actually click on to set white balance.
+fn neutral_candidates(scene: &dyn SceneImage, wb: WhiteBalance) -> Vec<(f32, f32)> {
+    let img = scene
+        .render(RenderRequest {
+            max_edge: 48,
+            white_balance: wb,
+            region: Region::FULL,
+        })
+        .unwrap();
+    let mut scored: Vec<(f32, f32, f32)> = Vec::new();
+    for (i, px) in img.rgb.chunks_exact(3).enumerate() {
+        let y = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+        if !(0.05..0.5).contains(&y) {
+            continue;
+        }
+        let max = px[0].max(px[1]).max(px[2]);
+        let min = px[0].min(px[1]).min(px[2]);
+        let (col, row) = (i as u32 % img.width, i as u32 / img.width);
+        scored.push((
+            (max - min) / max.max(1e-6),
+            (col as f32 + 0.5) / img.width as f32,
+            (row as f32 + 0.5) / img.height as f32,
+        ));
+    }
+    scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.into_iter().take(4).map(|(_, x, y)| (x, y)).collect()
 }
 
 /// Render twice, one stop apart, and report the measured ratio per brightness
