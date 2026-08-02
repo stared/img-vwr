@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { chordsForCommand, commandForEvent, eventMatchesChord, parseChord } from "./keybindings";
+import {
+  chordsForCommand,
+  commandsForEvent,
+  eventMatchesChord,
+  parseChord,
+  type Keybinding,
+} from "./keybindings";
 
 function keyEvent(init: Partial<KeyboardEvent>): KeyboardEvent {
   return { key: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...init } as KeyboardEvent;
@@ -29,24 +35,36 @@ describe("eventMatchesChord", () => {
   });
 });
 
-describe("commandForEvent", () => {
-  it("resolves from a bindings map", () => {
-    const bindings = new Map([
-      ["mod+k", "palette.open"],
-      ["escape", "viewer.close"],
+describe("commandsForEvent", () => {
+  const bindings: Keybinding[] = [
+    ["mod+k", "palette.open"],
+    ["escape", "viewer.close"],
+    ["escape", "selection.clear"],
+  ];
+
+  it("resolves from a bindings table", () => {
+    expect(commandsForEvent(keyEvent({ key: "k", metaKey: true }), bindings)).toEqual([
+      "palette.open",
     ]);
-    expect(commandForEvent(keyEvent({ key: "k", metaKey: true }), bindings)).toBe("palette.open");
-    expect(commandForEvent(keyEvent({ key: "Escape" }), bindings)).toBe("viewer.close");
-    expect(commandForEvent(keyEvent({ key: "q" }), bindings)).toBeNull();
+    expect(commandsForEvent(keyEvent({ key: "q" }), bindings)).toEqual([]);
+  });
+
+  it("returns every command on a chord, in table order", () => {
+    // The caller runs the first applicable one, which is how Escape can mean
+    // "leave the viewer" and "clear the selection" without ambiguity.
+    expect(commandsForEvent(keyEvent({ key: "Escape" }), bindings)).toEqual([
+      "viewer.close",
+      "selection.clear",
+    ]);
   });
 });
 
 describe("chordsForCommand", () => {
   it("finds every chord bound to a command", () => {
-    const bindings = new Map([
+    const bindings: Keybinding[] = [
       ["mod+k", "palette.open"],
       ["mod+p", "palette.open"],
-    ]);
+    ];
     expect(chordsForCommand("palette.open", bindings)).toEqual(["mod+k", "mod+p"]);
   });
 });

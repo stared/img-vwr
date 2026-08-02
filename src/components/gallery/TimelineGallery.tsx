@@ -301,11 +301,11 @@ function TimelineThumb({
       className={`tl-item${selected ? " selected" : ""}`}
       style={{ ...pos, width: size, height: size }}
       title={`${item.entry.name} · ${when}${item.taken ? "" : " (modified)"}`}
-      onClick={() => useAppStore.setState({ selectedIndex: item.index })}
+      onClick={() => useAppStore.getState().select(item.index)}
       onDoubleClick={() => openViewer(item.index)}
       onContextMenu={(e) => {
         e.preventDefault();
-        useAppStore.setState({ selectedIndex: item.index });
+        useAppStore.getState().select(item.index);
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >

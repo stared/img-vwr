@@ -1,4 +1,4 @@
-import { useAppStore, useVisibleEntries } from "../../state/store";
+import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 
 export function StatusBar() {
   const scope = useAppStore((s) => s.scope);
@@ -9,7 +9,7 @@ export function StatusBar() {
   const view = useAppStore((s) => s.viewerView);
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
-  const entry = visible[index];
+  const entry = useSelectedEntry();
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
 
   // While a scan streams in, the total is a running count, not a final one.
@@ -37,7 +37,7 @@ export function StatusBar() {
             {labelsText && <span className="status-labels">{labelsText}</span>}
             <span>{entry.name}</span>
             <span>
-              {index + 1} / {visible.length}
+              {(index ?? 0) + 1} / {visible.length}
             </span>
             {img && (
               <span>

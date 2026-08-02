@@ -93,6 +93,7 @@ async function anchorTo(anchor: Similarity["anchor"], label: string): Promise<vo
 /** The image the user is on, within the current (query-applied) view. */
 function selectedEntryPath(): { path: string; name: string } | null {
   const s = useAppStore.getState();
+  if (s.selectedIndex === null) return null;
   const visible = visibleOf(s, s.query);
   const entry = visible[s.selectedIndex];
   return entry ? { path: entry.path, name: entry.name } : null;

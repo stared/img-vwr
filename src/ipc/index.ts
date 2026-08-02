@@ -15,6 +15,7 @@ import type {
   ImageStats,
   MetaEntry,
   Overlay,
+  RegionArg,
   Result,
   SimilarityScore,
   WhiteBalance,
@@ -35,6 +36,7 @@ export type {
   ImageStats,
   MetaEntry,
   Overlay,
+  RegionArg,
   SimilarityScore,
   WhiteBalance,
 };
@@ -136,8 +138,22 @@ export async function developRender(
   settings: DevelopSettings,
   maxEdge: number,
   overlay: Overlay,
+  region: RegionArg,
 ): Promise<DevelopFrame> {
-  return unwrap(await commands.developRender(path, settings, maxEdge, overlay));
+  return unwrap(await commands.developRender(path, settings, maxEdge, overlay, region));
+}
+
+/** The whole frame. */
+export const FULL_REGION: RegionArg = { x: 0, y: 0, width: 1, height: 1 };
+
+/** White balance that renders the point at normalised (x, y) neutral. */
+export async function developPickWhiteBalance(
+  path: string,
+  x: number,
+  y: number,
+  current: WhiteBalance,
+): Promise<WhiteBalance> {
+  return unwrap(await commands.developPickWhiteBalance(path, x, y, current));
 }
 
 export async function developSave(path: string, settings: DevelopSettings): Promise<void> {

@@ -50,6 +50,7 @@ const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
   { layout: "grid", hint: "thumbnails" },
   { layout: "timeline", hint: "by date" },
   { layout: "map", hint: "geolocated" },
+  { layout: "darkroom", hint: "one large, strip below" },
 ];
 
 /** Right-side hint in the "+" menu, by field kind. */

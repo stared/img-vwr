@@ -12,6 +12,7 @@ use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
+use imgvwr_core::Region;
 use imgvwr_develop::{DevelopSettings, Overlay};
 
 /// Run a streamed folder scan: entries arrive as `ScanBatch` events, the
@@ -336,13 +337,48 @@ pub async fn develop_render(
     settings: DevelopSettings,
     max_edge: u32,
     overlay: Overlay,
+    region: RegionArg,
 ) -> Result<DevelopFrame, String> {
     let service = Arc::clone(service.inner());
+    let region = Region {
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        service.render(&path, &settings, max_edge, overlay)
+        service.render(&path, &settings, max_edge, overlay, region)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Sample a point and report the white balance that renders it neutral —
+/// the eyedropper. Runs off the main thread like every other develop call.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_pick_white_balance(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    x: f32,
+    y: f32,
+    current: imgvwr_core::WhiteBalance,
+) -> Result<imgvwr_core::WhiteBalance, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.pick_white_balance(&path, x, y, current))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The wire form of a render region. Mirrors `imgvwr_core::Region`, which is
+/// a pure-core type and deliberately carries no serialisation attributes.
+#[derive(Debug, Clone, Copy, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionArg {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[tauri::command]

@@ -90,11 +90,19 @@ impl SceneImage for ImageCrateScene {
     }
 
     fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
-        let (dst_w, dst_h) = thumb_dimensions(self.width, self.height, req.max_edge.max(1));
+        let (rx, ry, rw, rh) = req.region.to_pixels(self.width, self.height);
+        let (dst_w, dst_h) = thumb_dimensions(rw, rh, req.max_edge.max(1));
         if dst_w == 0 || dst_h == 0 {
             return Err(SceneError::Render("empty image".into()));
         }
-        let mut rgb = resample_to_linear(&self.rgba, self.width, self.height, dst_w, dst_h);
+        let mut rgb = resample_to_linear(
+            &self.rgba,
+            self.width,
+            self.height,
+            (rx, ry, rw, rh),
+            dst_w,
+            dst_h,
+        );
 
         let gains = white_balance_gains(self.as_shot(), req.white_balance);
         if gains != [1.0, 1.0, 1.0] {
@@ -110,6 +118,15 @@ impl SceneImage for ImageCrateScene {
             height: dst_h,
             rgb,
         })
+    }
+
+    fn neutral_at(
+        &self,
+        x: f32,
+        y: f32,
+        current: WhiteBalance,
+    ) -> Result<WhiteBalance, SceneError> {
+        crate::scene::neutral_by_measurement(self, x, y, current)
     }
 }
 
@@ -132,35 +149,47 @@ fn resample_to_linear(
     rgba: &[u8],
     src_w: u32,
     src_h: u32,
+    region: (u32, u32, u32, u32),
     dst_w: u32,
     dst_h: u32,
 ) -> Vec<f32> {
     let lut = srgb_lut();
-    let (sw, sh) = (src_w as usize, src_h as usize);
+    let stride = src_w as usize;
+    let (rx, ry, rw, rh) = (
+        region.0 as usize,
+        region.1 as usize,
+        region.2 as usize,
+        region.3 as usize,
+    );
+    let _ = src_h;
     let (dw, dh) = (dst_w as usize, dst_h as usize);
     let mut out = vec![0f32; dw * dh * 3];
 
-    if dw == sw && dh == sh {
-        for (dst, src) in out.chunks_exact_mut(3).zip(rgba.chunks_exact(4)) {
-            dst[0] = lut[src[0] as usize];
-            dst[1] = lut[src[1] as usize];
-            dst[2] = lut[src[2] as usize];
+    if dw == rw && dh == rh {
+        for dy in 0..dh {
+            for dx in 0..dw {
+                let px = ((ry + dy) * stride + rx + dx) * 4;
+                let o = (dy * dw + dx) * 3;
+                out[o] = lut[rgba[px] as usize];
+                out[o + 1] = lut[rgba[px + 1] as usize];
+                out[o + 2] = lut[rgba[px + 2] as usize];
+            }
         }
         return out;
     }
 
     for dy in 0..dh {
-        // Source row span covered by this destination row.
-        let y0 = dy * sh / dh;
-        let y1 = (((dy + 1) * sh).div_ceil(dh)).min(sh).max(y0 + 1);
+        // Source row span (within the region) covered by this output row.
+        let y0 = dy * rh / dh;
+        let y1 = (((dy + 1) * rh).div_ceil(dh)).min(rh).max(y0 + 1);
         for dx in 0..dw {
-            let x0 = dx * sw / dw;
-            let x1 = (((dx + 1) * sw).div_ceil(dw)).min(sw).max(x0 + 1);
+            let x0 = dx * rw / dw;
+            let x1 = (((dx + 1) * rw).div_ceil(dw)).min(rw).max(x0 + 1);
             let (mut r, mut g, mut b) = (0f32, 0f32, 0f32);
             for y in y0..y1 {
-                let row = y * sw;
+                let row = (ry + y) * stride;
                 for x in x0..x1 {
-                    let px = (row + x) * 4;
+                    let px = (row + rx + x) * 4;
                     r += lut[rgba[px] as usize];
                     g += lut[rgba[px + 1] as usize];
                     b += lut[rgba[px + 2] as usize];
@@ -193,7 +222,7 @@ mod tests {
     #[test]
     fn resample_preserves_a_solid_colour() {
         let src = solid(8, 8, [128, 64, 32, 255]);
-        let out = resample_to_linear(&src, 8, 8, 2, 2);
+        let out = resample_to_linear(&src, 8, 8, (0, 0, 8, 8), 2, 2);
         assert_eq!(out.len(), 2 * 2 * 3);
         let expect = srgb_to_linear(128.0 / 255.0);
         for px in out.chunks_exact(3) {
@@ -211,7 +240,7 @@ mod tests {
             .flatten()
             .copied()
             .collect();
-        let out = resample_to_linear(&src, 2, 1, 1, 1);
+        let out = resample_to_linear(&src, 2, 1, (0, 0, 2, 1), 1, 1);
         assert!((out[0] - 0.5).abs() < 1e-4, "linear mean: {}", out[0]);
         let encoded = linear_to_srgb(out[0]);
         assert!((encoded - 0.735).abs() < 0.01, "encoded: {encoded}");
@@ -220,7 +249,7 @@ mod tests {
     #[test]
     fn identity_resample_takes_the_fast_path() {
         let src = solid(3, 2, [10, 20, 30, 255]);
-        let out = resample_to_linear(&src, 3, 2, 3, 2);
+        let out = resample_to_linear(&src, 3, 2, (0, 0, 3, 2), 3, 2);
         assert_eq!(out.len(), 3 * 2 * 3);
         assert!((out[1] - srgb_to_linear(20.0 / 255.0)).abs() < 1e-6);
     }
@@ -247,6 +276,7 @@ mod tests {
             .render(RenderRequest {
                 max_edge: 10,
                 white_balance: WhiteBalance::D65,
+                region: crate::scene::Region::FULL,
             })
             .unwrap();
         assert_eq!((small.width, small.height), (10, 5));
@@ -256,9 +286,82 @@ mod tests {
             .render(RenderRequest {
                 max_edge: 4000,
                 white_balance: WhiteBalance::D65,
+                region: crate::scene::Region::FULL,
             })
             .unwrap();
         assert_eq!((capped.width, capped.height), (40, 20));
+    }
+
+    #[test]
+    fn rendering_a_region_develops_only_that_crop() {
+        // Left half black, right half white. Asking for the right half must
+        // come back white, at the size of the crop rather than the frame.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("split.png");
+        let mut img = image::RgbImage::new(80, 20);
+        for (x, _y, px) in img.enumerate_pixels_mut() {
+            *px = if x < 40 {
+                image::Rgb([0, 0, 0])
+            } else {
+                image::Rgb([255, 255, 255])
+            };
+        }
+        image::DynamicImage::ImageRgb8(img).save(&path).unwrap();
+        let scene = ImageCrateFormat::new().open(&path).unwrap();
+
+        let right = scene
+            .render(RenderRequest {
+                max_edge: 40,
+                white_balance: WhiteBalance::D65,
+                region: crate::scene::Region {
+                    x: 0.5,
+                    y: 0.0,
+                    width: 0.5,
+                    height: 1.0,
+                },
+            })
+            .unwrap();
+        assert_eq!((right.width, right.height), (40, 20), "crop, not frame");
+        assert!(right.rgb.iter().all(|v| *v > 0.9), "all white: {:?}", &right.rgb[..3]);
+
+        let left = scene
+            .render(RenderRequest {
+                max_edge: 40,
+                white_balance: WhiteBalance::D65,
+                region: crate::scene::Region {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.5,
+                    height: 1.0,
+                },
+            })
+            .unwrap();
+        assert!(left.rgb.iter().all(|v| *v < 0.01), "all black");
+    }
+
+    #[test]
+    fn a_region_at_native_scale_is_not_downsampled() {
+        // The 1:1 case: a small crop asked for at its own size comes back
+        // pixel-for-pixel, which is the whole point of region rendering.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.png");
+        image::DynamicImage::new_rgb8(2000, 1000).save(&path).unwrap();
+        let scene = ImageCrateFormat::new().open(&path).unwrap();
+
+        let crop = scene
+            .render(RenderRequest {
+                max_edge: 400,
+                white_balance: WhiteBalance::D65,
+                region: crate::scene::Region {
+                    x: 0.25,
+                    y: 0.25,
+                    width: 0.1,
+                    height: 0.1,
+                },
+            })
+            .unwrap();
+        // 10% of 2000 = 200 px wide, under the 400 cap, so no scaling.
+        assert_eq!((crop.width, crop.height), (200, 100));
     }
 
     #[test]
@@ -278,6 +381,7 @@ mod tests {
             .render(RenderRequest {
                 max_edge: 4,
                 white_balance: WhiteBalance::D65,
+                region: crate::scene::Region::FULL,
             })
             .unwrap();
         assert!((neutral.rgb[0] - neutral.rgb[2]).abs() < 1e-5, "grey stays grey");
@@ -289,6 +393,7 @@ mod tests {
                     temperature: 9000.0,
                     tint: 0.0,
                 },
+                region: crate::scene::Region::FULL,
             })
             .unwrap();
         assert!(warm.rgb[0] > warm.rgb[2], "warm render is red-heavy");

@@ -35,7 +35,7 @@ export function scopeLoading(scope: Scope, epoch: number) {
     meta: {} as Record<string, ImageMeta>,
     labels: {},
     viewMode: "gallery" as const,
-    selectedIndex: 0,
+    selectedIndex: null,
     similarity: null,
     embedProgress: null,
     viewerView: null,

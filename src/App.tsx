@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
 import { MapGallery } from "./components/gallery/MapGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
@@ -77,6 +78,8 @@ function App() {
               <MapGallery />
             ) : galleryLayout === "timeline" ? (
               <TimelineGallery />
+            ) : galleryLayout === "darkroom" ? (
+              <DarkroomGallery />
             ) : (
               <GalleryGrid />
             )

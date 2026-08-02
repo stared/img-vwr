@@ -12,7 +12,7 @@
 //!  3. How far outside the sRGB gamut the data lands, since the pipeline
 //!     works in sRGB primaries.
 
-use imgvwr_core::{RenderRequest, SceneFormat};
+use imgvwr_core::{Region, RenderRequest, SceneFormat};
 use imgvwr_raw::{raw_dimensions, CoreImageRawFormat};
 
 fn main() {
@@ -40,6 +40,7 @@ fn main() {
             .render(RenderRequest {
                 max_edge: 400,
                 white_balance: wb,
+                region: Region::FULL,
             })
             .unwrap();
         let rendered_shape = if img.height > img.width { "portrait" } else { "landscape" };
@@ -97,6 +98,7 @@ fn linearity(format: &CoreImageRawFormat, path: &std::path::Path) {
         .render(RenderRequest {
             max_edge: 400,
             white_balance: wb,
+            region: Region::FULL,
         })
         .unwrap();
 

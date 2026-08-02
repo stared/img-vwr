@@ -19,11 +19,11 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
     <figure
       className={`thumb-cell ${selected ? "selected" : ""}`}
       style={{ width: size }}
-      onClick={() => useAppStore.setState({ selectedIndex: index })}
+      onClick={() => useAppStore.getState().select(index)}
       onDoubleClick={() => openViewer(index)}
       onContextMenu={(e) => {
         e.preventDefault();
-        useAppStore.setState({ selectedIndex: index });
+        useAppStore.getState().select(index);
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >

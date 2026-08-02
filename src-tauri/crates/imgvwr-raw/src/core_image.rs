@@ -159,10 +159,29 @@ impl SceneImage for CoreImageRawScene {
         self.as_shot
     }
 
+    fn neutral_at(
+        &self,
+        x: f32,
+        y: f32,
+        current: WhiteBalance,
+    ) -> Result<WhiteBalance, SceneError> {
+        // Core Image has a `neutralLocation` property that looks like exactly
+        // the right tool, and measurably is not: setting it leaves
+        // `neutralTemperature` and `neutralTint` untouched for every point
+        // tried, before and after forcing a render. So the raw path measures
+        // a developed patch like any other format.
+        imgvwr_core::neutral_by_measurement(self, x, y, current)
+    }
+
     fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
-        let longest = self.native.0.max(self.native.1) as f32;
+        let region = req.region.clamped();
+        // Scale is chosen against the *requested region*, not the whole
+        // frame: that is what lets a 1:1 look at a small crop cost a small
+        // render rather than developing all 24 megapixels.
+        let region_longest =
+            (self.native.0 as f32 * region.width).max(self.native.1 as f32 * region.height);
         // Never upscale: asking for more than the sensor has just wastes time.
-        let scale = (req.max_edge.max(1) as f32 / longest).min(1.0);
+        let scale = (req.max_edge.max(1) as f32 / region_longest.max(1.0)).min(1.0);
 
         let inner = self
             .inner
@@ -184,7 +203,27 @@ impl SceneImage for CoreImageRawScene {
                 .filter
                 .outputImage()
                 .ok_or_else(|| SceneError::Render("RAW decoder produced no image".into()))?;
-            let extent: CGRect = image.extent();
+            let full: CGRect = image.extent();
+            if full.size.width < 1.0 || full.size.height < 1.0 {
+                return Err(SceneError::Render("empty render extent".into()));
+            }
+
+            // Crop in the scaled output's own coordinates. Core Image's origin
+            // is bottom-left while a region is stated top-down, so the y
+            // offset is measured from the far edge.
+            let extent = if region.is_full() {
+                full
+            } else {
+                let w = (f64::from(region.width) * full.size.width).max(1.0);
+                let h = (f64::from(region.height) * full.size.height).max(1.0);
+                let x = full.origin.x + f64::from(region.x) * full.size.width;
+                let y = full.origin.y + (1.0 - f64::from(region.y + region.height)) as f64
+                    * full.size.height;
+                CGRect {
+                    origin: objc2_core_foundation::CGPoint { x: x.round(), y: y.round() },
+                    size: objc2_core_foundation::CGSize { width: w.round(), height: h.round() },
+                }
+            };
             let width = extent.size.width as u32;
             let height = extent.size.height as u32;
             if width == 0 || height == 0 {

@@ -1,7 +1,14 @@
 import { create } from "zustand";
 
-import type { DevelopFrame, DevelopSettings, DevelopState, Overlay } from "../ipc";
-import { developRender, developReset, developSave, developState } from "../ipc";
+import type { DevelopFrame, DevelopSettings, DevelopState, Overlay, RegionArg } from "../ipc";
+import {
+  developPickWhiteBalance,
+  developRender,
+  developReset,
+  developSave,
+  developState,
+  FULL_REGION,
+} from "../ipc";
 
 /**
  * The develop session: one image open for editing at a time.
@@ -68,6 +75,20 @@ export interface Session {
   /** Most recent rendered frame; kept while a new one is computing so the
    * viewer never flashes empty mid-drag. */
   frame: DevelopFrame | null;
+  /**
+   * A crop of the image developed at full sensor resolution, covering what
+   * is on screen while zoomed in past the preview's own resolution.
+   *
+   * Separate from `frame` because it is a different question. The preview
+   * answers "what does this photograph look like"; the detail answers "is
+   * this actually sharp" — and it would be ruinous to develop 24 megapixels
+   * on every slider drag just so the answer is available when zoomed.
+   */
+  detail: DevelopFrame | null;
+  /** True while a detail crop is being developed. */
+  detailing: boolean;
+  /** The eyedropper is armed: the next click on the image sets the balance. */
+  picking: boolean;
   overlay: Overlay;
   rendering: boolean;
   /** Settings changed while a render was in flight. */
@@ -88,6 +109,69 @@ export interface DevelopStore {
   reset: () => Promise<void>;
   /** Re-render at a new size (viewport resize). */
   requestRender: (maxEdge: number) => void;
+  /** Develop `region` at up to `maxEdge` px for a 1:1 look. */
+  requestDetail: (region: RegionArg, maxEdge: number) => void;
+  /** Drop the detail crop — zoomed back out, or it went stale. */
+  clearDetail: () => void;
+  /** Arm or disarm the eyedropper. */
+  setPicking: (picking: boolean) => void;
+  /** Set the white balance from a point in the image (normalised coords). */
+  pickWhiteBalanceAt: (x: number, y: number) => Promise<void>;
+}
+
+/** Largest detail crop we will develop, in pixels of the longest edge. */
+const DETAIL_MAX_EDGE = 4000;
+
+/** How much two regions must differ before the crop is worth re-developing. */
+const REGION_EPSILON = 0.01;
+
+export function regionsDiffer(a: RegionArg, b: RegionArg): boolean {
+  return (
+    Math.abs(a.x - b.x) > REGION_EPSILON ||
+    Math.abs(a.y - b.y) > REGION_EPSILON ||
+    Math.abs(a.width - b.width) > REGION_EPSILON ||
+    Math.abs(a.height - b.height) > REGION_EPSILON
+  );
+}
+
+/**
+ * The part of the image on screen, in normalised image coordinates.
+ *
+ * `scale` is screen pixels per image pixel and `tx`/`ty` place the image's
+ * top-left corner, matching the viewport's own convention.
+ */
+export function visibleRegion(
+  view: { scale: number; tx: number; ty: number },
+  image: { width: number; height: number },
+  canvas: { width: number; height: number },
+): RegionArg {
+  const spanX = view.scale * image.width;
+  const spanY = view.scale * image.height;
+  if (spanX <= 0 || spanY <= 0) return FULL_REGION;
+  const x = Math.max(0, -view.tx / spanX);
+  const y = Math.max(0, -view.ty / spanY);
+  return {
+    x,
+    y,
+    width: Math.min(1 - x, canvas.width / spanX),
+    height: Math.min(1 - y, canvas.height / spanY),
+  };
+}
+
+/**
+ * True when the preview is being magnified past its own resolution, so what
+ * the user is looking at is interpolation rather than detail.
+ */
+export function needsDetail(
+  view: { scale: number },
+  frame: { width: number },
+  image: { width: number },
+): boolean {
+  if (image.width <= 0 || frame.width <= 0) return false;
+  const previewPixelsPerImagePixel = frame.width / image.width;
+  // A little slack so sitting exactly at the preview's resolution does not
+  // flap between wanting and not wanting a detail render.
+  return view.scale > previewPixelsPerImagePixel * 1.05;
 }
 
 /** Longest preview edge, from the viewport. Bounded so a huge window does
@@ -141,7 +225,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     set({ session: { ...start, rendering: true, dirty: false } });
     const { path, settings, overlay } = start;
 
-    const result = await developRender(path, settings, currentEdge, overlay).then(
+    const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
       (frame) => ({ ok: true as const, frame }),
       (error: unknown) => ({ ok: false as const, error: String(error) }),
     );
@@ -150,7 +234,11 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (!now || now.path !== path) return; // navigated away mid-render
 
     if (result.ok) {
-      set({ session: { ...now, frame: result.frame, rendering: false, error: null } });
+      // The detail crop was developed from the previous settings, so it is
+      // now a lie about the image; drop it and let the canvas ask again.
+      set({
+        session: { ...now, frame: result.frame, detail: null, rendering: false, error: null },
+      });
     } else {
       set({ session: { ...now, rendering: false, error: result.error } });
     }
@@ -193,6 +281,9 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
             info,
             settings: info.settings,
             frame: null,
+            detail: null,
+            detailing: false,
+            picking: false,
             overlay: "none",
             rendering: false,
             dirty: false,
@@ -255,6 +346,58 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         session: { ...now, info, settings: info.settings, dirty: true },
       });
       void pump();
+    },
+
+    requestDetail: (region, maxEdge) => {
+      const session = get().session;
+      if (!session || session.detailing) return;
+      const { path, settings, overlay } = session;
+      set({ session: { ...session, detailing: true } });
+      void developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
+        (detail) => {
+          const now = get().session;
+          // Only install it if it still describes the image on screen under
+          // the settings that produced it.
+          if (!now || now.path !== path || now.settings !== settings) {
+            if (now) set({ session: { ...now, detailing: false } });
+            return;
+          }
+          set({ session: { ...now, detail, detailing: false } });
+        },
+        () => {
+          const now = get().session;
+          if (now) set({ session: { ...now, detailing: false } });
+        },
+      );
+    },
+
+    setPicking: (picking) => {
+      const session = get().session;
+      if (!session) return;
+      set({ session: { ...session, picking } });
+    },
+
+    pickWhiteBalanceAt: async (x, y) => {
+      const session = get().session;
+      if (!session) return;
+      const balance = await developPickWhiteBalance(
+        session.path,
+        x,
+        y,
+        session.settings.whiteBalance,
+      );
+      const now = get().session;
+      if (!now || now.path !== session.path) return;
+      // Disarm on use: the eyedropper is a single action, not a mode you
+      // have to remember to leave.
+      set({ session: { ...now, picking: false } });
+      change({ ...now.settings, whiteBalance: balance });
+    },
+
+    clearDetail: () => {
+      const session = get().session;
+      if (!session || session.detail === null) return;
+      set({ session: { ...session, detail: null } });
     },
 
     requestRender: (maxEdge) => {

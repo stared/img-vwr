@@ -4,7 +4,13 @@ import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
-import { scanBatchArrived, sortForScope, type Scope } from "./store";
+import {
+  movedSelection,
+  scanBatchArrived,
+  sortForScope,
+  withQuery,
+  type Scope,
+} from "./store";
 
 const SOURCE_SCOPE: Scope = { kind: "source", sourceId: "tsrc", arg: "x", label: "x" };
 const OTHER_SOURCE_SCOPE: Scope = { kind: "source", sourceId: "plain", arg: "y", label: "y" };
@@ -139,5 +145,83 @@ describe("scanBatchArrived", () => {
     const done = scanBatchArrived({ entries: [] }, [], true);
     expect(done.entries).toBeUndefined();
     expect(done.status).toBe("loaded");
+  });
+});
+
+describe("selection can be empty", () => {
+  const entries = [
+    { path: "/a.jpg", name: "a.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+    { path: "/b.jpg", name: "b.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+    { path: "/c.jpg", name: "c.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+  ];
+
+  it("enters the collection from whichever end the arrow points from", () => {
+    expect(movedSelection({ selectedIndex: null }, 3, 1).selectedIndex).toBe(0);
+    expect(movedSelection({ selectedIndex: null }, 3, -1).selectedIndex).toBe(2);
+  });
+
+  it("still clamps at the ends once something is selected", () => {
+    expect(movedSelection({ selectedIndex: 0 }, 3, -1)).toEqual({});
+    expect(movedSelection({ selectedIndex: 2 }, 3, 1)).toEqual({});
+    expect(movedSelection({ selectedIndex: 1 }, 3, 1).selectedIndex).toBe(2);
+  });
+
+  it("does nothing in an empty collection", () => {
+    expect(movedSelection({ selectedIndex: null }, 0, 1)).toEqual({});
+  });
+
+  it("resets the viewport whenever the selection actually moves", () => {
+    expect(movedSelection({ selectedIndex: null }, 3, 1)).toMatchObject({
+      viewerView: null,
+      viewerFitted: true,
+    });
+  });
+
+  it("clears rather than reassigns when the selected image is filtered out", () => {
+    const state = {
+      entries,
+      query: defaultQuery,
+      selectedIndex: 1,
+      meta: {},
+      similarity: null,
+      labels: {},
+    };
+    // A name filter that keeps only "a" drops the selected "b".
+    const dropped = withQuery(state, {
+      ...defaultQuery,
+      filters: [{ kind: "name", substring: "a." }],
+    });
+    expect(dropped.selectedIndex).toBeNull();
+  });
+
+  it("keeps the same image selected when it survives the new query", () => {
+    const state = {
+      entries,
+      query: defaultQuery,
+      selectedIndex: 2,
+      meta: {},
+      similarity: null,
+      labels: {},
+    };
+    const kept = withQuery(state, {
+      ...defaultQuery,
+      filters: [{ kind: "name", substring: "c." }],
+    });
+    expect(kept.selectedIndex).toBe(0);
+  });
+
+  it("stays empty across a query change", () => {
+    const state = {
+      entries,
+      query: defaultQuery,
+      selectedIndex: null,
+      meta: {},
+      similarity: null,
+      labels: {},
+    };
+    expect(
+      withQuery(state, { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] })
+        .selectedIndex,
+    ).toBeNull();
   });
 });

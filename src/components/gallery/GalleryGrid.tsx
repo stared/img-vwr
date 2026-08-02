@@ -5,32 +5,59 @@ import { requestThumbnails } from "../../ipc";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
-const CELL_SIZE = 168;
 const CELL_GAP = 8;
 /* Must mirror the .thumb-cell CSS: padding, inner gap, fixed caption height. */
 const CELL_PADDING = 4;
 const CELL_INNER_GAP = 4;
 const CAPTION_HEIGHT = 16;
-const ROW_HEIGHT =
-  CELL_SIZE + CELL_INNER_GAP + CAPTION_HEIGHT + 2 * CELL_PADDING + CELL_GAP;
 const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
+
+/** Below this a thumbnail stops being a picture, so it bounds the column count. */
+const MIN_CELL_PX = 96;
+const MIN_COLUMNS = 2;
+
+/** Widest column count worth offering at this width — a viewport-relative
+ * limit rather than an arbitrary one, so the slider always ends somewhere
+ * that still shows photographs. */
+export function maxColumnsFor(width: number): number {
+  if (width <= 0) return MIN_COLUMNS;
+  return Math.max(MIN_COLUMNS, Math.floor((width + CELL_GAP) / (MIN_CELL_PX + CELL_GAP)));
+}
+
+/** Cell edge that makes `columns` of them exactly fill the width. */
+export function cellSizeFor(width: number, columns: number): number {
+  const usable = width - CELL_GAP * (columns - 1);
+  return Math.max(MIN_CELL_PX, Math.floor(usable / columns));
+}
 
 export function GalleryGrid() {
   const entries = useVisibleEntries();
   const epoch = useAppStore((s) => s.epoch);
+  const preferredColumns = useAppStore((s) => s.gridColumns);
+  const setGridColumns = useAppStore((s) => s.setGridColumns);
+  const select = useAppStore((s) => s.select);
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = useContainerWidth(scrollRef);
 
-  const columns = Math.max(1, Math.floor((width + CELL_GAP) / (CELL_SIZE + CELL_GAP)));
+  const maxColumns = maxColumnsFor(width);
+  const columns = Math.min(Math.max(MIN_COLUMNS, preferredColumns), maxColumns);
+  const cellSize = cellSizeFor(width, columns);
+  const rowHeight = cellSize + CELL_INNER_GAP + CAPTION_HEIGHT + 2 * CELL_PADDING + CELL_GAP;
   const rowCount = Math.ceil(entries.length / columns);
 
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: OVERSCAN_ROWS,
   });
+
+  // Rows change height when the column count does; the virtualizer caches
+  // measurements, so it has to be told rather than left showing gaps.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, rowHeight]);
 
   const virtualRows = virtualizer.getVirtualItems();
 
@@ -62,25 +89,57 @@ export function GalleryGrid() {
   );
 
   return (
-    <div ref={scrollRef} className="gallery-scroll">
-      <div className="gallery-inner" style={{ height: virtualizer.getTotalSize() }}>
-        {rowEntries.map(({ row, firstIndex, items }) => (
-          <div
-            key={row.key}
-            className="gallery-row"
-            style={{
-              transform: `translateY(${row.start}px)`,
-              gridTemplateColumns: `repeat(${columns}, ${CELL_SIZE}px)`,
-              gap: CELL_GAP,
-            }}
-          >
-            {items.map((entry, i) => (
-              <ThumbCell key={entry.path} entry={entry} index={firstIndex + i} size={CELL_SIZE} />
-            ))}
-          </div>
-        ))}
+    <>
+      <div className="gallery-toolbar">
+        <label className="gallery-size" title="how many photos fill a row">
+          <input
+            type="range"
+            min={MIN_COLUMNS}
+            max={maxColumns}
+            step={1}
+            value={columns}
+            onChange={(e) => setGridColumns(Number(e.currentTarget.value))}
+          />
+          {columns} per row
+        </label>
       </div>
-    </div>
+      <div
+        ref={scrollRef}
+        className="gallery-scroll"
+        // Clicking past the last thumbnail, or in the gaps, means "none of
+        // these" — the counterpart to Esc.
+        onClick={(e) => {
+          if (e.target === e.currentTarget) select(null);
+        }}
+      >
+        <div
+          className="gallery-inner"
+          style={{ height: virtualizer.getTotalSize() }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) select(null);
+          }}
+        >
+          {rowEntries.map(({ row, firstIndex, items }) => (
+            <div
+              key={row.key}
+              className="gallery-row"
+              style={{
+                transform: `translateY(${row.start}px)`,
+                gridTemplateColumns: `repeat(${columns}, ${cellSize}px)`,
+                gap: CELL_GAP,
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) select(null);
+              }}
+            >
+              {items.map((entry, i) => (
+                <ThumbCell key={entry.path} entry={entry} index={firstIndex + i} size={cellSize} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
 

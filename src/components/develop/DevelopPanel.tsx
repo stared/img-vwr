@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { useAppStore, useVisibleEntries } from "../../state/store";
+import { useSelectedEntry } from "../../state/store";
 import {
   isNeutral,
   PARAM_SPECS,
@@ -61,9 +61,7 @@ function Slider({
 }
 
 export function DevelopPanel() {
-  const entries = useVisibleEntries();
-  const index = useAppStore((s) => s.selectedIndex);
-  const entry = entries[index];
+  const entry = useSelectedEntry();
 
   const session = useDevelopStore((s) => s.session);
   const opening = useDevelopStore((s) => s.opening);
@@ -73,6 +71,7 @@ export function DevelopPanel() {
   const setTemperature = useDevelopStore((s) => s.setTemperature);
   const setTint = useDevelopStore((s) => s.setTint);
   const setOverlay = useDevelopStore((s) => s.setOverlay);
+  const setPicking = useDevelopStore((s) => s.setPicking);
   const reset = useDevelopStore((s) => s.reset);
 
   // Follow the selection. Remote entries have no local file to develop.
@@ -137,6 +136,13 @@ export function DevelopPanel() {
           )}`}
           onChange={setTint}
         />
+        {/* One button saying what state it is in; clicking arms or disarms. */}
+        <button
+          className={session.picking ? "develop-toggle armed" : "develop-toggle"}
+          onClick={() => setPicking(!session.picking)}
+        >
+          {session.picking ? "picking: click something grey" : "pick a neutral point"}
+        </button>
         <p className="develop-note">
           as shot: {Math.round(info.asShot.temperature)} K, tint{" "}
           {Math.round(info.asShot.tint)}

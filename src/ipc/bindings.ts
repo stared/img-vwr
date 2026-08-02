@@ -152,9 +152,9 @@ async developState(path: string) : Promise<Result<DevelopState, string>> {
  * separately over the `develop:` protocol using the returned token; the
  * histogram of those same pixels comes back here.
  */
-async developRender(path: string, settings: DevelopSettings, maxEdge: number, overlay: Overlay) : Promise<Result<DevelopFrame, string>> {
+async developRender(path: string, settings: DevelopSettings, maxEdge: number, overlay: Overlay, region: RegionArg) : Promise<Result<DevelopFrame, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("develop_render", { path, settings, maxEdge, overlay }) };
+    return { status: "ok", data: await TAURI_INVOKE("develop_render", { path, settings, maxEdge, overlay, region }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -201,6 +201,18 @@ async developExport(path: string, settings: DevelopSettings, destination: string
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Sample a point and report the white balance that renders it neutral —
+ * the eyedropper. Runs off the main thread like every other develop call.
+ */
+async developPickWhiteBalance(path: string, x: number, y: number, current: WhiteBalance) : Promise<Result<WhiteBalance, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_pick_white_balance", { path, x, y, current }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -235,7 +247,13 @@ thumbnailReady: "thumbnail-ready"
  * A rendered preview: the pixels live in the service under `token` and are
  * fetched by the `develop:` protocol; the histogram comes back inline.
  */
-export type DevelopFrame = { token: number; width: number; height: number; histogram: Histogram }
+export type DevelopFrame = { token: number; width: number; height: number; histogram: Histogram; 
+/**
+ * The part of the frame these pixels cover, normalised. A full-frame
+ * preview reports the unit rect; a 1:1 detail render reports the crop it
+ * developed, so the viewer knows where to place it.
+ */
+regionX: number; regionY: number; regionWidth: number; regionHeight: number }
 /**
  * Tone and colour adjustments, all format-agnostic: they act on scene-linear
  * pixels whatever plugin produced them.
@@ -391,6 +409,11 @@ export type Overlay =
  * Tint regions by how much fine detail they resolve — the focus map.
  */
 "sharpness"
+/**
+ * The wire form of a render region. Mirrors `imgvwr_core::Region`, which is
+ * a pure-core type and deliberately carries no serialisation attributes.
+ */
+export type RegionArg = { x: number; y: number; width: number; height: number }
 /**
  * A slice of an in-progress folder scan. Batches stream in walk order as
  * the tree is traversed — cloud-backed folders can take seconds to walk,

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use imgvwr_core::{ImageCrateFormat, SceneRegistry};
+use imgvwr_core::{ImageCrateFormat, Region, SceneRegistry};
 use imgvwr_develop::{render, DevelopParams, DevelopSettings, Overlay};
 
 const PREVIEW_EDGE: u32 = 2000;
@@ -35,7 +35,7 @@ fn main() {
     let neutral = DevelopSettings::neutral(scene.as_shot());
 
     let t = Instant::now();
-    let out = render(scene.as_ref(), &neutral, PREVIEW_EDGE, Overlay::None).expect("render");
+    let out = render(scene.as_ref(), &neutral, PREVIEW_EDGE, Overlay::None, Region::FULL).expect("render");
     println!("neutral preview : {:?} ({}x{})", t.elapsed(), out.image.width, out.image.height);
     println!(
         "  clipped       : {} shadow / {} highlight px",
@@ -63,22 +63,22 @@ fn main() {
     let mut worst = std::time::Duration::ZERO;
     for _ in 0..5 {
         let t = Instant::now();
-        let out = render(scene.as_ref(), &edited, PREVIEW_EDGE, Overlay::None).expect("render");
+        let out = render(scene.as_ref(), &edited, PREVIEW_EDGE, Overlay::None, Region::FULL).expect("render");
         worst = worst.max(t.elapsed());
         std::hint::black_box(&out.image.rgba[0]);
     }
     println!("edited preview  : {worst:?} (worst of 5 — this is the slider-drag cost)");
-    let out = render(scene.as_ref(), &edited, PREVIEW_EDGE, Overlay::None).expect("render");
+    let out = render(scene.as_ref(), &edited, PREVIEW_EDGE, Overlay::None, Region::FULL).expect("render");
     save(&out.image, &format!("{out_prefix}-edited.png"));
 
     let t = Instant::now();
-    let focus = render(scene.as_ref(), &neutral, PREVIEW_EDGE, Overlay::Sharpness).expect("render");
+    let focus = render(scene.as_ref(), &neutral, PREVIEW_EDGE, Overlay::Sharpness, Region::FULL).expect("render");
     println!("focus overlay   : {:?}", t.elapsed());
     save(&focus.image, &format!("{out_prefix}-focus.png"));
 
     let (nw, nh) = scene.native_size();
     let t = Instant::now();
-    let full = render(scene.as_ref(), &edited, nw.max(nh), Overlay::None).expect("render");
+    let full = render(scene.as_ref(), &edited, nw.max(nh), Overlay::None, Region::FULL).expect("render");
     println!(
         "full export     : {:?} ({}x{})",
         t.elapsed(),

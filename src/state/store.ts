@@ -41,7 +41,7 @@ import {
 } from "./query";
 
 export type ViewMode = "gallery" | "viewer";
-export type GalleryLayout = "grid" | "timeline" | "map";
+export type GalleryLayout = "grid" | "timeline" | "map" | "darkroom";
 export type TimelineOrientation = "vertical" | "horizontal";
 
 export type { FolderStatus, Scope } from "./collection";
@@ -90,8 +90,18 @@ export interface AppState {
   timelineOrientation: TimelineOrientation;
   /** Thumbnail edge on the timeline, px — presentation only, never zoom. */
   timelineThumbPx: number;
-  /** Index into the VISIBLE (query-applied) list of the selected image. */
-  selectedIndex: number;
+  /** How many thumbnails the grid fits in one row; cells size to suit. */
+  gridColumns: number;
+  /**
+   * Index into the VISIBLE (query-applied) list, or null when nothing is
+   * selected.
+   *
+   * Nullable on purpose: "no image selected" is a real state, not something
+   * to paper over by defaulting to the first item. A folder opens with
+   * nothing selected, and panels say so rather than describing an image the
+   * user never picked.
+   */
+  selectedIndex: number | null;
   /** Filters + sort applied to the scanned folder; survives folder changes. */
   query: Query;
   /** Find-by-name input visibility (the filter bar shows while editing). */
@@ -139,6 +149,9 @@ interface AppActions {
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
+  setGridColumns: (columns: number) => void;
+  /** Select one image, or nothing (null) — clicking empty space, or Esc. */
+  select: (index: number | null) => void;
   openViewer: (index: number) => void;
   closeViewer: () => void;
   navigate: (delta: number) => void;
@@ -190,7 +203,8 @@ export const initialState: AppState = {
   galleryLayout: "grid",
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
-  selectedIndex: 0,
+  gridColumns: 6,
+  selectedIndex: null,
   query: defaultQuery,
   findOpen: false,
   sidebarVisible: true,
@@ -210,30 +224,49 @@ export const initialState: AppState = {
 
 /* Pure transitions — actions only apply these. */
 
-/** Move the selection by `delta` within `count` items; a real move resets the viewport. */
+/**
+ * Move the selection by `delta` within `count` items; a real move resets the
+ * viewport. From an empty selection an arrow key enters the collection at
+ * whichever end it points from, so ← lands on the last image and → the first.
+ */
 export function movedSelection(
   state: Pick<AppState, "selectedIndex">,
   count: number,
   delta: number,
 ): Partial<AppState> {
   if (count === 0) return {};
-  const index = Math.min(count - 1, Math.max(0, state.selectedIndex + delta));
+  const index =
+    state.selectedIndex === null
+      ? delta < 0
+        ? count - 1
+        : 0
+      : Math.min(count - 1, Math.max(0, state.selectedIndex + delta));
   if (index === state.selectedIndex) return {};
+  return { selectedIndex: index, viewerView: null, viewerImg: null, viewerFitted: true };
+}
+
+/** Select an index, or nothing. Selecting always resets the viewport. */
+export function withSelection(index: number | null): Partial<AppState> {
   return { selectedIndex: index, viewerView: null, viewerImg: null, viewerFitted: true };
 }
 
 /**
  * Change the query while keeping the same image selected if it survives the
- * new filters; otherwise fall back to the top.
+ * new filters. If it does not, the selection empties rather than jumping to
+ * the top: the image the user was looking at is gone, and silently selecting
+ * a different one would misreport what the panels are describing.
  */
 export function withQuery(
   state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta" | "similarity" | "labels">,
   query: Query,
 ): Partial<AppState> {
-  const selectedPath = visibleOf(state, state.query)[state.selectedIndex]?.path;
+  const selectedPath =
+    state.selectedIndex === null
+      ? undefined
+      : visibleOf(state, state.query)[state.selectedIndex]?.path;
   const nextVisible = visibleOf(state, query);
   const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
-  return { query, selectedIndex: index >= 0 ? index : 0 };
+  return { query, selectedIndex: index >= 0 ? index : null };
 }
 
 export function withThumb(
@@ -426,6 +459,10 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setTimelineThumbPx: (px) => set({ timelineThumbPx: px }),
 
+  setGridColumns: (columns) => set({ gridColumns: columns }),
+
+  select: (index) => set(withSelection(index)),
+
   openViewer: (index) => {
     const visibleCount = visibleOf(get(), get().query).length;
     if (index >= 0 && index < visibleCount) {
@@ -595,6 +632,17 @@ function applyQueryMemo(
 }
 
 /** The gallery/viewer's working set: folder entries with filters + sort applied. */
+/**
+ * The selected image, or null when nothing is selected. Every panel that
+ * describes "the current image" goes through here, so they agree on what is
+ * selected and all handle the empty case the same way.
+ */
+export function useSelectedEntry(): FileEntry | null {
+  const entries = useVisibleEntries();
+  const index = useAppStore((s) => s.selectedIndex);
+  return index === null ? null : (entries[index] ?? null);
+}
+
 export function useVisibleEntries(): FileEntry[] {
   const entries = useAppStore((s) => s.entries);
   const query = useAppStore((s) => s.query);

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ImageStats } from "../../ipc";
 import { imageStats } from "../../ipc";
 import { formatBytes } from "../../state/stats";
-import { useAppStore, useVisibleEntries } from "../../state/store";
+import { useAppStore, useSelectedEntry } from "../../state/store";
 
 /**
  * Per-image inspector: file facts, EXIF, labels, then pixel statistics —
@@ -115,9 +115,7 @@ function TriangleCanvas({ stats }: { stats: ImageStats }) {
 }
 
 export function InfoPanel() {
-  const index = useAppStore((s) => s.selectedIndex);
-  const visible = useVisibleEntries();
-  const entry = visible[index];
+  const entry = useSelectedEntry();
   const meta = useAppStore((s) => (entry ? s.meta[entry.path] : undefined));
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
 

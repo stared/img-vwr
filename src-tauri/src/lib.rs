@@ -51,6 +51,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::develop_reset,
             commands::develop_edited_paths,
             commands::develop_export,
+            commands::develop_pick_white_balance,
         ])
         .events(collect_events![
             events::ScanBatch,

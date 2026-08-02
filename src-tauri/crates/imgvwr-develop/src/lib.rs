@@ -13,7 +13,7 @@ pub use analysis::{composite_sharpness, histogram, sharpness_map, Histogram};
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use pipeline::{develop, MID_GREY};
 
-use imgvwr_core::{DecodedImage, RenderRequest, SceneError, SceneImage};
+use imgvwr_core::{DecodedImage, Region, RenderRequest, SceneError, SceneImage};
 
 /// One developed frame plus the analysis that describes it.
 pub struct Developed {
@@ -31,11 +31,13 @@ pub fn render(
     settings: &DevelopSettings,
     max_edge: u32,
     overlay: Overlay,
+    region: Region,
 ) -> Result<Developed, SceneError> {
     let settings = settings.clamped();
     let linear = scene.render(RenderRequest {
         max_edge,
         white_balance: settings.white_balance,
+        region,
     })?;
 
     let mut image = develop(&linear, &settings.params);

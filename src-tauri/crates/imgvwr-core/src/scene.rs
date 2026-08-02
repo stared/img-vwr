@@ -56,13 +56,69 @@ impl LinearImage {
     }
 }
 
-/// What the caller wants back: a size cap (the plugin picks the cheapest way
-/// to hit it) and the white balance to render under.
+/// A rectangle of the image in normalised coordinates: (0,0) is the top-left
+/// of the oriented frame and (1,1) the bottom-right.
+///
+/// Normalised rather than in pixels so a caller can ask for "the middle of
+/// the picture" without first learning how many pixels the sensor has, and so
+/// the same region means the same thing at preview and full resolution.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Region {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Region {
+    /// The whole frame.
+    pub const FULL: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0,
+    };
+
+    pub fn is_full(&self) -> bool {
+        *self == Self::FULL
+    }
+
+    /// Clamped to the frame, and never empty.
+    pub fn clamped(&self) -> Self {
+        let x = self.x.clamp(0.0, 1.0);
+        let y = self.y.clamp(0.0, 1.0);
+        Self {
+            x,
+            y,
+            width: self.width.clamp(f32::EPSILON, 1.0 - x),
+            height: self.height.clamp(f32::EPSILON, 1.0 - y),
+        }
+    }
+
+    /// Pixel rect within an image of this size: (x, y, width, height), with
+    /// width and height at least one pixel.
+    pub fn to_pixels(&self, width: u32, height: u32) -> (u32, u32, u32, u32) {
+        let r = self.clamped();
+        let px = (r.x * width as f32).round() as u32;
+        let py = (r.y * height as f32).round() as u32;
+        let pw = ((r.width * width as f32).round() as u32).clamp(1, width.saturating_sub(px).max(1));
+        let ph =
+            ((r.height * height as f32).round() as u32).clamp(1, height.saturating_sub(py).max(1));
+        (px.min(width - 1), py.min(height - 1), pw, ph)
+    }
+}
+
+/// What the caller wants back: which part of the image, how big, and under
+/// what white balance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderRequest {
     /// Longest output edge in pixels; the plugin never upscales past native.
     pub max_edge: u32,
     pub white_balance: WhiteBalance,
+    /// Which part of the frame to render. Rendering a crop is what makes
+    /// inspecting a 24 MP file at 1:1 affordable — only the visible part is
+    /// ever developed.
+    pub region: Region,
 }
 
 #[derive(Debug)]
@@ -94,6 +150,17 @@ pub trait SceneImage: Send + Sync {
     /// point the UI shows before the user touches anything.
     fn as_shot(&self) -> WhiteBalance;
     fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError>;
+    /// The white balance that renders the point at normalised (x, y) neutral
+    /// — the eyedropper.
+    ///
+    /// Part of the contract rather than a free function so a plugin whose
+    /// decoder can answer this natively is free to. Neither current plugin
+    /// can — Core Image exposes a `neutralLocation` property that measurably
+    /// does nothing to the derived temperature and tint — so both delegate to
+    /// [`neutral_by_measurement`], which develops a small patch and solves
+    /// for the balance that greys it.
+    fn neutral_at(&self, x: f32, y: f32, current: WhiteBalance)
+        -> Result<WhiteBalance, SceneError>;
 }
 
 /// A develop-capable format. Registering one is how a new RAW format (or a
@@ -141,6 +208,37 @@ impl SceneRegistry {
     pub fn supports(&self, ext: &str) -> bool {
         self.formats.iter().any(|f| f.probe(ext, &[]))
     }
+}
+
+/// Eyedropper by measurement: develop a small patch around the point under
+/// the current balance, then solve for the balance that would render it grey.
+///
+/// The shared implementation of [`SceneImage::neutral_at`]. Averaging a patch
+/// rather than sampling one pixel matters — a single pixel of a photograph is
+/// substantially noise, and the user is pointing at a surface.
+pub fn neutral_by_measurement(
+    scene: &dyn SceneImage,
+    x: f32,
+    y: f32,
+    current: WhiteBalance,
+) -> Result<WhiteBalance, SceneError> {
+    const PATCH: f32 = 0.01;
+    let sampled = scene.render(RenderRequest {
+        max_edge: 1,
+        white_balance: current,
+        region: Region {
+            x: x - PATCH / 2.0,
+            y: y - PATCH / 2.0,
+            width: PATCH,
+            height: PATCH,
+        },
+    })?;
+    let rgb = [
+        *sampled.rgb.first().unwrap_or(&0.0),
+        *sampled.rgb.get(1).unwrap_or(&0.0),
+        *sampled.rgb.get(2).unwrap_or(&0.0),
+    ];
+    Ok(white_balance_for_sample(current, rgb))
 }
 
 fn read_magic(path: &Path) -> Result<Vec<u8>, SceneError> {
@@ -230,6 +328,75 @@ pub fn white_balance_gains(from: WhiteBalance, to: WhiteBalance) -> [f32; 3] {
     [gains[0] / norm, gains[1] / norm, gains[2] / norm]
 }
 
+/// White balance that would render `sample` neutral, given that `sample` was
+/// measured under `current`.
+///
+/// This is the eyedropper: the user says "this patch is grey", and the answer
+/// is the temperature and tint that make it so. Solved by search rather than
+/// algebra because the map from temperature to channel gains runs through two
+/// different loci and has no useful closed-form inverse — but it is a smooth
+/// 1-D problem over a bounded range, so a coarse-then-fine sweep lands within
+/// a few kelvin for a fraction of the cost of one render.
+pub fn white_balance_for_sample(current: WhiteBalance, sample: [f32; 3]) -> WhiteBalance {
+    // What the sample needs multiplying by to become neutral, on top of
+    // whatever the current setting already applies.
+    let mid = (sample[0] + sample[1] + sample[2]) / 3.0;
+    if !mid.is_finite() || mid <= 1e-6 {
+        return current; // black or nonsense: nothing to balance against
+    }
+    let wanted = [
+        safe_ratio(mid, sample[0]),
+        safe_ratio(mid, sample[1]),
+        safe_ratio(mid, sample[2]),
+    ];
+    // Gains are scale-free (green-normalised), so compare red-vs-blue only.
+    let target = safe_ratio(wanted[0], wanted[2]);
+
+    let error_at = |temperature: f32| {
+        let g = white_balance_gains(
+            current,
+            WhiteBalance {
+                temperature,
+                tint: current.tint,
+            },
+        );
+        (safe_ratio(g[0], g[2]) / target).ln().abs()
+    };
+
+    let mut best = current.temperature;
+    let mut best_error = f32::MAX;
+    let mut lo = 1667.0f32;
+    let mut hi = 25000.0f32;
+    for _ in 0..4 {
+        let step = (hi - lo) / 24.0;
+        let mut t = lo;
+        while t <= hi {
+            let e = error_at(t);
+            if e < best_error {
+                best_error = e;
+                best = t;
+            }
+            t += step;
+        }
+        lo = (best - step).max(1667.0);
+        hi = (best + step).min(25000.0);
+    }
+
+    // Temperature only moves red against blue, so whatever green cast is
+    // left over is exactly what tint is for. Gains are green-normalised, so
+    // the leftover is green measured against the red/blue average.
+    let residual_green = safe_ratio(wanted[1], (wanted[0] * wanted[2]).sqrt());
+    // Tint divides green by (1 + tint/150); needing `residual_green` more
+    // green therefore means moving tint by 150 * (1/residual - 1).
+    let delta_tint = 150.0 * (1.0 / residual_green - 1.0);
+    let tint = (current.tint + delta_tint).clamp(-150.0, 150.0);
+
+    WhiteBalance {
+        temperature: best,
+        tint,
+    }
+}
+
 fn safe_ratio(num: f32, den: f32) -> f32 {
     if den.abs() < 1e-6 {
         1.0
@@ -259,6 +426,58 @@ pub fn linear_to_srgb(v: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_region_covers_the_whole_frame() {
+        assert!(Region::FULL.is_full());
+        assert_eq!(Region::FULL.to_pixels(100, 50), (0, 0, 100, 50));
+    }
+
+    #[test]
+    fn region_maps_to_pixels() {
+        let middle = Region {
+            x: 0.25,
+            y: 0.5,
+            width: 0.5,
+            height: 0.25,
+        };
+        assert_eq!(middle.to_pixels(400, 200), (100, 100, 200, 50));
+    }
+
+    #[test]
+    fn region_clamps_to_the_frame_and_never_empties() {
+        let overhanging = Region {
+            x: 0.8,
+            y: 0.9,
+            width: 0.5,
+            height: 0.5,
+        };
+        let (x, y, w, h) = overhanging.to_pixels(100, 100);
+        assert!(x + w <= 100 && y + h <= 100, "stays inside: {x} {y} {w} {h}");
+        assert!(w >= 1 && h >= 1);
+
+        let negative = Region {
+            x: -1.0,
+            y: -1.0,
+            width: 0.2,
+            height: 0.2,
+        };
+        let (x, y, w, h) = negative.to_pixels(100, 100);
+        assert_eq!((x, y), (0, 0));
+        assert!(w >= 1 && h >= 1);
+    }
+
+    #[test]
+    fn a_degenerate_region_still_yields_a_pixel() {
+        let sliver = Region {
+            x: 0.5,
+            y: 0.5,
+            width: 0.0,
+            height: 0.0,
+        };
+        let (_, _, w, h) = sliver.to_pixels(100, 100);
+        assert_eq!((w, h), (1, 1));
+    }
 
     #[test]
     fn transfer_functions_round_trip() {
@@ -320,6 +539,90 @@ mod tests {
         // Green normalised to 1; magenta means red and blue rise above it.
         assert!((gains[1] - 1.0).abs() < 1e-5);
         assert!(gains[0] > 1.0 && gains[2] > 1.0, "{gains:?}");
+    }
+
+    #[test]
+    fn picking_an_already_neutral_patch_changes_nothing() {
+        let current = WhiteBalance {
+            temperature: 5300.0,
+            tint: 12.0,
+        };
+        let picked = white_balance_for_sample(current, [0.4, 0.4, 0.4]);
+        assert!(
+            (picked.temperature - current.temperature).abs() < 400.0,
+            "temperature held: {picked:?}"
+        );
+        assert!((picked.tint - current.tint).abs() < 5.0, "tint held: {picked:?}");
+    }
+
+    #[test]
+    fn picking_a_blue_patch_warms_the_render() {
+        // The patch came out blue, so the render is too cool for the light
+        // that was really there; neutralising it means warming up. Raising
+        // the temperature is what warms, per `raising_temperature_warms_the_image`.
+        let current = WhiteBalance::D65;
+        let picked = white_balance_for_sample(current, [0.20, 0.30, 0.50]);
+        assert!(
+            picked.temperature > current.temperature,
+            "expected a warmer setting, got {picked:?}"
+        );
+    }
+
+    #[test]
+    fn picking_an_orange_patch_cools_the_render() {
+        let current = WhiteBalance::D65;
+        let picked = white_balance_for_sample(current, [0.50, 0.30, 0.18]);
+        assert!(
+            picked.temperature < current.temperature,
+            "expected a cooler setting, got {picked:?}"
+        );
+    }
+
+    #[test]
+    fn picking_a_green_patch_moves_tint_towards_magenta() {
+        let picked = white_balance_for_sample(WhiteBalance::D65, [0.30, 0.45, 0.30]);
+        assert!(picked.tint > 0.0, "green cast needs magenta: {picked:?}");
+    }
+
+    #[test]
+    fn a_picked_balance_actually_neutralises_the_patch() {
+        // The property that matters: applying the answer to the sample should
+        // bring its channels together.
+        let current = WhiteBalance::D65;
+        for sample in [[0.5, 0.3, 0.18], [0.2, 0.3, 0.5], [0.35, 0.3, 0.28]] {
+            let picked = white_balance_for_sample(current, sample);
+            let gains = white_balance_gains(current, picked);
+            let after = [
+                sample[0] * gains[0],
+                sample[1] * gains[1],
+                sample[2] * gains[2],
+            ];
+            let spread_before = spread(sample);
+            let spread_after = spread(after);
+            assert!(
+                spread_after < spread_before * 0.5,
+                "{sample:?} → {after:?} (picked {picked:?})"
+            );
+        }
+    }
+
+    fn spread(rgb: [f32; 3]) -> f32 {
+        let max = rgb[0].max(rgb[1]).max(rgb[2]);
+        let min = rgb[0].min(rgb[1]).min(rgb[2]);
+        (max - min) / max.max(1e-6)
+    }
+
+    #[test]
+    fn picking_black_or_nonsense_leaves_the_setting_alone() {
+        let current = WhiteBalance {
+            temperature: 4800.0,
+            tint: 3.0,
+        };
+        assert_eq!(white_balance_for_sample(current, [0.0, 0.0, 0.0]), current);
+        assert_eq!(
+            white_balance_for_sample(current, [f32::NAN, 0.0, 0.0]),
+            current
+        );
     }
 
     #[test]

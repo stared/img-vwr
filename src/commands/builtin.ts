@@ -77,12 +77,36 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "gallery.darkroom",
+    title: "Toggle Darkroom View",
+    keywords: ["develop", "edit", "filmstrip", "lightroom", "grid"],
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    menus: [],
+    run: ({ store }) => {
+      const { galleryLayout, setGalleryLayout } = store.getState();
+      setGalleryLayout(galleryLayout === "darkroom" ? "grid" : "darkroom");
+    },
+  });
+
+  registerCommand({
     id: "viewer.open",
     title: "Open Image",
     keywords: ["view", "show"],
     menus: [{ menu: "image", submenu: null, label: "Open Image" }],
-    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-    run: ({ store }) => store.getState().openViewer(store.getState().selectedIndex),
+    when: (ctx) => ctx.store.getState().selectedIndex !== null && !inViewer(ctx),
+    run: ({ store }) => {
+      const { selectedIndex, openViewer } = store.getState();
+      if (selectedIndex !== null) openViewer(selectedIndex);
+    },
+  });
+
+  registerCommand({
+    id: "selection.clear",
+    title: "Clear Selection",
+    keywords: ["deselect", "escape", "none"],
+    menus: [],
+    when: (ctx) => ctx.store.getState().selectedIndex !== null,
+    run: ({ store }) => store.getState().select(null),
   });
 
   registerCommand({

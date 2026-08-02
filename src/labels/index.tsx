@@ -20,6 +20,7 @@ import { useAppStore, visibleOf } from "../state/store";
 /** The image the keys act on: the selected one in the query-applied view. */
 function selectedEntry(): FileEntry | null {
   const s = useAppStore.getState();
+  if (s.selectedIndex === null) return null;
   return visibleOf(s, s.query)[s.selectedIndex] ?? null;
 }
 

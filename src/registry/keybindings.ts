@@ -2,6 +2,14 @@
  * Keybinding layer: chord string → command id, resolved by one global
  * keydown handler. "mod" is ⌘ on macOS (mapped to metaKey) — a future
  * user/plugin keymap merges over `defaultKeybindings`.
+ *
+ * A chord may be bound more than once. The handler tries each binding in
+ * order and runs the first whose command is applicable, so one key can mean
+ * different things in different contexts — Escape leaves the viewer when
+ * there is a viewer to leave, and otherwise clears the selection. This is
+ * why the table is a list rather than a map: a map could hold only one
+ * meaning per key, and layering a plugin keymap over it would silently
+ * discard the built-in fallbacks.
  */
 
 export interface Chord {
@@ -33,7 +41,10 @@ export function eventMatchesChord(e: KeyboardEvent, chord: Chord): boolean {
   );
 }
 
-export const defaultKeybindings: ReadonlyMap<string, string> = new Map([
+/** One chord bound to one command; order decides which wins. */
+export type Keybinding = readonly [chord: string, commandId: string];
+
+export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+k", "palette.open"],
   ["mod+p", "palette.open"],
   ["mod+o", "folder.open"],
@@ -45,6 +56,8 @@ export const defaultKeybindings: ReadonlyMap<string, string> = new Map([
   ["arrowleft", "image.prev"],
   ["enter", "viewer.open"],
   ["escape", "viewer.close"],
+  // Falls through when there is no viewer to close.
+  ["escape", "selection.clear"],
   ["=", "viewer.zoomIn"],
   ["+", "viewer.zoomIn"],
   ["-", "viewer.zoomOut"],
@@ -58,27 +71,28 @@ export const defaultKeybindings: ReadonlyMap<string, string> = new Map([
   ["4", "labels.stars.4"],
   ["5", "labels.stars.5"],
   ["t", "labels.tag"],
-]);
+];
 
-/** First binding whose chord matches the event, or null. */
-export function commandForEvent(
+/**
+ * Every command bound to this event, in table order. The caller runs the
+ * first one that is applicable — resolving context is the command registry's
+ * job (`when`), not this layer's.
+ */
+export function commandsForEvent(
   e: KeyboardEvent,
-  bindings: ReadonlyMap<string, string> = defaultKeybindings,
-): string | null {
-  for (const [spec, commandId] of bindings) {
-    if (eventMatchesChord(e, parseChord(spec))) {
-      return commandId;
-    }
-  }
-  return null;
+  bindings: readonly Keybinding[] = defaultKeybindings,
+): string[] {
+  return bindings
+    .filter(([spec]) => eventMatchesChord(e, parseChord(spec)))
+    .map(([, commandId]) => commandId);
 }
 
 /** Chords bound to a command, for display in the palette ("⌘K"). */
 export function chordsForCommand(
   commandId: string,
-  bindings: ReadonlyMap<string, string> = defaultKeybindings,
+  bindings: readonly Keybinding[] = defaultKeybindings,
 ): string[] {
-  return [...bindings.entries()].filter(([, id]) => id === commandId).map(([spec]) => spec);
+  return bindings.filter(([, id]) => id === commandId).map(([spec]) => spec);
 }
 
 export function formatChord(spec: string): string {

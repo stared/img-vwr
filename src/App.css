@@ -6,6 +6,12 @@
   --text: #e6e7ea;
   --text-dim: #8a8d94;
   --accent: #5e6ad2;
+  /* Quieter members of the same family, for chrome that should recede:
+     hairlines, secondary labels, and controls that are merely available. */
+  --accent-muted: #6a74c9;
+  --accent-text: #9aa3ea;
+  --border-faint: #1e1f24;
+  --text-faint: #6b6e76;
   --danger: #e5534b;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1150,7 +1156,8 @@ button.stats-row:hover .stats-label {
   flex-direction: column;
 }
 
-.tl-toolbar {
+.tl-toolbar,
+.gallery-toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1158,7 +1165,8 @@ button.stats-row:hover .stats-label {
   border-bottom: 1px solid var(--border);
 }
 
-.tl-toolbar button {
+.tl-toolbar button,
+.gallery-toolbar button {
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--border);
@@ -1169,12 +1177,14 @@ button.stats-row:hover .stats-label {
   cursor: pointer;
 }
 
-.tl-toolbar button:hover {
+.tl-toolbar button:hover,
+.gallery-toolbar button:hover {
   border-color: var(--accent);
 }
 
 /* Photo size: presentation only — sliding never moves the time window. */
-.tl-size {
+.tl-size,
+.gallery-size {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1434,4 +1444,178 @@ button.stats-row:hover .stats-label {
 
 .sidebar.right > .sidebar-panel:not(.fill) {
   flex-shrink: 0;
+}
+
+/* ---- Darkroom ---- */
+
+.darkroom {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The canvas takes whatever the filmstrip leaves. */
+.darkroom > .viewer-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.filmstrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid var(--border);
+}
+
+.filmstrip-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.filmstrip-cell:hover {
+  border-color: var(--border);
+}
+
+.filmstrip-cell.selected {
+  border-color: var(--accent);
+}
+
+.filmstrip-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.filmstrip-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+/* The 1:1 detail crop sits over the preview it refines; no transform, it is
+   already positioned and sized in screen pixels. */
+.viewer-detail {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* ---- Right-panel refinements ---- */
+
+/* Linear's restraint: one quiet type size, hairline rules, colour reserved
+   for the one thing that changed. Section headings recede to near-invisible
+   and the values carry the meaning. */
+.sidebar.right .stats-section-header,
+.sidebar.right .panel-toggle,
+.develop-group h4 {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.develop-group {
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.develop-group:last-child {
+  border-bottom: none;
+}
+
+.develop-status {
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.develop-slider {
+  padding: 3px 10px 5px;
+}
+
+.develop-slider-head {
+  padding-bottom: 2px;
+}
+
+.develop-slider-label,
+.develop-note,
+.develop-clipping {
+  color: var(--text-faint);
+}
+
+/* A slider at its neutral position should look inert; the moment it is not,
+   the number brightens. That contrast is the whole readout. */
+.develop-slider-value {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.develop-slider-value.changed {
+  color: var(--text);
+}
+
+/* Thinner track, smaller thumb — closer to Linear's density. */
+.develop-slider input[type="range"] {
+  height: 12px;
+  accent-color: var(--accent-muted);
+}
+
+.develop-reset,
+.develop-toggle {
+  height: 22px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  border-color: var(--border-faint);
+  border-radius: 5px;
+  font-size: 11px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.develop-reset:hover:not(:disabled),
+.develop-toggle:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Armed states are the one place colour is spent. */
+.develop-toggle.armed {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.viewer-canvas.picking,
+.viewer-canvas.picking img {
+  cursor: crosshair;
+}
+
+.develop-note {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.develop-histogram {
+  padding: 6px 10px 0;
+}
+
+.develop-histogram .info-canvas {
+  width: 100%;
+  margin: 0;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.develop-clipping {
+  padding: 3px 0 6px;
+  font-size: 10px;
 }

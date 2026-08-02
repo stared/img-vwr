@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use imgvwr_core::{SceneError, SceneImage, SceneRegistry, WhiteBalance};
+use imgvwr_core::{Region, SceneError, SceneImage, SceneRegistry, WhiteBalance};
 use imgvwr_develop::{DevelopParams, DevelopSettings, Histogram, Overlay};
 use rusqlite::Connection;
 use serde::Serialize;
@@ -55,6 +55,13 @@ pub struct DevelopFrame {
     pub width: u32,
     pub height: u32,
     pub histogram: Histogram,
+    /// The part of the frame these pixels cover, normalised. A full-frame
+    /// preview reports the unit rect; a 1:1 detail render reports the crop it
+    /// developed, so the viewer knows where to place it.
+    pub region_x: f32,
+    pub region_y: f32,
+    pub region_width: f32,
+    pub region_height: f32,
 }
 
 struct OpenScene {
@@ -157,10 +164,12 @@ impl DevelopService {
         settings: &DevelopSettings,
         max_edge: u32,
         overlay: Overlay,
+        region: Region,
     ) -> Result<DevelopFrame, String> {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
-        let developed = imgvwr_develop::render(entry.scene.as_ref(), settings, max_edge, overlay)
-            .map_err(|e| e.to_string())?;
+        let developed =
+            imgvwr_develop::render(entry.scene.as_ref(), settings, max_edge, overlay, region)
+                .map_err(|e| e.to_string())?;
 
         let jpeg = encode_jpeg(&developed.image, PREVIEW_QUALITY)?;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
@@ -172,12 +181,32 @@ impl DevelopService {
             }
         }
 
+        let region = region.clamped();
         Ok(DevelopFrame {
             token,
             width: developed.image.width,
             height: developed.image.height,
             histogram: developed.histogram,
+            region_x: region.x,
+            region_y: region.y,
+            region_width: region.width,
+            region_height: region.height,
         })
+    }
+
+    /// White balance that renders the point at normalised (x, y) neutral.
+    pub fn pick_white_balance(
+        &self,
+        path: &str,
+        x: f32,
+        y: f32,
+        current: WhiteBalance,
+    ) -> Result<WhiteBalance, String> {
+        let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+        entry
+            .scene
+            .neutral_at(x, y, current)
+            .map_err(|e| e.to_string())
     }
 
     /// Encoded bytes for a token, for the `develop:` protocol handler. Frames
@@ -201,7 +230,13 @@ impl DevelopService {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
         let (w, h) = entry.scene.native_size();
         let developed =
-            imgvwr_develop::render(entry.scene.as_ref(), settings, w.max(h), Overlay::None)
+            imgvwr_develop::render(
+                entry.scene.as_ref(),
+                settings,
+                w.max(h),
+                Overlay::None,
+                Region::FULL,
+            )
                 .map_err(|e| e.to_string())?;
 
         let img = image::RgbaImage::from_raw(
@@ -341,8 +376,9 @@ pub fn thumbnail_via_develop(
 ) -> Result<Vec<u8>, String> {
     let scene = registry.open(path).map_err(|e| e.to_string())?;
     let settings = DevelopSettings::neutral(scene.as_shot());
-    let developed = imgvwr_develop::render(scene.as_ref(), &settings, max_edge, Overlay::None)
-        .map_err(|e| e.to_string())?;
+    let developed =
+        imgvwr_develop::render(scene.as_ref(), &settings, max_edge, Overlay::None, Region::FULL)
+            .map_err(|e| e.to_string())?;
     let img = &developed.image;
     webp::Encoder::from_rgba(&img.rgba, img.width, img.height)
         .encode_simple(false, imgvwr_core::thumbs::THUMB_WEBP_QUALITY)
@@ -504,6 +540,7 @@ mod tests {
                 &DevelopSettings::neutral(WhiteBalance::D65),
                 30,
                 Overlay::None,
+                Region::FULL,
             )
             .unwrap();
         assert_eq!((frame.width, frame.height), (30, 20));
@@ -522,8 +559,8 @@ mod tests {
         let path = path.to_str().unwrap();
         let neutral = DevelopSettings::neutral(WhiteBalance::D65);
 
-        let first = svc.render(path, &neutral, 30, Overlay::None).unwrap();
-        let second = svc.render(path, &neutral, 30, Overlay::None).unwrap();
+        let first = svc.render(path, &neutral, 30, Overlay::None, Region::FULL).unwrap();
+        let second = svc.render(path, &neutral, 30, Overlay::None, Region::FULL).unwrap();
         assert_ne!(first.token, second.token);
     }
 
@@ -547,6 +584,7 @@ mod tests {
                     },
                     30,
                     Overlay::None,
+                    Region::FULL,
                 )
                 .unwrap();
             tokens.push(frame.token);
