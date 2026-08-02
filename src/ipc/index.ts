@@ -15,6 +15,7 @@ import type {
   ImageStats,
   MetaEntry,
   Overlay,
+  Preset,
   RegionArg,
   Result,
   SimilarityScore,
@@ -36,6 +37,7 @@ export type {
   ImageStats,
   MetaEntry,
   Overlay,
+  Preset,
   RegionArg,
   SimilarityScore,
   WhiteBalance,
@@ -130,6 +132,11 @@ export async function labelsToggleTag(path: string, tag: string): Promise<ImageL
 /** Open an image for editing. Slow on a raw file's first call. */
 export async function developState(path: string): Promise<DevelopState> {
   return unwrap(await commands.developState(path));
+}
+
+/** The named starting points an edit can be set to. Fixed for a session. */
+export async function developPresets(): Promise<Preset[]> {
+  return unwrap(await commands.developPresets());
 }
 
 /** Render a preview; the pixels are then loaded from `developFrameUrl`. */

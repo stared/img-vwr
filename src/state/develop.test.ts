@@ -6,11 +6,16 @@ import {
   isNeutral,
   needsDetail,
   needsDevelopedFrame,
+  nextPreset,
+  PARAM_KEYS,
+  PARAM_SPECS,
+  presetOf,
   previewEdge,
   regionsDiffer,
   visibleRegion,
   type Session,
 } from "./develop";
+import type { Preset } from "../ipc";
 
 const asShot = { temperature: 5313.8, tint: 15.6 };
 
@@ -23,6 +28,7 @@ const neutralSettings: DevelopSettings = {
     shadows: 0,
     whites: 0,
     blacks: 0,
+    rolloff: 0,
     vibrance: 0,
     saturation: 0,
   },
@@ -199,5 +205,57 @@ describe("regionsDiffer", () => {
   it("notices a real move", () => {
     expect(regionsDiffer(base, { ...base, x: 0.4 })).toBe(true);
     expect(regionsDiffer(base, { ...base, width: 0.5 })).toBe(true);
+  });
+});
+
+describe("presets", () => {
+  const flat: Preset = {
+    id: "flat",
+    label: "flat",
+    note: "no look",
+    params: neutralSettings.params,
+  };
+  const nikon: Preset = {
+    id: "nikon",
+    label: "nikon",
+    note: "camera look",
+    params: { ...neutralSettings.params, exposure: 0.8, contrast: 36, rolloff: 83 },
+  };
+  const catalog = [flat, nikon];
+
+  it("names the preset the sliders are currently sitting on", () => {
+    expect(presetOf(nikon.params, catalog)?.id).toBe("nikon");
+    expect(presetOf(flat.params, catalog)?.id).toBe("flat");
+  });
+
+  it("names nothing once a slider has moved off one", () => {
+    expect(presetOf({ ...nikon.params, shadows: -12 }, catalog)).toBeNull();
+  });
+
+  it("cycles, and enters at the first preset from a custom edit", () => {
+    expect(nextPreset(flat, catalog)?.id).toBe("nikon");
+    expect(nextPreset(nikon, catalog)?.id).toBe("flat");
+    expect(nextPreset(null, catalog)?.id).toBe("flat");
+  });
+
+  it("has nothing to move to when the catalog has not arrived", () => {
+    expect(nextPreset(null, [])).toBeNull();
+  });
+});
+
+describe("the slider list", () => {
+  // Two lists that have to agree: one drives the panel, the other drives every
+  // comparison against a preset. A slider present in one and not the other
+  // would be invisible to exactly one of them.
+  it("covers every parameter exactly once", () => {
+    expect(PARAM_SPECS.map((s) => s.key)).toEqual([...PARAM_KEYS]);
+  });
+
+  it("gives every slider a range that contains its neutral value", () => {
+    for (const spec of PARAM_SPECS) {
+      expect(spec.min).toBeLessThan(spec.max);
+      expect(spec.min).toBeLessThanOrEqual(0);
+      expect(spec.max).toBeGreaterThanOrEqual(0);
+    }
   });
 });

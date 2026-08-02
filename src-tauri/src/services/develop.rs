@@ -97,6 +97,20 @@ impl DevelopService {
                  saturation  REAL NOT NULL
              ) STRICT;",
         )?;
+        // Added after the first release, so existing databases need it. The
+        // default is the value that means "no shoulder", which is exactly what
+        // rows written before it existed were rendered with — an old edit
+        // keeps looking the way its author left it.
+        if let Err(e) = conn.execute(
+            "ALTER TABLE develop ADD COLUMN rolloff REAL NOT NULL DEFAULT 0",
+            [],
+        ) {
+            // Already there on every run but the first.
+            let expected = e.to_string().contains("duplicate column name");
+            if !expected {
+                return Err(e);
+            }
+        }
         Ok(Self {
             registry,
             open: Mutex::new(VecDeque::new()),
@@ -144,11 +158,20 @@ impl DevelopService {
         let (width, height) = entry.scene.native_size();
         let as_shot = entry.scene.as_shot();
         let stored = self.stored_settings(path)?;
+        // An image nobody has edited still has to start somewhere, and for
+        // sensor data that is not "flat": the camera would have applied a
+        // curve before showing it to anyone, so the pipeline does too. The
+        // plugin says which kind of pixels these are; nothing here asks about
+        // file formats.
+        let opening = DevelopSettings {
+            white_balance: as_shot,
+            params: imgvwr_develop::opening_params(entry.scene.rendering()),
+        };
         Ok(DevelopState {
             width,
             height,
             as_shot,
-            settings: stored.unwrap_or_else(|| DevelopSettings::neutral(as_shot)),
+            settings: stored.unwrap_or(opening),
             edited: stored.is_some(),
             // A RAW file has no decoder in the webview; anything the codec
             // registry handles can be shown directly and only needs the
@@ -268,7 +291,7 @@ impl DevelopService {
         let mut stmt = conn
             .prepare(
                 "SELECT temperature, tint, exposure, contrast, highlights, shadows,
-                        whites, blacks, vibrance, saturation
+                        whites, blacks, rolloff, vibrance, saturation
                  FROM develop WHERE path = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -286,8 +309,9 @@ impl DevelopService {
                         shadows: row.get::<_, f64>(5)? as f32,
                         whites: row.get::<_, f64>(6)? as f32,
                         blacks: row.get::<_, f64>(7)? as f32,
-                        vibrance: row.get::<_, f64>(8)? as f32,
-                        saturation: row.get::<_, f64>(9)? as f32,
+                        rolloff: row.get::<_, f64>(8)? as f32,
+                        vibrance: row.get::<_, f64>(9)? as f32,
+                        saturation: row.get::<_, f64>(10)? as f32,
                     },
                 })
             })
@@ -306,13 +330,14 @@ impl DevelopService {
         conn.execute(
             "INSERT INTO develop
                  (path, temperature, tint, exposure, contrast, highlights,
-                  shadows, whites, blacks, vibrance, saturation)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                  shadows, whites, blacks, rolloff, vibrance, saturation)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(path) DO UPDATE SET
                  temperature = excluded.temperature, tint = excluded.tint,
                  exposure = excluded.exposure, contrast = excluded.contrast,
                  highlights = excluded.highlights, shadows = excluded.shadows,
                  whites = excluded.whites, blacks = excluded.blacks,
+                 rolloff = excluded.rolloff,
                  vibrance = excluded.vibrance, saturation = excluded.saturation",
             rusqlite::params![
                 path,
@@ -324,6 +349,7 @@ impl DevelopService {
                 f64::from(s.params.shadows),
                 f64::from(s.params.whites),
                 f64::from(s.params.blacks),
+                f64::from(s.params.rolloff),
                 f64::from(s.params.vibrance),
                 f64::from(s.params.saturation),
             ],
@@ -375,7 +401,14 @@ pub fn thumbnail_via_develop(
     max_edge: u32,
 ) -> Result<Vec<u8>, String> {
     let scene = registry.open(path).map_err(|e| e.to_string())?;
-    let settings = DevelopSettings::neutral(scene.as_shot());
+    // The same look the viewer will open it with, so the grid does not
+    // disagree with the picture it leads to. Stored edits are deliberately not
+    // consulted: a thumbnail is a cheap index entry, and reading the database
+    // once per cell would make scrolling a folder a database scan.
+    let settings = DevelopSettings {
+        white_balance: scene.as_shot(),
+        params: imgvwr_develop::opening_params(scene.rendering()),
+    };
     let developed =
         imgvwr_develop::render(scene.as_ref(), &settings, max_edge, Overlay::None, Region::FULL)
             .map_err(|e| e.to_string())?;
@@ -432,6 +465,74 @@ mod tests {
         (dir, svc)
     }
 
+    /// A stand-in for a raw plugin: sensor-like pixels that still want a look
+    /// chosen. Lets the "what does an untouched image open as" rule be tested
+    /// without a raw file, a platform decoder, or two seconds of demosaicing.
+    struct SensorFormat;
+
+    struct SensorScene;
+
+    impl imgvwr_core::SceneFormat for SensorFormat {
+        fn id(&self) -> &'static str {
+            "test-sensor"
+        }
+
+        fn probe(&self, ext: &str, _magic: &[u8]) -> bool {
+            ext == "sensor"
+        }
+
+        fn open(&self, _path: &Path) -> Result<Box<dyn imgvwr_core::SceneImage>, SceneError> {
+            Ok(Box::new(SensorScene))
+        }
+    }
+
+    impl imgvwr_core::SceneImage for SensorScene {
+        fn native_size(&self) -> (u32, u32) {
+            (4, 4)
+        }
+
+        fn rendering(&self) -> imgvwr_core::Rendering {
+            imgvwr_core::Rendering::SceneReferred
+        }
+
+        fn as_shot(&self) -> WhiteBalance {
+            WhiteBalance {
+                temperature: 4800.0,
+                tint: 8.0,
+            }
+        }
+
+        fn render(
+            &self,
+            _req: imgvwr_core::RenderRequest,
+        ) -> Result<imgvwr_core::LinearImage, SceneError> {
+            Ok(imgvwr_core::LinearImage {
+                width: 2,
+                height: 2,
+                rgb: vec![0.2; 12],
+            })
+        }
+
+        fn neutral_at(
+            &self,
+            _x: f32,
+            _y: f32,
+            current: WhiteBalance,
+        ) -> Result<WhiteBalance, SceneError> {
+            Ok(current)
+        }
+    }
+
+    fn service_with_sensor() -> (tempfile::TempDir, DevelopService) {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Arc::new(SceneRegistry::new(vec![
+            Arc::new(SensorFormat),
+            Arc::new(imgvwr_core::ImageCrateFormat::new()),
+        ]));
+        let svc = DevelopService::new(registry, &dir.path().join("develop.db")).unwrap();
+        (dir, svc)
+    }
+
     fn sample(dir: &Path, name: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
@@ -456,6 +557,61 @@ mod tests {
         assert_eq!(parse_frame_token("/"), None);
         assert_eq!(parse_frame_token(""), None);
         assert_eq!(parse_frame_token("/frame/7/"), Some(7));
+    }
+
+    #[test]
+    fn sensor_pixels_open_with_a_look_and_a_rendered_file_opens_untouched() {
+        let (dir, svc) = service_with_sensor();
+
+        // Nothing is stored for either, so both report their opening state.
+        let raw_like = dir.path().join("frame.sensor");
+        std::fs::write(&raw_like, b"pretend sensor data").unwrap();
+        let opened = svc.state(raw_like.to_str().unwrap()).unwrap();
+        assert!(
+            !opened.settings.params.is_identity(),
+            "a flat decode should open with the default look, not flat"
+        );
+        assert!(!opened.edited, "opening with a look is not an edit");
+        // The look is tone and colour only; the balance stays the camera's.
+        assert_eq!(opened.settings.white_balance, opened.as_shot);
+
+        let rendered = sample(dir.path(), "already.png");
+        let untouched = svc.state(rendered.to_str().unwrap()).unwrap();
+        assert!(
+            untouched.settings.params.is_identity(),
+            "a finished JPEG already has somebody's look; applying one would double it"
+        );
+    }
+
+    #[test]
+    fn a_stored_edit_beats_the_opening_look() {
+        let (dir, svc) = service_with_sensor();
+        let raw_like = dir.path().join("frame.sensor");
+        std::fs::write(&raw_like, b"pretend sensor data").unwrap();
+        let path = raw_like.to_str().unwrap();
+
+        let mine = DevelopSettings {
+            white_balance: WhiteBalance { temperature: 5200.0, tint: -3.0 },
+            params: DevelopParams { exposure: -0.4, ..Default::default() },
+        };
+        svc.save_settings(path, &mine).unwrap();
+
+        let state = svc.state(path).unwrap();
+        assert!(state.edited);
+        assert_eq!(state.settings, mine, "the default must not overwrite a real edit");
+    }
+
+    #[test]
+    fn the_roll_off_slider_survives_a_round_trip_through_the_database() {
+        let (dir, svc) = service();
+        let path = sample(dir.path(), "r.png");
+        let path = path.to_str().unwrap();
+        let settings = DevelopSettings {
+            white_balance: WhiteBalance { temperature: 6000.0, tint: 0.0 },
+            params: DevelopParams { rolloff: 83.0, ..Default::default() },
+        };
+        svc.save_settings(path, &settings).unwrap();
+        assert_eq!(svc.stored_settings(path).unwrap().unwrap().params.rolloff, 83.0);
     }
 
     #[test]

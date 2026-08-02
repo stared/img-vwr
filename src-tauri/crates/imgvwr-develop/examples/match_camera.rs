@@ -77,6 +77,24 @@ fn main() {
     report_fit("tone preset", &pairs, &preset, base);
     report_per_image(&pairs, &preset);
 
+    // The numbers this example produced are shipped in `presets.rs`, where
+    // nothing keeps them honest. So measure the shipped ones too: if they have
+    // drifted from what the files say, that is visible here rather than only
+    // in the pictures.
+    for shipped in imgvwr_develop::presets() {
+        let err = error(&pairs, &shipped.params);
+        let gap = err - error(&pairs, &preset);
+        println!(
+            "  shipped \"{}\": mean |Δ| {err:.2}{}",
+            shipped.id,
+            if gap > 0.1 && !shipped.params.is_identity() {
+                format!("  — {gap:.2} worse than a fresh fit, worth updating")
+            } else {
+                String::new()
+            }
+        );
+    }
+
     // The other half of a preset: white balance happens inside the decoder,
     // before demosaicing, so trying a different one means rendering again.
     //
@@ -106,9 +124,211 @@ fn main() {
         error(&pairs, &preset)
     );
 
+    println!("\n── the curve the camera actually applies ──");
+    report_camera_curve(&pairs);
+
+    println!("\n── is the camera just a curve? ──");
+    report_display_curve(&pairs);
+
+    // The ceiling for any tone control, and the same ceiling per frame. If one
+    // shared curve is far from the per-frame curves, the camera is deciding
+    // per shot and no preset can follow it; if they are close, the shape of
+    // the curve is the whole story.
+    let all: Vec<&Pair> = pairs.iter().collect();
+    let shared = fit_display_lut(&all);
+    println!(
+        "  best possible shared curve:   mean |Δ| {:.2}   (fitted preset: {:.2})",
+        error_through_lut(&all, &shared),
+        error(&pairs, &preset)
+    );
+    let per_frame: Vec<f64> = pairs
+        .par_iter()
+        .map(|pair| {
+            let one = [pair];
+            error_through_lut(&one, &fit_display_lut(&one))
+        })
+        .collect();
+    println!(
+        "  best possible per-frame curve: mean |Δ| {:.2}   — what no fixed preset can reach",
+        mean(&per_frame)
+    );
+
     println!("\n── where the preset still misses ──");
     report_transfer(&pairs, &preset);
     confirm_minimum(&pairs, &preset);
+}
+
+/// The camera's tone curve itself, at the resolution needed to see its shape
+/// rather than just its error — the input to designing a curve that can hold
+/// it, instead of sliders bent until they nearly do.
+///
+/// Reported as the gain the camera applies at each brightness: display-linear
+/// out over scene-linear in. A pipeline that only exposes and contrasts has a
+/// gain that is flat or a straight line in stops. Anything the camera does
+/// beyond that shows up here as curvature, and where it curves says which
+/// control is missing.
+fn report_camera_curve(pairs: &[Pair]) {
+    const LOW: f32 = -7.0;
+    const HIGH: f32 = 4.5;
+    const STEP: f32 = 0.5;
+    let bins = ((HIGH - LOW) / STEP) as usize + 1;
+    let mut samples: Vec<Vec<f32>> = (0..bins).map(|_| Vec::new()).collect();
+
+    for pair in pairs {
+        for i in interior(pair) {
+            let y = luma(&pair.scene.rgb[i * 3..i * 3 + 3]);
+            if y <= 1e-6 {
+                continue;
+            }
+            let stops = (y / imgvwr_develop::MID_GREY).log2();
+            if !(LOW..=HIGH).contains(&stops) {
+                continue;
+            }
+            let bin = ((stops - LOW) / STEP).round() as usize;
+            // The camera's own output, back in linear terms so it can be
+            // compared against the light that produced it.
+            let out = srgb_to_linear(luma_srgb(&pair.camera_srgb[i * 3..i * 3 + 3]) / 255.0);
+            samples[bin.min(bins - 1)].push(out / y);
+        }
+    }
+
+    println!("  scene light   gain camera applies   in stops   slope");
+    let mut previous: Option<(f32, f32)> = None;
+    for (bin, gains) in samples.iter_mut().enumerate() {
+        if gains.len() < 2000 {
+            continue;
+        }
+        let stops = LOW + bin as f32 * STEP;
+        let gain = median(gains);
+        let log_gain = gain.log2();
+        // How fast the gain is changing per stop. Constant slope is a power
+        // law — which is what a contrast control already is. Slope that moves
+        // is the part no combination of the current sliders can produce.
+        let slope = previous.map(|(s, g): (f32, f32)| (log_gain - g) / (stops - s));
+        println!(
+            "  {stops:+5.1} EV      ×{gain:6.3}            {log_gain:+6.2}     {}",
+            slope.map(|s| format!("{s:+.2}")).unwrap_or_else(|| "—".into())
+        );
+        previous = Some((stops, log_gain));
+    }
+}
+
+/// Is the camera just a curve?
+///
+/// The decisive question for what to build. If the camera's output is one
+/// monotone function of our neutral output — same input value, same answer,
+/// whatever the picture — then the whole difference is a single 1-D curve and
+/// the pipeline needs a control shaped like one. If instead the same input
+/// value maps all over the place, the camera is doing something local or
+/// per-scene that no curve can hold, and there is no point pretending.
+///
+/// So bin by our own neutral output and report how tightly the camera's answer
+/// clusters within each bin. A narrow spread means a curve; a wide one does
+/// not.
+fn report_display_curve(pairs: &[Pair]) {
+    const BINS: usize = 32;
+    let mut buckets: Vec<Vec<f32>> = (0..BINS).map(|_| Vec::new()).collect();
+
+    let neutral = DevelopParams::default();
+    for pair in pairs {
+        let ours = develop(&pair.scene, &neutral);
+        for i in interior(pair) {
+            let mine = luma_srgb(&[
+                ours.rgba[i * 4],
+                ours.rgba[i * 4 + 1],
+                ours.rgba[i * 4 + 2],
+            ]);
+            let theirs = luma_srgb(&pair.camera_srgb[i * 3..i * 3 + 3]);
+            let bin = ((mine / 256.0) * BINS as f32) as usize;
+            buckets[bin.min(BINS - 1)].push(theirs);
+        }
+    }
+
+    println!("  ours (neutral)   camera   spread of camera values in the bin");
+    let mut worst: f32 = 0.0;
+    for (bin, values) in buckets.iter_mut().enumerate() {
+        if values.len() < 2000 {
+            continue;
+        }
+        let mid = median(values);
+        let (lo, hi) = (percentile(values, 0.1), percentile(values, 0.9));
+        worst = worst.max(hi - lo);
+        let centre = (bin as f32 + 0.5) * 256.0 / BINS as f32;
+        // A bar makes the shape readable without leaving the terminal.
+        let width = (mid / 8.0).round() as usize;
+        println!(
+            "  {centre:5.0}          {mid:5.1}    {lo:5.1} … {hi:5.1}  ({:4.1})  {}",
+            hi - lo,
+            "▏".repeat(width.max(1))
+        );
+    }
+    println!(
+        "  widest 10-90 spread anywhere: {worst:.1} sRGB units — a single curve explains the \
+         camera to within about {:.0} of that",
+        worst / 2.0
+    );
+}
+
+/// The best a tone curve could possibly do.
+///
+/// Not a curve of any particular shape — a free lookup table, one output per
+/// input value, each entry the median camera value seen at that input. The
+/// median is exactly what minimises absolute error, so no curve control with
+/// any parametrisation can beat this. It is the ceiling for "add a better
+/// shaped tone control", and comparing it against the fitted preset says
+/// whether the curve family is what is holding the match back or not.
+///
+/// Forced monotone afterwards, because a tone curve that dips is not one.
+fn fit_display_lut(pairs: &[&Pair]) -> Vec<u8> {
+    let neutral = DevelopParams::default();
+    let mut buckets: Vec<Vec<u8>> = (0..256).map(|_| Vec::new()).collect();
+    for pair in pairs {
+        let ours = develop(&pair.scene, &neutral);
+        for i in interior(pair) {
+            for c in 0..3 {
+                buckets[ours.rgba[i * 4 + c] as usize].push(pair.camera_srgb[i * 3 + c]);
+            }
+        }
+    }
+
+    // Sparse bins carry no information; carry the last real answer forward and
+    // let the monotone pass tidy the ends.
+    let mut lut = vec![0u8; 256];
+    let mut last = 0u8;
+    for (v, samples) in buckets.iter_mut().enumerate() {
+        if samples.len() >= 64 {
+            samples.sort_unstable();
+            last = samples[samples.len() / 2];
+        }
+        lut[v] = last;
+    }
+    let mut ceiling = 0u8;
+    for v in lut.iter_mut() {
+        ceiling = ceiling.max(*v);
+        *v = ceiling;
+    }
+    lut
+}
+
+fn error_through_lut(pairs: &[&Pair], lut: &[u8]) -> f64 {
+    let neutral = DevelopParams::default();
+    let (sum, count) = pairs
+        .par_iter()
+        .map(|pair| {
+            let ours = develop(&pair.scene, &neutral);
+            let mut sum = 0f64;
+            let mut n = 0usize;
+            for i in interior(pair) {
+                for c in 0..3 {
+                    let mapped = lut[ours.rgba[i * 4 + c] as usize] as f64;
+                    sum += (mapped - pair.camera_srgb[i * 3 + c] as f64).abs();
+                    n += 1;
+                }
+            }
+            (sum, n)
+        })
+        .reduce(|| (0.0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+    sum / count.max(1) as f64
 }
 
 /// The tone relationship the preset is trying to reproduce, measured rather
@@ -417,13 +637,14 @@ macro_rules! axis {
     };
 }
 
-const ALL_AXES: [Axis; 8] = [
+const ALL_AXES: [Axis; 9] = [
     axis!(exposure, -5.0, 5.0, 0.8),
     axis!(contrast, -100.0, 100.0, 32.0),
     axis!(highlights, -100.0, 100.0, 32.0),
     axis!(shadows, -100.0, 100.0, 32.0),
     axis!(whites, -100.0, 100.0, 32.0),
     axis!(blacks, -100.0, 100.0, 32.0),
+    axis!(rolloff, 0.0, 100.0, 32.0),
     axis!(vibrance, -100.0, 100.0, 32.0),
     axis!(saturation, -100.0, 100.0, 32.0),
 ];

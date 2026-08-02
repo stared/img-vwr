@@ -13,8 +13,8 @@ use std::path::Path;
 
 use crate::codec::CodecRegistry;
 use crate::scene::{
-    srgb_to_linear, white_balance_gains, LinearImage, RenderRequest, SceneError, SceneFormat,
-    SceneImage, WhiteBalance,
+    srgb_to_linear, white_balance_gains, LinearImage, Rendering, RenderRequest, SceneError,
+    SceneFormat, SceneImage, WhiteBalance,
 };
 use crate::thumbs::{apply_orientation, exif_orientation, thumb_dimensions};
 
@@ -81,6 +81,12 @@ struct ImageCrateScene {
 impl SceneImage for ImageCrateScene {
     fn native_size(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    fn rendering(&self) -> Rendering {
+        // A JPEG or PNG is somebody's finished picture; the look was chosen
+        // when the file was written.
+        Rendering::AlreadyRendered
     }
 
     fn as_shot(&self) -> WhiteBalance {

@@ -2,8 +2,10 @@ import { useEffect } from "react";
 
 import { useSelectedEntry } from "../../state/store";
 import {
-  isNeutral,
+  isAtOpening,
+  nextPreset,
   PARAM_SPECS,
+  presetOf,
   TEMPERATURE_RANGE,
   TINT_RANGE,
   useDevelopStore,
@@ -95,6 +97,8 @@ export function DevelopPanel() {
   const setOverlay = useDevelopStore((s) => s.setOverlay);
   const setPicking = useDevelopStore((s) => s.setPicking);
   const reset = useDevelopStore((s) => s.reset);
+  const presets = useDevelopStore((s) => s.presets);
+  const applyPreset = useDevelopStore((s) => s.applyPreset);
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -113,7 +117,10 @@ export function DevelopPanel() {
   if (!session) return <p className="panel-hint">No develop support for this format.</p>;
 
   const { settings, info, overlay } = session;
-  const neutral = isNeutral(session);
+  const active = presetOf(settings.params, presets);
+  // A raw file opens with a look already on it, so "is this the identity edit"
+  // is the wrong question for whether there is anything to undo.
+  const untouched = !info.edited && isAtOpening(session);
 
   return (
     <div className="develop-panel">
@@ -126,9 +133,9 @@ export function DevelopPanel() {
         </span>
         <button
           className="develop-reset"
-          disabled={neutral && !info.edited}
+          disabled={untouched}
           onClick={() => void reset()}
-          title="Return every control to the camera's own settings"
+          title="Put every control back to what this image opened with"
         >
           reset
         </button>
@@ -175,6 +182,25 @@ export function DevelopPanel() {
 
       <section className="develop-group">
         <h4>Tone</h4>
+        {/* One button saying which look is in effect; clicking moves to the
+            next. Every preset is only a set of slider positions, so the
+            sliders below always show exactly what it did. */}
+        {presets.length > 0 && (
+          <>
+            <button
+              className="develop-toggle"
+              onClick={() => {
+                const following = nextPreset(active, presets);
+                if (following) applyPreset(following.id);
+              }}
+            >
+              preset: {active ? active.label : "custom"}
+            </button>
+            <p className="develop-note">
+              {active ? active.note : "Sliders moved since a preset was applied."}
+            </p>
+          </>
+        )}
         {PARAM_SPECS.map((spec: ParamSpec) => (
           <Slider
             key={spec.key}

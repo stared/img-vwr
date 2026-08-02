@@ -140,12 +140,34 @@ impl std::fmt::Display for SceneError {
 
 impl std::error::Error for SceneError {}
 
+/// Whether a plugin's pixels have already had somebody's rendering applied.
+///
+/// The difference decides whether a look should be chosen for the image. A raw
+/// file is measurements: flat by construction, and a camera would have applied
+/// a curve to it before showing it to anyone. A JPEG is already a finished
+/// picture — whoever made it chose the look, and applying another on open
+/// would apply it twice.
+///
+/// A closed enum rather than an `is_raw` flag, because the question is about
+/// what the pixels *are* and not what the file extension says. Callers match
+/// on it instead of asking about formats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum Rendering {
+    /// Straight from the sensor, expecting a look to be chosen.
+    SceneReferred,
+    /// Rendered by whatever wrote the file.
+    AlreadyRendered,
+}
+
 /// One opened image, held between renders so slider drags are cheap: the
 /// expensive work (parsing, demosaicing) happens in [`SceneFormat::open`],
 /// and `render` is the part that runs per interaction.
 pub trait SceneImage: Send + Sync {
     /// Full sensor/file resolution, after orientation.
     fn native_size(&self) -> (u32, u32);
+    /// Whether these pixels still want a look chosen for them.
+    fn rendering(&self) -> Rendering;
     /// The white balance the image already carries — the neutral starting
     /// point the UI shows before the user touches anything.
     fn as_shot(&self) -> WhiteBalance;
@@ -716,6 +738,10 @@ mod tests {
     impl SceneImage for StrongerThanOurModel {
         fn native_size(&self) -> (u32, u32) {
             (100, 100)
+        }
+
+        fn rendering(&self) -> Rendering {
+            Rendering::SceneReferred
         }
 
         fn as_shot(&self) -> WhiteBalance {

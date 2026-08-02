@@ -148,6 +148,22 @@ async developState(path: string) : Promise<Result<DevelopState, string>> {
 }
 },
 /**
+ * The named starting points an edit can be set to.
+ * 
+ * Synchronous work, but async like its neighbours so the frontend calls every
+ * develop command the same way. Fetched rather than duplicated in TypeScript:
+ * the numbers are measured against real files by the `match_camera` example
+ * and there should be exactly one place they live.
+ */
+async developPresets() : Promise<Result<Preset[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_presets") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Render a preview at `max_edge` under `settings`. The pixels are fetched
  * separately over the `develop:` protocol using the returned token; the
  * histogram of those same pixels comes back here.
@@ -288,6 +304,18 @@ whites: number;
  */
 blacks: number; 
 /**
+ * How softly the brightest values approach white, 0–100.
+ * 
+ * Zero clips: everything at or above white renders as white, which is
+ * what a pipeline without a shoulder does. Above zero the top of the
+ * range is bent into an asymptote instead, so highlights keep separating
+ * long after they would otherwise have gone flat.
+ * 
+ * One-sided rather than ±100 because there is nothing on the other side
+ * of clipping — a curve cannot reach white sooner than immediately.
+ */
+rolloff: number; 
+/**
  * Saturation weighted towards already-dull colours; ±100.
  */
 vibrance: number; 
@@ -409,6 +437,15 @@ export type Overlay =
  * Tint regions by how much fine detail they resolve — the focus map.
  */
 "sharpness"
+export type Preset = { id: string; 
+/**
+ * What the control says when this preset is the one in effect.
+ */
+label: string; 
+/**
+ * One line on what it does, for the panel to show beneath.
+ */
+note: string; params: DevelopParams }
 /**
  * The wire form of a render region. Mirrors `imgvwr_core::Region`, which is
  * a pure-core type and deliberately carries no serialisation attributes.

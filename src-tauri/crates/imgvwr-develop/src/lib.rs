@@ -8,9 +8,11 @@
 pub mod analysis;
 pub mod params;
 pub mod pipeline;
+pub mod presets;
 
 pub use analysis::{composite_sharpness, histogram, sharpness_map, Histogram};
 pub use params::{DevelopParams, DevelopSettings, Overlay};
+pub use presets::{opening_params, preset, presets, Preset};
 pub use pipeline::{develop, MID_GREY};
 
 use imgvwr_core::{DecodedImage, Region, RenderRequest, SceneError, SceneImage};

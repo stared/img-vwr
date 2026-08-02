@@ -46,6 +46,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::labels_set_stars,
             commands::labels_toggle_tag,
             commands::develop_state,
+            commands::develop_presets,
             commands::develop_render,
             commands::develop_save,
             commands::develop_reset,

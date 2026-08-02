@@ -56,6 +56,7 @@ fn main() {
             shadows: 35.0,
             whites: 10.0,
             blacks: -10.0,
+            rolloff: 60.0,
             vibrance: 30.0,
             saturation: 0.0,
         },

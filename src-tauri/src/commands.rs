@@ -13,7 +13,7 @@ use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 use imgvwr_core::Region;
-use imgvwr_develop::{DevelopSettings, Overlay};
+use imgvwr_develop::{DevelopSettings, Overlay, Preset};
 
 /// Run a streamed folder scan: entries arrive as `ScanBatch` events, the
 /// last one marked `done`. Walking a big (or cloud-backed) tree can take
@@ -324,6 +324,18 @@ pub async fn develop_state(
     tauri::async_runtime::spawn_blocking(move || service.state(&path))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// The named starting points an edit can be set to.
+///
+/// Synchronous work, but async like its neighbours so the frontend calls every
+/// develop command the same way. Fetched rather than duplicated in TypeScript:
+/// the numbers are measured against real files by the `match_camera` example
+/// and there should be exactly one place they live.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_presets() -> Result<Vec<Preset>, String> {
+    Ok(imgvwr_develop::presets())
 }
 
 /// Render a preview at `max_edge` under `settings`. The pixels are fetched

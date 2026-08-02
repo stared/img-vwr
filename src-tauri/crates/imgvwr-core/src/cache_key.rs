@@ -1,5 +1,9 @@
-/// Bump when the thumbnail format/quality changes so old cache entries are ignored.
-pub const CACHE_SCHEMA_VERSION: u32 = 1;
+/// Bump when the thumbnail format/quality changes, or when what a thumbnail
+/// *depicts* changes, so old cache entries are ignored.
+///
+/// 2: raw thumbnails render with the look a raw file now opens with, rather
+/// than the flat decode, so every cached one is a picture of the old rule.
+pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
 /// Content-addressed thumbnail cache key. Any change to the source file
 /// (mtime or size) or to the thumbnail parameters yields a new key, so

@@ -24,6 +24,16 @@ pub struct DevelopParams {
     pub whites: f32,
     /// Moves the black point; ±100.
     pub blacks: f32,
+    /// How softly the brightest values approach white, 0–100.
+    ///
+    /// Zero clips: everything at or above white renders as white, which is
+    /// what a pipeline without a shoulder does. Above zero the top of the
+    /// range is bent into an asymptote instead, so highlights keep separating
+    /// long after they would otherwise have gone flat.
+    ///
+    /// One-sided rather than ±100 because there is nothing on the other side
+    /// of clipping — a curve cannot reach white sooner than immediately.
+    pub rolloff: f32,
     /// Saturation weighted towards already-dull colours; ±100.
     pub vibrance: f32,
     /// Flat saturation; ±100.
@@ -39,6 +49,7 @@ impl Default for DevelopParams {
             shadows: 0.0,
             whites: 0.0,
             blacks: 0.0,
+            rolloff: 0.0,
             vibrance: 0.0,
             saturation: 0.0,
         }
@@ -63,6 +74,7 @@ impl DevelopParams {
             shadows: clamp_finite(self.shadows, -100.0, 100.0),
             whites: clamp_finite(self.whites, -100.0, 100.0),
             blacks: clamp_finite(self.blacks, -100.0, 100.0),
+            rolloff: clamp_finite(self.rolloff, 0.0, 100.0),
             vibrance: clamp_finite(self.vibrance, -100.0, 100.0),
             saturation: clamp_finite(self.saturation, -100.0, 100.0),
         }
@@ -146,6 +158,7 @@ mod tests {
             shadows: -1e9,
             whites: 101.0,
             blacks: -101.0,
+            rolloff: 150.0,
             vibrance: 200.0,
             saturation: -200.0,
         }
@@ -156,6 +169,7 @@ mod tests {
         assert_eq!(wild.shadows, -100.0);
         assert_eq!(wild.whites, 100.0);
         assert_eq!(wild.blacks, -100.0);
+        assert_eq!(wild.rolloff, 100.0);
         assert_eq!(wild.vibrance, 100.0);
         assert_eq!(wild.saturation, -100.0);
     }

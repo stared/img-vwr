@@ -30,6 +30,9 @@ struct Tone {
     whites: f32,
     black_shift: f32,
     contrast_exp: f32,
+    /// Where the highlight shoulder starts. At or above 1.0 there is none, and
+    /// values past white simply clip.
+    knee: f32,
 }
 
 impl Tone {
@@ -44,8 +47,33 @@ impl Tone {
             whites: (p.whites / 100.0) * 0.5,
             black_shift: (p.blacks / 100.0) * 0.05,
             contrast_exp: (p.contrast / 100.0).exp2(),
+            knee: 1.0 - p.rolloff / 100.0,
         }
     }
+}
+
+/// The highlight shoulder: below the knee nothing happens, above it the range
+/// bends into an asymptote at white.
+///
+/// Every other control here is a gain or a power, and none of them can make
+/// this shape — they scale the highlights but still run into white at some
+/// finite value, where detail stops. Measured against the JPEGs a camera makes
+/// from the same raw frames, that difference is the single largest thing the
+/// pipeline was missing: two stops above middle grey it rendered 15 sRGB units
+/// brighter than the camera, having already run out of range.
+///
+/// Exponential rather than a spline because it is the shape that leaves the
+/// slope untouched at the knee (so there is no visible seam where it starts),
+/// approaches white without ever reaching it (so highlights always keep some
+/// separation), and is monotone for every parameter, which no fitted spline
+/// guarantees.
+#[inline]
+fn shoulder(y: f32, knee: f32) -> f32 {
+    if knee >= 1.0 || y <= knee {
+        return y;
+    }
+    let span = 1.0 - knee;
+    knee + span * (1.0 - ((knee - y) / span).exp())
 }
 
 /// The tonal response curve: scene-linear luminance in, luminance out.
@@ -69,10 +97,15 @@ fn tone_curve(y: f32, t: &Tone) -> f32 {
     if y <= 0.0 {
         return 0.0;
     }
-    if t.contrast_exp == 1.0 {
-        return y;
-    }
-    MID_GREY * (y / MID_GREY).powf(t.contrast_exp)
+    let y = if t.contrast_exp == 1.0 {
+        y
+    } else {
+        MID_GREY * (y / MID_GREY).powf(t.contrast_exp)
+    };
+
+    // The shoulder goes last: it is the only stage that knows where white is,
+    // so it has to see the value that would actually be sent to the display.
+    shoulder(y, t.knee)
 }
 
 /// Apply an edit to scene-linear pixels, producing display-ready sRGB RGBA8.
@@ -238,6 +271,7 @@ mod tests {
                 for &highlights in &[-100.0, 100.0] {
                     for &whites in &[-100.0, 100.0] {
                         for &blacks in &[-100.0, 100.0] {
+                          for &rolloff in &[0.0, 50.0, 100.0] {
                             let t = tone_of(DevelopParams {
                                 exposure: 0.0,
                                 contrast,
@@ -245,6 +279,7 @@ mod tests {
                                 highlights,
                                 whites,
                                 blacks,
+                                rolloff,
                                 vibrance: 0.0,
                                 saturation: 0.0,
                             });
@@ -254,16 +289,73 @@ mod tests {
                                 let cur = tone_curve(y, &t);
                                 assert!(
                                     cur >= prev - 1e-5,
-                                    "not monotonic at y={y}: {prev} → {cur} \
-                                     (c={contrast} s={shadows} h={highlights} w={whites} b={blacks})"
+                                    "not monotonic at y={y}: {prev} → {cur} (c={contrast} \
+                                     s={shadows} h={highlights} w={whites} b={blacks} r={rolloff})"
                                 );
                                 assert!(cur.is_finite(), "non-finite at y={y}");
                                 prev = cur;
                             }
+                          }
                         }
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_shoulder_is_off_until_asked_for() {
+        let t = tone_of(DevelopParams::default());
+        for y in [0.0, MID_GREY, 0.9, 1.0, 2.0, 8.0] {
+            assert!((tone_curve(y, &t) - y).abs() < 1e-6, "y = {y}");
+        }
+    }
+
+    #[test]
+    fn the_shoulder_keeps_highlights_separated_instead_of_clipping() {
+        let plain = tone_of(DevelopParams::default());
+        let rolled = tone_of(DevelopParams {
+            rolloff: 70.0,
+            ..Default::default()
+        });
+
+        // Without a shoulder every one of these renders as the same white; the
+        // whole point is that afterwards they do not.
+        let bright = [1.2f32, 1.8, 3.0, 6.0];
+        let flat: Vec<u8> = bright.iter().map(|y| encode(tone_curve(*y, &plain))).collect();
+        assert!(flat.iter().all(|v| *v == 255), "clipped without one: {flat:?}");
+
+        let separated: Vec<u8> = bright
+            .iter()
+            .map(|y| encode(tone_curve(*y, &rolled)))
+            .collect();
+        for pair in separated.windows(2) {
+            assert!(
+                pair[1] > pair[0],
+                "highlights must keep pulling apart: {separated:?}"
+            );
+        }
+        // The curve itself stays below white across the headroom raw files
+        // actually contain — measured against real NEFs the brightest sample
+        // is a little over three times white. (Past roughly eleven times the
+        // exponential falls under single-precision epsilon and the result
+        // rounds to exactly white, which costs nothing any sensor records.)
+        for y in [3.5f32, 6.0, 8.0] {
+            let out = tone_curve(y, &rolled);
+            assert!(out < 1.0, "reached white at {y}: {out}");
+        }
+    }
+
+    #[test]
+    fn the_shoulder_leaves_the_midtones_where_they_were() {
+        // A control that quietly darkened everything would be an exposure
+        // change wearing a different name. Below the knee it must do nothing.
+        let t = tone_of(DevelopParams {
+            rolloff: 40.0,
+            ..Default::default()
+        });
+        for y in [0.01, 0.1, MID_GREY, 0.5] {
+            assert!((tone_curve(y, &t) - y).abs() < 1e-6, "moved {y}");
         }
     }
 

@@ -1,8 +1,17 @@
 import { create } from "zustand";
 
-import type { DevelopFrame, DevelopSettings, DevelopState, Overlay, RegionArg } from "../ipc";
+import type {
+  DevelopFrame,
+  DevelopParams,
+  DevelopSettings,
+  DevelopState,
+  Overlay,
+  Preset,
+  RegionArg,
+} from "../ipc";
 import {
   developPickWhiteBalance,
+  developPresets,
   developRender,
   developReset,
   developSave,
@@ -33,6 +42,7 @@ export const PARAM_KEYS = [
   "shadows",
   "whites",
   "blacks",
+  "rolloff",
   "vibrance",
   "saturation",
 ] as const;
@@ -59,6 +69,8 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: "shadows", label: "shadows", min: -100, max: 100, step: 1, format: signed(0) },
   { key: "whites", label: "whites", min: -100, max: 100, step: 1, format: signed(0) },
   { key: "blacks", label: "blacks", min: -100, max: 100, step: 1, format: signed(0) },
+  // One-sided: zero is clipping, and nothing lies on the other side of it.
+  { key: "rolloff", label: "roll-off", min: 0, max: 100, step: 1, format: (v) => v.toFixed(0) },
   { key: "vibrance", label: "vibrance", min: -100, max: 100, step: 1, format: signed(0) },
   { key: "saturation", label: "saturation", min: -100, max: 100, step: 1, format: signed(0) },
 ];
@@ -98,6 +110,8 @@ export interface Session {
 
 export interface DevelopStore {
   session: Session | null;
+  /** The preset catalog, fetched once. Empty until it arrives. */
+  presets: Preset[];
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -117,6 +131,9 @@ export interface DevelopStore {
   setPicking: (picking: boolean) => void;
   /** Set the white balance from a point in the image (normalised coords). */
   pickWhiteBalanceAt: (x: number, y: number) => Promise<void>;
+  /** Set every tone and colour slider to a named preset, leaving the white
+   * balance alone — that is the camera's measurement, not a matter of look. */
+  applyPreset: (id: string) => void;
 }
 
 /** Largest detail crop we will develop, in pixels of the longest edge. */
@@ -189,22 +206,57 @@ export function needsDevelopedFrame(session: Session | null): boolean {
   return session.info.needsRender || !isNeutral(session);
 }
 
-/** True when the live settings still match the camera's own starting point. */
+/**
+ * True when the live settings are the identity edit at the camera's own
+ * balance — nothing applied at all, so the original file is a faithful
+ * rendering of the current state.
+ *
+ * Derived from `PARAM_KEYS` rather than listing the fields, because a listing
+ * silently stops being true the moment a slider is added.
+ */
 export function isNeutral(session: Session): boolean {
   const { settings, info } = session;
-  const p = settings.params;
   return (
     settings.whiteBalance.temperature === info.asShot.temperature &&
     settings.whiteBalance.tint === info.asShot.tint &&
-    p.exposure === 0 &&
-    p.contrast === 0 &&
-    p.highlights === 0 &&
-    p.shadows === 0 &&
-    p.whites === 0 &&
-    p.blacks === 0 &&
-    p.vibrance === 0 &&
-    p.saturation === 0
+    PARAM_KEYS.every((key) => settings.params[key] === 0)
   );
+}
+
+/**
+ * True when nothing has moved since the image opened.
+ *
+ * Not the same as `isNeutral`: sensor data opens with a look already applied,
+ * so an untouched raw file is emphatically not the identity edit — but there
+ * is still nothing to undo.
+ */
+export function isAtOpening(session: Session): boolean {
+  const { settings, info } = session;
+  return (
+    settings.whiteBalance.temperature === info.settings.whiteBalance.temperature &&
+    settings.whiteBalance.tint === info.settings.whiteBalance.tint &&
+    PARAM_KEYS.every((key) => settings.params[key] === info.settings.params[key])
+  );
+}
+
+/**
+ * Which preset the current settings are, or null once they are nobody's.
+ *
+ * Compared rather than remembered: nothing stores which preset an edit came
+ * from, and a remembered name would keep claiming a look the sliders had
+ * already left.
+ */
+export function presetOf(params: DevelopParams, presets: Preset[]): Preset | null {
+  return presets.find((p) => PARAM_KEYS.every((key) => p.params[key] === params[key])) ?? null;
+}
+
+/** The preset a control should move to when the current one is `active`. */
+export function nextPreset(active: Preset | null, presets: Preset[]): Preset | null {
+  if (presets.length === 0) return null;
+  const at = active ? presets.findIndex((p) => p.id === active.id) : -1;
+  // Off a preset entirely, the first click lands on the first one rather than
+  // continuing a cycle the user is no longer in.
+  return presets[at < 0 ? 0 : (at + 1) % presets.length] ?? null;
 }
 
 /** Current preview edge; module state rather than store state because it is
@@ -264,6 +316,15 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
   return {
     session: null,
+    // Fetched once, on the way past: the catalog is fixed for the session and
+    // the panel is the only thing that ever waits on it.
+    presets: (() => {
+      void developPresets().then(
+        (presets) => set({ presets }),
+        () => {},
+      );
+      return [];
+    })(),
     opening: null,
 
     open: async (path) => {
@@ -392,6 +453,16 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // have to remember to leave.
       set({ session: { ...now, picking: false } });
       change({ ...now.settings, whiteBalance: balance });
+    },
+
+    applyPreset: (id) => {
+      const session = get().session;
+      const preset = get().presets.find((p) => p.id === id);
+      if (!session || !preset) return;
+      // White balance is deliberately untouched. It is a measurement of the
+      // light the photograph was taken in, not part of anybody's look, and a
+      // preset that overwrote it would throw away the eyedropper's work.
+      change({ ...session.settings, params: preset.params });
     },
 
     clearDetail: () => {

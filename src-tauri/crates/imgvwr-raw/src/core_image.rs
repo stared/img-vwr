@@ -5,7 +5,9 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::Mutex;
 
-use imgvwr_core::{LinearImage, RenderRequest, SceneError, SceneFormat, SceneImage, WhiteBalance};
+use imgvwr_core::{
+    LinearImage, Rendering, RenderRequest, SceneError, SceneFormat, SceneImage, WhiteBalance,
+};
 use objc2::rc::Retained;
 use objc2_core_foundation::CGRect;
 use objc2_core_graphics::{kCGColorSpaceExtendedLinearSRGB, CGColorSpace};
@@ -153,6 +155,12 @@ unsafe impl Sync for CoreImageRawScene {}
 impl SceneImage for CoreImageRawScene {
     fn native_size(&self) -> (u32, u32) {
         self.native
+    }
+
+    fn rendering(&self) -> Rendering {
+        // Sensor measurements with every one of Apple's looks switched off:
+        // flat on purpose, and waiting for a look to be chosen.
+        Rendering::SceneReferred
     }
 
     fn as_shot(&self) -> WhiteBalance {
