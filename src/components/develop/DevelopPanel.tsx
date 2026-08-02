@@ -19,9 +19,16 @@ import { DevelopHistogram } from "./DevelopHistogram";
  * panel reads as a description of the edit rather than a wall of handles.
  */
 
+/** Where along the track a value sits, as a percentage. */
+function positionOf(value: number, min: number, max: number): number {
+  if (max <= min) return 0;
+  return ((Math.min(max, Math.max(min, value)) - min) / (max - min)) * 100;
+}
+
 function Slider({
   label,
   value,
+  neutral,
   min,
   max,
   step,
@@ -30,13 +37,22 @@ function Slider({
 }: {
   label: string;
   value: number;
+  /**
+   * The untouched value for this control — zero for the tone sliders, the
+   * camera's own reading for temperature and tint. Everything about a
+   * slider's appearance is relative to it: the track fills from here, and
+   * the number brightens only once the value has left it.
+   */
+  neutral: number;
   min: number;
   max: number;
   step: number;
   display: string;
   onChange: (value: number) => void;
 }) {
-  const changed = display !== "0" && display !== "+0.00 EV";
+  const changed = value !== neutral;
+  const here = positionOf(value, min, max);
+  const origin = positionOf(neutral, min, max);
   return (
     <label className="develop-slider">
       <span className="develop-slider-head">
@@ -51,10 +67,16 @@ function Slider({
         max={max}
         step={step}
         value={value}
+        style={
+          {
+            "--fill-a": `${Math.min(here, origin)}%`,
+            "--fill-b": `${Math.max(here, origin)}%`,
+          } as React.CSSProperties
+        }
         onChange={(e) => onChange(Number(e.currentTarget.value))}
-        // Double-clicking a slider returns it to its neutral position, the
-        // same gesture the viewer uses to return to fit.
-        onDoubleClick={() => onChange(0)}
+        // Double-clicking returns the control to its own neutral — the
+        // camera's temperature, not the bottom of the scale.
+        onDoubleClick={() => onChange(neutral)}
       />
     </label>
   );
@@ -119,6 +141,7 @@ export function DevelopPanel() {
         <Slider
           label="temperature"
           value={settings.whiteBalance.temperature}
+          neutral={info.asShot.temperature}
           min={TEMPERATURE_RANGE.min}
           max={TEMPERATURE_RANGE.max}
           step={TEMPERATURE_RANGE.step}
@@ -128,6 +151,7 @@ export function DevelopPanel() {
         <Slider
           label="tint"
           value={settings.whiteBalance.tint}
+          neutral={info.asShot.tint}
           min={TINT_RANGE.min}
           max={TINT_RANGE.max}
           step={TINT_RANGE.step}
@@ -156,6 +180,7 @@ export function DevelopPanel() {
             key={spec.key}
             label={spec.label}
             value={settings.params[spec.key]}
+            neutral={0}
             min={spec.min}
             max={spec.max}
             step={spec.step}

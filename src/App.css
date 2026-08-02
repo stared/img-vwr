@@ -1193,9 +1193,9 @@ button.stats-row:hover .stats-label {
   font-size: 12px;
 }
 
-.tl-size input[type="range"] {
+.tl-size input[type="range"],
+.gallery-size input[type="range"] {
   width: 110px;
-  accent-color: var(--accent);
 }
 
 .tl-fit {
@@ -1401,15 +1401,6 @@ button.stats-row:hover .stats-label {
   color: var(--text);
 }
 
-.develop-slider input[type="range"] {
-  display: block;
-  width: 100%;
-  height: 14px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: ew-resize;
-}
-
 .develop-reset,
 .develop-toggle {
   color: var(--text);
@@ -1565,12 +1556,6 @@ button.stats-row:hover .stats-label {
   color: var(--text);
 }
 
-/* Thinner track, smaller thumb — closer to Linear's density. */
-.develop-slider input[type="range"] {
-  height: 12px;
-  accent-color: var(--accent-muted);
-}
-
 .develop-reset,
 .develop-toggle {
   height: 22px;
@@ -1618,4 +1603,84 @@ button.stats-row:hover .stats-label {
 .develop-clipping {
   padding: 3px 0 6px;
   font-size: 10px;
+}
+
+/* ---- Sliders ---- */
+
+/*
+ * A slider should be a line and a mark on it, not a widget. The native
+ * control is a fat track and a big round knob that reads as a piece of
+ * machinery sitting on the panel; what is wanted is the value, stated
+ * quietly, with the least ink that still supports a drag.
+ *
+ * So: a hairline track, and a short upright mark for the thumb. The mark is
+ * two pixels wide because it points at a value — a circle implies a thing you
+ * grab, a bar implies a position you read. The whole 14px height stays
+ * draggable, so the small mark costs no precision.
+ *
+ * WebKit only, deliberately: this is a macOS-first app in a WKWebView, and
+ * carrying a parallel set of -moz- rules nothing renders would be dead weight.
+ */
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 1px;
+  border-radius: 0;
+  background-color: var(--border);
+  /*
+   * Where a slider declares a fill (`--fill-a`..`--fill-b`), it is drawn
+   * from the *neutral* value to the current one rather than from the left
+   * edge. On a bipolar control that is the honest picture: the bar shows how
+   * far the setting has been moved and in which direction, and vanishes
+   * entirely when nothing has been changed.
+   */
+  background-image: linear-gradient(
+    to right,
+    transparent var(--fill-a, 0%),
+    var(--accent-muted) var(--fill-a, 0%),
+    var(--accent-muted) var(--fill-b, 0%),
+    transparent var(--fill-b, 0%)
+  );
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 2px;
+  height: 11px;
+  /* Centre the mark on a 1px track: (11 - 1) / 2. */
+  margin-top: -5px;
+  border: none;
+  border-radius: 1px;
+  background: var(--text-dim);
+  transition: background 120ms ease, height 120ms ease;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  background: var(--text);
+}
+
+/* Dragging: the mark grows a little so it stays findable under the cursor. */
+input[type="range"]:active::-webkit-slider-thumb {
+  height: 13px;
+  margin-top: -6px;
+  background: var(--text);
+}
+
+input[type="range"]:focus-visible {
+  outline: none;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  background: var(--accent-text);
 }
