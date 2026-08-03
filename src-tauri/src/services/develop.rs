@@ -104,6 +104,13 @@ impl DevelopService {
         for column in [
             "rolloff REAL NOT NULL DEFAULT 0",
             "basis TEXT NOT NULL DEFAULT 'flat'",
+            // The whole frame, unturned: what every row written before crop
+            // existed was in fact showing.
+            "crop_x REAL NOT NULL DEFAULT 0",
+            "crop_y REAL NOT NULL DEFAULT 0",
+            "crop_w REAL NOT NULL DEFAULT 1",
+            "crop_h REAL NOT NULL DEFAULT 1",
+            "crop_angle REAL NOT NULL DEFAULT 0",
         ] {
             if let Err(e) = conn.execute(&format!("ALTER TABLE develop ADD COLUMN {column}"), []) {
                 // Already there on every run but the first.
@@ -235,17 +242,32 @@ impl DevelopService {
     }
 
     /// White balance that renders the point at normalised (x, y) neutral.
+    /// Sample a point the user clicked on the picture they can see.
+    ///
+    /// Takes the whole settings rather than just the balance, because the
+    /// point arrives in the cropped image's coordinates and only the crop
+    /// knows where that is on the sensor. Passing it straight through would
+    /// sample the middle of the frame when the user clicked the middle of a
+    /// corner crop.
     pub fn pick_white_balance(
         &self,
         path: &str,
         x: f32,
         y: f32,
-        current: WhiteBalance,
+        settings: &DevelopSettings,
     ) -> Result<WhiteBalance, String> {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+        let settings = settings.clamped();
+        let native = entry.scene.native_size();
+        let aspect = if native.1 == 0 {
+            1.0
+        } else {
+            native.0 as f32 / native.1 as f32
+        };
+        let (fx, fy) = settings.crop.point_in_original(x, y, aspect);
         entry
             .scene
-            .neutral_at(x, y, current)
+            .neutral_at(fx, fy, settings.white_balance)
             .map_err(|e| e.to_string())
     }
 
@@ -308,7 +330,8 @@ impl DevelopService {
         let mut stmt = conn
             .prepare(
                 "SELECT temperature, tint, exposure, contrast, highlights, shadows,
-                        whites, blacks, rolloff, vibrance, saturation, basis
+                        whites, blacks, rolloff, vibrance, saturation, basis,
+                        crop_x, crop_y, crop_w, crop_h, crop_angle
                  FROM develop WHERE path = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -330,6 +353,13 @@ impl DevelopService {
                         vibrance: row.get::<_, f64>(9)? as f32,
                         saturation: row.get::<_, f64>(10)? as f32,
                     },
+                    crop: imgvwr_develop::Crop {
+                        x: row.get::<_, f64>(12)? as f32,
+                        y: row.get::<_, f64>(13)? as f32,
+                        width: row.get::<_, f64>(14)? as f32,
+                        height: row.get::<_, f64>(15)? as f32,
+                        angle: row.get::<_, f64>(16)? as f32,
+                    },
                     basis: row.get::<_, String>(11)?,
                 })
             })
@@ -348,8 +378,10 @@ impl DevelopService {
         conn.execute(
             "INSERT INTO develop
                  (path, temperature, tint, exposure, contrast, highlights,
-                  shadows, whites, blacks, rolloff, vibrance, saturation, basis)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                  shadows, whites, blacks, rolloff, vibrance, saturation, basis,
+                  crop_x, crop_y, crop_w, crop_h, crop_angle)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                     ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(path) DO UPDATE SET
                  temperature = excluded.temperature, tint = excluded.tint,
                  exposure = excluded.exposure, contrast = excluded.contrast,
@@ -357,7 +389,10 @@ impl DevelopService {
                  whites = excluded.whites, blacks = excluded.blacks,
                  rolloff = excluded.rolloff,
                  vibrance = excluded.vibrance, saturation = excluded.saturation,
-                 basis = excluded.basis",
+                 basis = excluded.basis,
+                 crop_x = excluded.crop_x, crop_y = excluded.crop_y,
+                 crop_w = excluded.crop_w, crop_h = excluded.crop_h,
+                 crop_angle = excluded.crop_angle",
             rusqlite::params![
                 path,
                 f64::from(s.white_balance.temperature),
@@ -372,6 +407,11 @@ impl DevelopService {
                 f64::from(s.params.vibrance),
                 f64::from(s.params.saturation),
                 s.basis.clone(),
+                f64::from(s.crop.x),
+                f64::from(s.crop.y),
+                f64::from(s.crop.width),
+                f64::from(s.crop.height),
+                f64::from(s.crop.angle),
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -611,12 +651,59 @@ mod tests {
             white_balance: WhiteBalance { temperature: 5200.0, tint: -3.0 },
             params: DevelopParams { exposure: -0.4, ..Default::default() },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &mine).unwrap();
 
         let state = svc.state(path).unwrap();
         assert!(state.edited);
         assert_eq!(state.settings, mine, "the default must not overwrite a real edit");
+    }
+
+    #[test]
+    fn a_crop_changes_what_is_rendered_and_survives_the_database() {
+        let (dir, svc) = service();
+        let path = sample(dir.path(), "c.png");
+        let path = path.to_str().unwrap();
+
+        let whole = svc
+            .render(path, &DevelopSettings::neutral(WhiteBalance::D65), 60, Overlay::None, Region::FULL)
+            .unwrap();
+        assert_eq!((whole.width, whole.height), (60, 40));
+
+        // Half the width, a quarter of the height: the rendered frame is the
+        // crop, not the frame with the crop drawn on it.
+        let cropped_settings = DevelopSettings {
+            crop: imgvwr_develop::Crop { x: 0.25, y: 0.25, width: 0.5, height: 0.25, angle: 0.0 },
+            ..DevelopSettings::neutral(WhiteBalance::D65)
+        };
+        let cropped = svc
+            .render(path, &cropped_settings, 60, Overlay::None, Region::FULL)
+            .unwrap();
+        assert_eq!((cropped.width, cropped.height), (30, 10));
+
+        svc.save_settings(path, &cropped_settings).unwrap();
+        let stored = svc.stored_settings(path).unwrap().unwrap();
+        assert_eq!(stored.crop, cropped_settings.crop);
+    }
+
+    #[test]
+    fn a_straightened_crop_still_renders_at_the_size_asked_for() {
+        // The failure this guards: a rotated crop needs a patch bigger than
+        // itself, and asking the plugin for that patch at max_edge would
+        // leave the crop short of it — resolution quietly lost the further
+        // the picture is straightened.
+        let (dir, svc) = service();
+        let path = sample(dir.path(), "s.png");
+        let path = path.to_str().unwrap();
+
+        let turned = DevelopSettings {
+            crop: imgvwr_develop::Crop { x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 8.0 },
+            ..DevelopSettings::neutral(WhiteBalance::D65)
+        };
+        let frame = svc.render(path, &turned, 30, Overlay::None, Region::FULL).unwrap();
+        // 0.6 of a 60x40 frame is 36x24, held to a 30px long edge -> 30x20.
+        assert_eq!((frame.width, frame.height), (30, 20));
     }
 
     #[test]
@@ -628,6 +715,7 @@ mod tests {
             white_balance: WhiteBalance { temperature: 6000.0, tint: 0.0 },
             params: DevelopParams { rolloff: 83.0, ..Default::default() },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &settings).unwrap();
         assert_eq!(svc.stored_settings(path).unwrap().unwrap().params.rolloff, 83.0);
@@ -663,6 +751,7 @@ mod tests {
                 ..Default::default()
             },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &edit).unwrap();
 
@@ -697,6 +786,7 @@ mod tests {
                     ..Default::default()
                 },
                 basis: imgvwr_develop::presets::NONE.to_owned(),
+                crop: imgvwr_develop::Crop::FULL,
             },
         )
         .unwrap();
@@ -759,6 +849,7 @@ mod tests {
                             ..Default::default()
                         },
                         basis: imgvwr_develop::presets::NONE.to_owned(),
+                        crop: imgvwr_develop::Crop::FULL,
                     },
                     30,
                     Overlay::None,
@@ -787,6 +878,7 @@ mod tests {
                     ..Default::default()
                 },
                 basis: imgvwr_develop::presets::NONE.to_owned(),
+                crop: imgvwr_develop::Crop::FULL,
             },
             &dest,
         )

@@ -389,10 +389,10 @@ pub async fn develop_pick_white_balance(
     path: String,
     x: f32,
     y: f32,
-    current: imgvwr_core::WhiteBalance,
+    settings: DevelopSettings,
 ) -> Result<imgvwr_core::WhiteBalance, String> {
     let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.pick_white_balance(&path, x, y, current))
+    tauri::async_runtime::spawn_blocking(move || service.pick_white_balance(&path, x, y, &settings))
         .await
         .map_err(|e| e.to_string())?
 }

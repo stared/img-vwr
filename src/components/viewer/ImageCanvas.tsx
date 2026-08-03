@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { developFrameUrl, fileUrl } from "../../ipc";
 import {
+  cropFromDrag,
+  displayedSize,
+  FULL_CROP,
   needsDetail,
   needsDevelopedFrame,
   previewEdge,
@@ -22,6 +25,11 @@ import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/st
 
 const ZOOM_WHEEL_SENSITIVITY = 0.0022;
 
+interface Point2 {
+  x: number;
+  y: number;
+}
+
 export function ImageCanvas() {
   const entries = useVisibleEntries();
   const index = useAppStore((s) => s.selectedIndex);
@@ -40,6 +48,11 @@ export function ImageCanvas() {
   const canvas = useAppStore((s) => s.viewerWin);
   const img = useAppStore((s) => s.viewerImg);
   const gridlines = useDevelopStore((s) => s.gridlines);
+
+  const cropping = useDevelopStore((s) => s.cropping);
+  const setCropping = useDevelopStore((s) => s.setCropping);
+  const setCrop = useDevelopStore((s) => s.setCrop);
+  const [drag, setDrag] = useState<{ from: Point2; to: Point2 } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +88,7 @@ export function ImageCanvas() {
   const detail = session?.detail ?? null;
   useEffect(() => {
     if (!session || !frameForDetail || !view || canvas.width === 0) return;
-    const image = { width: session.info.width, height: session.info.height };
+    const image = displayedSize(session.info, session.settings.crop);
     if (!needsDetail(view, frameForDetail, image)) {
       clearDetail();
       return;
@@ -108,14 +121,57 @@ export function ImageCanvas() {
   const handleClick = (e: React.MouseEvent) => {
     if (!session?.picking || !view) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const spanX = view.scale * session.info.width;
-    const spanY = view.scale * session.info.height;
+    const size = displayedSize(session.info, session.settings.crop);
+    const spanX = view.scale * size.width;
+    const spanY = view.scale * size.height;
     if (spanX <= 0 || spanY <= 0) return;
     const x = (e.clientX - rect.left - view.tx) / spanX;
     const y = (e.clientY - rect.top - view.ty) / spanY;
     if (x < 0 || x > 1 || y < 0 || y > 1) return;
     e.preventDefault();
     void pickWhiteBalanceAt(x, y);
+  };
+
+  /**
+   * Dragging out a crop. Coordinates are the original frame's, because the
+   * canvas shows the whole frame while cropping.
+   */
+  const pointOf = (e: React.PointerEvent): { x: number; y: number } | null => {
+    if (!view || !img) return null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const spanX = view.scale * img.width;
+    const spanY = view.scale * img.height;
+    if (spanX <= 0 || spanY <= 0) return null;
+    return {
+      x: (e.clientX - rect.left - view.tx) / spanX,
+      y: (e.clientY - rect.top - view.ty) / spanY,
+    };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!cropping) return;
+    const at = pointOf(e);
+    if (!at) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ from: at, to: at });
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!cropping || !drag) return;
+    const at = pointOf(e);
+    if (at) setDrag({ ...drag, to: at });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!cropping || !drag) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    const moved = Math.abs(drag.to.x - drag.from.x) + Math.abs(drag.to.y - drag.from.y);
+    // A click that went nowhere leaves crop mode instead of cropping to a
+    // speck — the commonest way to say "never mind".
+    if (moved < 0.01) setCropping(false);
+    else setCrop(cropFromDrag(drag.from, drag.to, session?.settings.crop.angle ?? 0));
+    setDrag(null);
   };
 
   const handleDoubleClick = () => {
@@ -144,8 +200,13 @@ export function ImageCanvas() {
   // on screen. A developed frame is a downscaled stand-in for that image, so
   // the transform has to undo the preview's own reduction — otherwise a
   // 24 MP raw renders at preview size, a twentieth of where it belongs.
+  // While cropping the whole frame is on screen; otherwise it is the crop.
+  const shown =
+    developed && session
+      ? displayedSize(session.info, cropping ? FULL_CROP : session.settings.crop)
+      : null;
   const previewScale =
-    frame !== null && developed && frame.width > 0 ? session.info.width / frame.width : 1;
+    frame !== null && shown !== null && frame.width > 0 ? shown.width / frame.width : 1;
 
   if (src === null) {
     // A raw file whose first frame has not arrived. The decode takes a couple
@@ -165,9 +226,18 @@ export function ImageCanvas() {
   return (
     <div
       ref={containerRef}
-      className={session?.picking ? "viewer-canvas picking" : "viewer-canvas"}
+      className={[
+        "viewer-canvas",
+        session?.picking ? "picking" : "",
+        cropping ? "cropping" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onWheel={handleWheel}
       onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       onDoubleClick={handleDoubleClick}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -182,8 +252,8 @@ export function ImageCanvas() {
           imageLoaded({
             // A developed frame is a downscaled preview; the viewport must
             // size itself to the real image so zoom and fit stay honest.
-            width: developed ? session.info.width : e.currentTarget.naturalWidth,
-            height: developed ? session.info.height : e.currentTarget.naturalHeight,
+            width: shown ? shown.width : e.currentTarget.naturalWidth,
+            height: shown ? shown.height : e.currentTarget.naturalHeight,
           })
         }
         draggable={false}
@@ -194,6 +264,26 @@ export function ImageCanvas() {
           visibility: view ? "visible" : "hidden",
         }}
       />
+      {/* While cropping, the rectangle: the one being dragged if there is a
+          drag, otherwise the one already stored, so entering crop mode shows
+          what you have rather than a blank frame. */}
+      {cropping && view !== null && img !== null && (() => {
+        const c = drag
+          ? cropFromDrag(drag.from, drag.to, 0)
+          : (session?.settings.crop ?? null);
+        if (!c) return null;
+        return (
+          <div
+            className="viewer-crop"
+            style={{
+              left: view.tx + c.x * img.width * view.scale,
+              top: view.ty + c.y * img.height * view.scale,
+              width: c.width * img.width * view.scale,
+              height: c.height * img.height * view.scale,
+            }}
+          />
+        );
+      })()}
       {/* Thirds guides, laid over the image itself rather than the viewport,
           so they follow it as it pans and zooms — guides that stayed put on
           screen would be measuring the window, not the photograph. */}
@@ -222,10 +312,10 @@ export function ImageCanvas() {
           alt=""
           draggable={false}
           style={{
-            left: view.tx + detail.regionX * session.info.width * view.scale,
-            top: view.ty + detail.regionY * session.info.height * view.scale,
-            width: detail.regionWidth * session.info.width * view.scale,
-            height: detail.regionHeight * session.info.height * view.scale,
+            left: view.tx + detail.regionX * (shown?.width ?? 0) * view.scale,
+            top: view.ty + detail.regionY * (shown?.height ?? 0) * view.scale,
+            width: detail.regionWidth * (shown?.width ?? 0) * view.scale,
+            height: detail.regionHeight * (shown?.height ?? 0) * view.scale,
           }}
         />
       )}

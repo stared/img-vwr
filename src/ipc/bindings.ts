@@ -234,9 +234,9 @@ async developExport(path: string, settings: DevelopSettings, destination: string
  * Sample a point and report the white balance that renders it neutral —
  * the eyedropper. Runs off the main thread like every other develop call.
  */
-async developPickWhiteBalance(path: string, x: number, y: number, current: WhiteBalance) : Promise<Result<WhiteBalance, string>> {
+async developPickWhiteBalance(path: string, x: number, y: number, settings: DevelopSettings) : Promise<Result<WhiteBalance, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("develop_pick_white_balance", { path, x, y, current }) };
+    return { status: "ok", data: await TAURI_INVOKE("develop_pick_white_balance", { path, x, y, settings }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -271,6 +271,19 @@ thumbnailReady: "thumbnail-ready"
 
 /** user-defined types **/
 
+/**
+ * The photograph within the frame: a rectangle, and the angle it sits at.
+ * 
+ * `x`, `y`, `width` and `height` are the rectangle in normalised coordinates
+ * of the original frame, describing where its *centre* and extent are; the
+ * rectangle itself is axis-aligned in the frame rotated by `angle`.
+ */
+export type Crop = { x: number; y: number; width: number; height: number; 
+/**
+ * Degrees clockwise. Positive straightens a horizon that falls to the
+ * right, which is the direction a hand-held frame usually drifts.
+ */
+angle: number }
 /**
  * A rendered preview: the pixels live in the service under `token` and are
  * fetched by the `develop:` protocol; the histogram comes back inline.
@@ -340,6 +353,10 @@ saturation: number }
  * against, plus everything layered on top.
  */
 export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams; 
+/**
+ * Which part of the frame the photograph actually is.
+ */
+crop: Crop; 
 /**
  * Which preset this edit is a variation of.
  * 

@@ -102,6 +102,7 @@ pub fn opening_settings(
     crate::params::DevelopSettings {
         white_balance: as_shot,
         params: opening_params(rendering),
+        crop: crate::crop::Crop::FULL,
         basis: opening_preset(rendering).to_owned(),
     }
 }

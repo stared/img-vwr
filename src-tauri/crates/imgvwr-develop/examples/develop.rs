@@ -61,6 +61,7 @@ fn main() {
             saturation: 0.0,
         },
         basis: imgvwr_develop::presets::NONE.to_owned(),
+        crop: imgvwr_develop::Crop::FULL,
     };
     let mut worst = std::time::Duration::ZERO;
     for _ in 0..5 {

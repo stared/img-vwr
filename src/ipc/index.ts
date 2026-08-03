@@ -14,6 +14,7 @@ import type {
   ImageMeta,
   ImageStats,
   MetaEntry,
+  Crop,
   Overlay,
   Preset,
   RegionArg,
@@ -36,6 +37,7 @@ export type {
   ImageMeta,
   ImageStats,
   MetaEntry,
+  Crop,
   Overlay,
   Preset,
   RegionArg,
@@ -166,9 +168,9 @@ export async function developPickWhiteBalance(
   path: string,
   x: number,
   y: number,
-  current: WhiteBalance,
+  settings: DevelopSettings,
 ): Promise<WhiteBalance> {
-  return unwrap(await commands.developPickWhiteBalance(path, x, y, current));
+  return unwrap(await commands.developPickWhiteBalance(path, x, y, settings));
 }
 
 export async function developSave(path: string, settings: DevelopSettings): Promise<void> {

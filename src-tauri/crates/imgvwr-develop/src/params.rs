@@ -88,6 +88,8 @@ impl DevelopParams {
 pub struct DevelopSettings {
     pub white_balance: WhiteBalance,
     pub params: DevelopParams,
+    /// Which part of the frame the photograph actually is.
+    pub crop: crate::crop::Crop,
     /// Which preset this edit is a variation of.
     ///
     /// Stored rather than derived, and the two are not the same question.
@@ -111,6 +113,7 @@ impl DevelopSettings {
         Self {
             white_balance: as_shot,
             params: DevelopParams::default(),
+            crop: crate::crop::Crop::FULL,
             basis: crate::presets::NONE.to_owned(),
         }
     }
@@ -122,6 +125,7 @@ impl DevelopSettings {
                 tint: clamp_finite(self.white_balance.tint, -150.0, 150.0),
             },
             params: self.params.clamped(),
+            crop: self.crop.clamped(),
             basis: self.basis.clone(),
         }
     }
@@ -214,6 +218,7 @@ mod tests {
             },
             params: DevelopParams::default(),
             basis: crate::presets::NONE.to_owned(),
+            crop: crate::crop::Crop::FULL,
         }
         .clamped();
         assert_eq!(settings.white_balance.temperature, 1667.0);

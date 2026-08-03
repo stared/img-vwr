@@ -1560,6 +1560,20 @@ button.stats-row:hover .stats-label {
   color: var(--text-faint);
 }
 
+/* The crop rectangle while cropping: the kept part stays plain and everything
+   outside it is dimmed by a huge shadow, so the picture you are choosing is
+   the bright one. */
+.viewer-crop {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+
+.viewer-canvas.cropping {
+  cursor: crosshair;
+}
+
 /* Thirds guides. A hairline in both black and white so the line reads over a
    bright sky and a dark shadow alike, without either being loud enough to
    compete with the photograph. */

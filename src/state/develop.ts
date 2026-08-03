@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type {
+  Crop,
   DevelopFrame,
   DevelopParams,
   DevelopSettings,
@@ -201,6 +202,72 @@ export interface DevelopStore {
 
   /** Set exposure from the light this frame recorded. */
   autoTone: () => Promise<void>;
+
+  /**
+   * Dragging out a new crop rectangle on the image.
+   *
+   * A mode, unavoidably: the same drag means "pan" the rest of the time, and
+   * there is nowhere else for it to live. It says so on the button, and any
+   * click outside a drag leaves it.
+   */
+  cropping: boolean;
+  setCropping: (cropping: boolean) => void;
+  setCrop: (crop: Crop) => void;
+}
+
+/** The whole frame, unturned — what "no crop" is. */
+export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1, angle: 0 };
+
+/**
+ * The size in real pixels of what the viewer is showing.
+ *
+ * Not the sensor's size once a crop is applied: zoom is "screen pixels per
+ * image pixel", and measuring it against a frame most of which was thrown
+ * away would report the wrong percentage and fit the wrong rectangle.
+ */
+export function displayedSize(
+  native: { width: number; height: number },
+  crop: Crop,
+): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.round(native.width * crop.width)),
+    height: Math.max(1, Math.round(native.height * crop.height)),
+  };
+}
+
+export function isCropped(crop: Crop): boolean {
+  return (
+    crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1 || crop.angle !== 0
+  );
+}
+
+/**
+ * A crop rectangle from a drag across the image, in normalised coordinates.
+ *
+ * Either corner may be dragged to, so the rectangle is built from the extremes
+ * rather than from start-to-end, and it is clamped to the frame — a drag that
+ * runs off the edge should stop at the edge, not produce a crop that is partly
+ * nowhere.
+ */
+export function cropFromDrag(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  angle: number,
+): Crop {
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  const x0 = clamp(Math.min(from.x, to.x));
+  const x1 = clamp(Math.max(from.x, to.x));
+  const y0 = clamp(Math.min(from.y, to.y));
+  const y1 = clamp(Math.max(from.y, to.y));
+  // A stray click is not a crop; below this it is a mis-drag.
+  const MIN = 0.02;
+  return {
+    x: x0,
+    y: y0,
+    width: Math.max(MIN, x1 - x0),
+    height: Math.max(MIN, y1 - y0),
+    angle,
+  };
 }
 
 /** Largest detail crop we will develop, in pixels of the longest edge. */
@@ -383,7 +450,13 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     // Comparing renders what the image opened with instead of the live
     // settings, so "before" means the same thing whether the edit is one
     // slider or a whole preset.
-    const settings = get().comparing ? start.info.settings : start.settings;
+    //
+    // Cropping renders the whole frame, because a crop is drawn on the
+    // photograph as shot. Drawing it on an already-cropped image would mean
+    // every rectangle was relative to the last one, and there would be no way
+    // to grow a crop back.
+    const live = get().cropping ? { ...start.settings, crop: FULL_CROP } : start.settings;
+    const settings = get().comparing ? start.info.settings : live;
 
     const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
       (frame) => ({ ok: true as const, frame }),
@@ -439,6 +512,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     toggleGridlines: () => set((s) => ({ gridlines: !s.gridlines })),
     copied: null,
     comparing: false,
+    cropping: false,
     opening: null,
 
     open: async (path) => {
@@ -555,12 +629,9 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     pickWhiteBalanceAt: async (x, y) => {
       const session = get().session;
       if (!session) return;
-      const balance = await developPickWhiteBalance(
-        session.path,
-        x,
-        y,
-        session.settings.whiteBalance,
-      );
+      // The point is where the user clicked on the picture in front of them,
+      // which is the crop; the backend maps it back onto the sensor.
+      const balance = await developPickWhiteBalance(session.path, x, y, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       // Disarm on use: the eyedropper is a single action, not a mode you
@@ -594,6 +665,19 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const now = get().session;
       if (!now || now.path !== session.path) return;
       change({ ...now.settings, params: { ...now.settings.params, exposure } });
+    },
+
+    setCropping: (cropping) => {
+      set({ cropping });
+      // Entering shows the whole frame and leaving shows the crop again, so
+      // both directions are a different picture and need a render.
+      void pump();
+    },
+
+    setCrop: (crop) => {
+      const session = get().session;
+      if (!session) return;
+      change({ ...session.settings, crop });
     },
 
     applyPreset: (id) => {

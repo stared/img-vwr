@@ -4,6 +4,8 @@ import { siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
+  FULL_CROP,
+  isCropped,
   nextOverlay,
   OVERLAY_LABELS,
   OVERLAY_NOTES,
@@ -109,6 +111,9 @@ export function DevelopPanel() {
   const gridlines = useDevelopStore((s) => s.gridlines);
   const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
   const comparing = useDevelopStore((s) => s.comparing);
+  const cropping = useDevelopStore((s) => s.cropping);
+  const setCropping = useDevelopStore((s) => s.setCropping);
+  const setCrop = useDevelopStore((s) => s.setCrop);
   const allEntries = useAppStore((s) => s.entries);
   const preferMember = useAppStore((s) => s.preferMember);
 
@@ -258,6 +263,31 @@ export function DevelopPanel() {
         <button className="develop-toggle" onClick={toggleDeviation}>
           values: {showDeviation ? `from ${baseline?.label ?? "flat"}` : "absolute"}
         </button>
+      </section>
+
+      <section className="develop-group">
+        <h4>Crop</h4>
+        <button
+          className={cropping ? "develop-toggle armed" : "develop-toggle"}
+          onClick={() => setCropping(!cropping)}
+        >
+          {cropping ? "cropping: drag across the image" : "crop"}
+        </button>
+        <Slider
+          label="straighten"
+          value={settings.crop.angle}
+          neutral={0}
+          min={-45}
+          max={45}
+          step={0.1}
+          display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
+          onChange={(angle) => setCrop({ ...settings.crop, angle })}
+        />
+        {isCropped(settings.crop) && (
+          <button className="develop-toggle" onClick={() => setCrop(FULL_CROP)}>
+            back to the whole frame
+          </button>
+        )}
       </section>
 
       <section className="develop-group">
