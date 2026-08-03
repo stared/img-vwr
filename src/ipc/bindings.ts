@@ -327,7 +327,23 @@ saturation: number }
  * The complete persisted state of one image's edit: what neutral to render
  * against, plus everything layered on top.
  */
-export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams }
+export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams; 
+/**
+ * Which preset this edit is a variation of.
+ * 
+ * Stored rather than derived, and the two are not the same question.
+ * "Which preset are the sliders sitting on right now" is answered by
+ * comparing them, and goes stale the moment one moves. "Which preset was
+ * this edit built on top of" cannot be recovered from the numbers at all
+ * — and it is the one the sliders need, because it is what they measure
+ * their deviation from.
+ * 
+ * An id rather than a copy of the numbers, so improving a preset improves
+ * the baseline of everything based on it. An unknown id (a preset that
+ * has since been removed) reads as the identity, which is what a missing
+ * baseline should mean.
+ */
+basis: string }
 /**
  * Everything the develop UI needs to show an image before any edit is made.
  */

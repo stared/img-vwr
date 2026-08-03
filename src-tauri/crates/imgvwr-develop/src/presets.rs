@@ -36,11 +36,15 @@ pub struct Preset {
 /// The look a raw file gets when nobody has said otherwise.
 pub const DEFAULT_FOR_RAW: &str = "nikon";
 
+/// The identity preset: no look, and the baseline everything measures against
+/// when it has no other one.
+pub const NONE: &str = "flat";
+
 /// Every preset, in the order a control should cycle through them.
 pub fn presets() -> Vec<Preset> {
     vec![
         Preset {
-            id: "flat".into(),
+            id: NONE.into(),
             label: "flat".into(),
             note: "The decode as measured, with no look applied.".into(),
             params: DevelopParams::default(),
@@ -69,19 +73,49 @@ pub fn preset(id: &str) -> Option<Preset> {
     presets().into_iter().find(|p| p.id == id)
 }
 
-/// The params an untouched image should start from.
+/// Which preset an untouched image of this kind should open on.
 ///
 /// Scene-referred pixels are flat by construction and a camera would have
 /// applied a curve before showing them to anyone, so they open with the
 /// default look. Anything already rendered opens exactly as it was written —
 /// applying a look to a finished JPEG would apply one twice.
-pub fn opening_params(rendering: Rendering) -> DevelopParams {
+pub fn opening_preset(rendering: Rendering) -> &'static str {
     match rendering {
-        Rendering::SceneReferred => preset(DEFAULT_FOR_RAW)
-            .map(|p| p.params)
-            .unwrap_or_default(),
-        Rendering::AlreadyRendered => DevelopParams::default(),
+        Rendering::SceneReferred => DEFAULT_FOR_RAW,
+        Rendering::AlreadyRendered => NONE,
     }
+}
+
+/// The params an untouched image should start from.
+pub fn opening_params(rendering: Rendering) -> DevelopParams {
+    preset(opening_preset(rendering))
+        .map(|p| p.params)
+        .unwrap_or_default()
+}
+
+/// The whole opening state, look and basis together, for an image whose camera
+/// chose `as_shot`.
+pub fn opening_settings(
+    as_shot: imgvwr_core::WhiteBalance,
+    rendering: Rendering,
+) -> crate::params::DevelopSettings {
+    crate::params::DevelopSettings {
+        white_balance: as_shot,
+        params: opening_params(rendering),
+        basis: opening_preset(rendering).to_owned(),
+    }
+}
+
+/// The params a set of settings measures its deviation from.
+///
+/// Sitting exactly on some preset makes that one the baseline, whatever the
+/// stored basis says — otherwise the sliders would show a deviation from one
+/// preset while the panel named another.
+pub fn baseline(settings: &crate::params::DevelopSettings) -> DevelopParams {
+    matching(&settings.params)
+        .or_else(|| preset(&settings.basis))
+        .map(|p| p.params)
+        .unwrap_or_default()
 }
 
 /// Which preset these settings are, if they are still exactly one of them.
@@ -133,6 +167,45 @@ mod tests {
             ..preset(DEFAULT_FOR_RAW).unwrap().params
         };
         assert_eq!(matching(&nudged), None, "a moved slider is no longer a preset");
+    }
+
+    #[test]
+    fn the_baseline_is_what_the_sliders_measure_against() {
+        use crate::params::DevelopSettings;
+        let nikon = preset(DEFAULT_FOR_RAW).unwrap();
+        let as_shot = imgvwr_core::WhiteBalance::D65;
+
+        // Untouched raw: the baseline is the look it opened with, so every
+        // slider reads as unmoved even though none of them is at zero.
+        let opened = opening_settings(as_shot, Rendering::SceneReferred);
+        assert_eq!(baseline(&opened), nikon.params);
+        assert_eq!(opened.basis, DEFAULT_FOR_RAW);
+
+        // Nudged off it: the baseline stays put, which is the whole point —
+        // otherwise the deviation would follow the value and always be zero.
+        let nudged = DevelopSettings {
+            params: DevelopParams { exposure: 1.4, ..nikon.params },
+            ..opened.clone()
+        };
+        assert_eq!(baseline(&nudged), nikon.params);
+
+        // Landing exactly on another preset makes that one the baseline,
+        // whatever the stored basis says, so the panel and the sliders cannot
+        // name different things.
+        let flattened = DevelopSettings {
+            params: DevelopParams::default(),
+            ..opened.clone()
+        };
+        assert_eq!(baseline(&flattened), DevelopParams::default());
+
+        // A basis naming a preset that no longer exists degrades to identity
+        // rather than to nothing at all.
+        let orphaned = DevelopSettings {
+            params: DevelopParams { exposure: 1.4, ..nikon.params },
+            basis: "kodachrome".into(),
+            ..opened
+        };
+        assert_eq!(baseline(&orphaned), DevelopParams::default());
     }
 
     #[test]

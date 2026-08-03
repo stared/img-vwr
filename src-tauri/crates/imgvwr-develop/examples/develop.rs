@@ -60,6 +60,7 @@ fn main() {
             vibrance: 30.0,
             saturation: 0.0,
         },
+        basis: imgvwr_develop::presets::NONE.to_owned(),
     };
     let mut worst = std::time::Duration::ZERO;
     for _ in 0..5 {

@@ -83,19 +83,35 @@ impl DevelopParams {
 
 /// The complete persisted state of one image's edit: what neutral to render
 /// against, plus everything layered on top.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopSettings {
     pub white_balance: WhiteBalance,
     pub params: DevelopParams,
+    /// Which preset this edit is a variation of.
+    ///
+    /// Stored rather than derived, and the two are not the same question.
+    /// "Which preset are the sliders sitting on right now" is answered by
+    /// comparing them, and goes stale the moment one moves. "Which preset was
+    /// this edit built on top of" cannot be recovered from the numbers at all
+    /// — and it is the one the sliders need, because it is what they measure
+    /// their deviation from.
+    ///
+    /// An id rather than a copy of the numbers, so improving a preset improves
+    /// the baseline of everything based on it. An unknown id (a preset that
+    /// has since been removed) reads as the identity, which is what a missing
+    /// baseline should mean.
+    pub basis: String,
 }
 
 impl DevelopSettings {
-    /// The untouched starting point for an image whose camera chose `as_shot`.
+    /// The untouched starting point for an image whose camera chose `as_shot`,
+    /// with no look applied.
     pub fn neutral(as_shot: WhiteBalance) -> Self {
         Self {
             white_balance: as_shot,
             params: DevelopParams::default(),
+            basis: crate::presets::NONE.to_owned(),
         }
     }
 
@@ -106,6 +122,7 @@ impl DevelopSettings {
                 tint: clamp_finite(self.white_balance.tint, -150.0, 150.0),
             },
             params: self.params.clamped(),
+            basis: self.basis.clone(),
         }
     }
 }
@@ -194,6 +211,7 @@ mod tests {
                 tint: 900.0,
             },
             params: DevelopParams::default(),
+            basis: crate::presets::NONE.to_owned(),
         }
         .clamped();
         assert_eq!(settings.white_balance.temperature, 1667.0);

@@ -97,18 +97,19 @@ impl DevelopService {
                  saturation  REAL NOT NULL
              ) STRICT;",
         )?;
-        // Added after the first release, so existing databases need it. The
-        // default is the value that means "no shoulder", which is exactly what
-        // rows written before it existed were rendered with — an old edit
-        // keeps looking the way its author left it.
-        if let Err(e) = conn.execute(
-            "ALTER TABLE develop ADD COLUMN rolloff REAL NOT NULL DEFAULT 0",
-            [],
-        ) {
-            // Already there on every run but the first.
-            let expected = e.to_string().contains("duplicate column name");
-            if !expected {
-                return Err(e);
+        // Columns added after the first release, so existing databases need
+        // them. Each default is the value that leaves an old row rendering and
+        // reading exactly as its author left it: no shoulder, and no preset
+        // underneath it.
+        for column in [
+            "rolloff REAL NOT NULL DEFAULT 0",
+            "basis TEXT NOT NULL DEFAULT 'flat'",
+        ] {
+            if let Err(e) = conn.execute(&format!("ALTER TABLE develop ADD COLUMN {column}"), []) {
+                // Already there on every run but the first.
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(e);
+                }
             }
         }
         Ok(Self {
@@ -163,16 +164,13 @@ impl DevelopService {
         // curve before showing it to anyone, so the pipeline does too. The
         // plugin says which kind of pixels these are; nothing here asks about
         // file formats.
-        let opening = DevelopSettings {
-            white_balance: as_shot,
-            params: imgvwr_develop::opening_params(entry.scene.rendering()),
-        };
+        let opening = imgvwr_develop::opening_settings(as_shot, entry.scene.rendering());
         Ok(DevelopState {
             width,
             height,
             as_shot,
-            settings: stored.unwrap_or(opening),
             edited: stored.is_some(),
+            settings: stored.unwrap_or(opening),
             // A RAW file has no decoder in the webview; anything the codec
             // registry handles can be shown directly and only needs the
             // develop path once it has actually been edited.
@@ -291,7 +289,7 @@ impl DevelopService {
         let mut stmt = conn
             .prepare(
                 "SELECT temperature, tint, exposure, contrast, highlights, shadows,
-                        whites, blacks, rolloff, vibrance, saturation
+                        whites, blacks, rolloff, vibrance, saturation, basis
                  FROM develop WHERE path = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -313,6 +311,7 @@ impl DevelopService {
                         vibrance: row.get::<_, f64>(9)? as f32,
                         saturation: row.get::<_, f64>(10)? as f32,
                     },
+                    basis: row.get::<_, String>(11)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -330,15 +329,16 @@ impl DevelopService {
         conn.execute(
             "INSERT INTO develop
                  (path, temperature, tint, exposure, contrast, highlights,
-                  shadows, whites, blacks, rolloff, vibrance, saturation)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                  shadows, whites, blacks, rolloff, vibrance, saturation, basis)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(path) DO UPDATE SET
                  temperature = excluded.temperature, tint = excluded.tint,
                  exposure = excluded.exposure, contrast = excluded.contrast,
                  highlights = excluded.highlights, shadows = excluded.shadows,
                  whites = excluded.whites, blacks = excluded.blacks,
                  rolloff = excluded.rolloff,
-                 vibrance = excluded.vibrance, saturation = excluded.saturation",
+                 vibrance = excluded.vibrance, saturation = excluded.saturation,
+                 basis = excluded.basis",
             rusqlite::params![
                 path,
                 f64::from(s.white_balance.temperature),
@@ -352,6 +352,7 @@ impl DevelopService {
                 f64::from(s.params.rolloff),
                 f64::from(s.params.vibrance),
                 f64::from(s.params.saturation),
+                s.basis.clone(),
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -405,10 +406,7 @@ pub fn thumbnail_via_develop(
     // disagree with the picture it leads to. Stored edits are deliberately not
     // consulted: a thumbnail is a cheap index entry, and reading the database
     // once per cell would make scrolling a folder a database scan.
-    let settings = DevelopSettings {
-        white_balance: scene.as_shot(),
-        params: imgvwr_develop::opening_params(scene.rendering()),
-    };
+    let settings = imgvwr_develop::opening_settings(scene.as_shot(), scene.rendering());
     let developed =
         imgvwr_develop::render(scene.as_ref(), &settings, max_edge, Overlay::None, Region::FULL)
             .map_err(|e| e.to_string())?;
@@ -593,6 +591,7 @@ mod tests {
         let mine = DevelopSettings {
             white_balance: WhiteBalance { temperature: 5200.0, tint: -3.0 },
             params: DevelopParams { exposure: -0.4, ..Default::default() },
+            basis: imgvwr_develop::presets::NONE.to_owned(),
         };
         svc.save_settings(path, &mine).unwrap();
 
@@ -609,6 +608,7 @@ mod tests {
         let settings = DevelopSettings {
             white_balance: WhiteBalance { temperature: 6000.0, tint: 0.0 },
             params: DevelopParams { rolloff: 83.0, ..Default::default() },
+            basis: imgvwr_develop::presets::NONE.to_owned(),
         };
         svc.save_settings(path, &settings).unwrap();
         assert_eq!(svc.stored_settings(path).unwrap().unwrap().params.rolloff, 83.0);
@@ -643,6 +643,7 @@ mod tests {
                 contrast: 30.0,
                 ..Default::default()
             },
+            basis: imgvwr_develop::presets::NONE.to_owned(),
         };
         svc.save_settings(path, &edit).unwrap();
 
@@ -676,6 +677,7 @@ mod tests {
                     exposure: 99.0,
                     ..Default::default()
                 },
+                basis: imgvwr_develop::presets::NONE.to_owned(),
             },
         )
         .unwrap();
@@ -737,6 +739,7 @@ mod tests {
                             exposure: i as f32 * 0.1,
                             ..Default::default()
                         },
+                        basis: imgvwr_develop::presets::NONE.to_owned(),
                     },
                     30,
                     Overlay::None,
@@ -764,6 +767,7 @@ mod tests {
                     exposure: 0.5,
                     ..Default::default()
                 },
+                basis: imgvwr_develop::presets::NONE.to_owned(),
             },
             &dest,
         )

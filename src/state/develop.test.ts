@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DevelopSettings, DevelopState } from "../ipc";
 import { exportName } from "../commands/develop";
 import {
+  baselineOf,
   isNeutral,
   needsDetail,
   needsDevelopedFrame,
@@ -32,6 +33,7 @@ const neutralSettings: DevelopSettings = {
     vibrance: 0,
     saturation: 0,
   },
+  basis: "flat",
 };
 
 function session(over: Partial<Session> = {}, info: Partial<DevelopState> = {}): Session {
@@ -232,14 +234,33 @@ describe("presets", () => {
     expect(presetOf({ ...nikon.params, shadows: -12 }, catalog)).toBeNull();
   });
 
-  it("cycles, and enters at the first preset from a custom edit", () => {
-    expect(nextPreset(flat, catalog)?.id).toBe("nikon");
-    expect(nextPreset(nikon, catalog)?.id).toBe("flat");
-    expect(nextPreset(null, catalog)?.id).toBe("flat");
+  it("cycles through the catalog from a preset", () => {
+    expect(nextPreset(flat, flat, catalog)?.id).toBe("nikon");
+    expect(nextPreset(nikon, nikon, catalog)?.id).toBe("flat");
+  });
+
+  it("goes back to the basis from an edited state, not on round the cycle", () => {
+    // Having tweaked nikon, the useful click is undoing the tweaks.
+    expect(nextPreset(null, nikon, catalog)?.id).toBe("nikon");
   });
 
   it("has nothing to move to when the catalog has not arrived", () => {
-    expect(nextPreset(null, [])).toBeNull();
+    expect(nextPreset(null, null, [])).toBeNull();
+  });
+
+  it("measures deviation from the stored basis, and holds it as sliders move", () => {
+    const edited = { ...neutralSettings, params: { ...nikon.params, exposure: 1.4 }, basis: "nikon" };
+    expect(baselineOf(edited, catalog)?.id).toBe("nikon");
+  });
+
+  it("takes the preset it is sitting on as the baseline, whatever the basis says", () => {
+    const landed = { ...neutralSettings, params: flat.params, basis: "nikon" };
+    expect(baselineOf(landed, catalog)?.id).toBe("flat");
+  });
+
+  it("has no baseline when the basis names a preset that is gone", () => {
+    const orphan = { ...neutralSettings, params: { ...nikon.params, exposure: 1.4 }, basis: "kodachrome" };
+    expect(baselineOf(orphan, catalog)).toBeNull();
   });
 });
 

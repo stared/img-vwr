@@ -112,6 +112,9 @@ export interface DevelopStore {
   session: Session | null;
   /** The preset catalog, fetched once. Empty until it arrives. */
   presets: Preset[];
+  /** Show each slider's distance from its preset rather than its own value. */
+  showDeviation: boolean;
+  toggleDeviation: () => void;
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -242,20 +245,41 @@ export function isAtOpening(session: Session): boolean {
 /**
  * Which preset the current settings are, or null once they are nobody's.
  *
- * Compared rather than remembered: nothing stores which preset an edit came
- * from, and a remembered name would keep claiming a look the sliders had
- * already left.
+ * Compared rather than remembered, so the control can only ever name a look
+ * the sliders are actually sitting on.
  */
 export function presetOf(params: DevelopParams, presets: Preset[]): Preset | null {
   return presets.find((p) => PARAM_KEYS.every((key) => p.params[key] === params[key])) ?? null;
 }
 
-/** The preset a control should move to when the current one is `active`. */
-export function nextPreset(active: Preset | null, presets: Preset[]): Preset | null {
+/**
+ * The preset a slider measures its deviation from — its zero level.
+ *
+ * The stored basis, except that sitting exactly on some preset makes that one
+ * the baseline instead: otherwise the bars would show a deviation from one
+ * look while the panel named another.
+ */
+export function baselineOf(settings: DevelopSettings, presets: Preset[]): Preset | null {
+  return (
+    presetOf(settings.params, presets) ?? presets.find((p) => p.id === settings.basis) ?? null
+  );
+}
+
+/**
+ * The preset a control should move to.
+ *
+ * From a preset, the next one along. From an edited state, back to the look
+ * the edit was built on — the useful move is undoing your tweaks, not
+ * jumping to whichever preset happens to be first.
+ */
+export function nextPreset(
+  active: Preset | null,
+  basis: Preset | null,
+  presets: Preset[],
+): Preset | null {
   if (presets.length === 0) return null;
-  const at = active ? presets.findIndex((p) => p.id === active.id) : -1;
-  // Off a preset entirely, the first click lands on the first one rather than
-  // continuing a cycle the user is no longer in.
+  if (!active) return basis ?? presets[0] ?? null;
+  const at = presets.findIndex((p) => p.id === active.id);
   return presets[at < 0 ? 0 : (at + 1) % presets.length] ?? null;
 }
 
@@ -325,6 +349,8 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       );
       return [];
     })(),
+    showDeviation: false,
+    toggleDeviation: () => set((s) => ({ showDeviation: !s.showDeviation })),
     opening: null,
 
     open: async (path) => {
@@ -462,7 +488,10 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // White balance is deliberately untouched. It is a measurement of the
       // light the photograph was taken in, not part of anybody's look, and a
       // preset that overwrote it would throw away the eyedropper's work.
-      change({ ...session.settings, params: preset.params });
+      //
+      // The basis moves with it: from here on, this is what the sliders
+      // measure their deviation from.
+      change({ ...session.settings, params: preset.params, basis: preset.id });
     },
 
     clearDetail: () => {

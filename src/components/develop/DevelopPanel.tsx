@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { useSelectedEntry } from "../../state/store";
 import {
+  baselineOf,
   isAtOpening,
   nextPreset,
   PARAM_SPECS,
@@ -99,6 +100,8 @@ export function DevelopPanel() {
   const reset = useDevelopStore((s) => s.reset);
   const presets = useDevelopStore((s) => s.presets);
   const applyPreset = useDevelopStore((s) => s.applyPreset);
+  const showDeviation = useDevelopStore((s) => s.showDeviation);
+  const toggleDeviation = useDevelopStore((s) => s.toggleDeviation);
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -118,6 +121,7 @@ export function DevelopPanel() {
 
   const { settings, info, overlay } = session;
   const active = presetOf(settings.params, presets);
+  const baseline = baselineOf(settings, presets);
   // A raw file opens with a look already on it, so "is this the identity edit"
   // is the wrong question for whether there is anything to undo.
   const untouched = !info.edited && isAtOpening(session);
@@ -190,30 +194,45 @@ export function DevelopPanel() {
             <button
               className="develop-toggle"
               onClick={() => {
-                const following = nextPreset(active, presets);
+                const following = nextPreset(active, baseline, presets);
                 if (following) applyPreset(following.id);
               }}
             >
-              preset: {active ? active.label : "custom"}
+              preset: {active ? active.label : `${baseline?.label ?? "flat"}, edited`}
             </button>
             <p className="develop-note">
-              {active ? active.note : "Sliders moved since a preset was applied."}
+              {active
+                ? active.note
+                : `Click to put every slider back to ${baseline?.label ?? "flat"}.`}
             </p>
           </>
         )}
-        {PARAM_SPECS.map((spec: ParamSpec) => (
-          <Slider
-            key={spec.key}
-            label={spec.label}
-            value={settings.params[spec.key]}
-            neutral={0}
-            min={spec.min}
-            max={spec.max}
-            step={spec.step}
-            display={spec.format(settings.params[spec.key])}
-            onChange={(value) => setParam(spec.key, value)}
-          />
-        ))}
+        {PARAM_SPECS.map((spec: ParamSpec) => {
+          const value = settings.params[spec.key];
+          // Zero level is the preset, not the bottom of the scale. So an
+          // untouched image shows bare hairlines however strong its look is,
+          // any bar at all means the user moved that control, and
+          // double-clicking puts it back to the preset rather than to flat.
+          const from = baseline ? baseline.params[spec.key] : 0;
+          return (
+            <Slider
+              key={spec.key}
+              label={spec.label}
+              value={value}
+              neutral={from}
+              min={spec.min}
+              max={spec.max}
+              step={spec.step}
+              display={showDeviation ? spec.format(value - from) : spec.format(value)}
+              onChange={(next) => setParam(spec.key, next)}
+            />
+          );
+        })}
+        {/* The numbers can read either way; the bars always show the
+            deviation, because that is what there is to see. */}
+        <button className="develop-toggle" onClick={toggleDeviation}>
+          values: {showDeviation ? `from ${baseline?.label ?? "flat"}` : "absolute"}
+        </button>
       </section>
 
       <section className="develop-group">
