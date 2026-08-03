@@ -38,6 +38,8 @@ export function ImageCanvas() {
   const clearDetail = useDevelopStore((s) => s.clearDetail);
   const pickWhiteBalanceAt = useDevelopStore((s) => s.pickWhiteBalanceAt);
   const canvas = useAppStore((s) => s.viewerWin);
+  const img = useAppStore((s) => s.viewerImg);
+  const gridlines = useDevelopStore((s) => s.gridlines);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +189,25 @@ export function ImageCanvas() {
           visibility: view ? "visible" : "hidden",
         }}
       />
+      {/* Thirds guides, laid over the image itself rather than the viewport,
+          so they follow it as it pans and zooms — guides that stayed put on
+          screen would be measuring the window, not the photograph. */}
+      {gridlines && view !== null && img !== null && (
+        <div
+          className="viewer-guides"
+          style={{
+            left: view.tx,
+            top: view.ty,
+            width: img.width * view.scale,
+            height: img.height * view.scale,
+          }}
+        >
+          <span className="down" style={{ left: "33.333%" }} />
+          <span className="down" style={{ left: "66.667%" }} />
+          <span className="across" style={{ top: "33.333%" }} />
+          <span className="across" style={{ top: "66.667%" }} />
+        </div>
+      )}
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.
           Drawn on top rather than instead of, so panning never blanks. */}
       {developed && detail !== null && view !== null && (

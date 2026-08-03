@@ -452,7 +452,11 @@ export type Overlay =
 /**
  * Tint regions by how much fine detail they resolve — the focus map.
  */
-"sharpness"
+"sharpness" | 
+/**
+ * Mark the pixels that have run out of range at either end.
+ */
+"clipping"
 export type Preset = { id: string; 
 /**
  * What the control says when this preset is the one in effect.

@@ -150,6 +150,8 @@ pub enum Overlay {
     None,
     /// Tint regions by how much fine detail they resolve — the focus map.
     Sharpness,
+    /// Mark the pixels that have run out of range at either end.
+    Clipping,
 }
 
 #[cfg(test)]

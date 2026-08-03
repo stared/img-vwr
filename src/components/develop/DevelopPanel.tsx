@@ -3,6 +3,9 @@ import { useEffect } from "react";
 import { useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
+  nextOverlay,
+  OVERLAY_LABELS,
+  OVERLAY_NOTES,
   isAtOpening,
   nextPreset,
   PARAM_SPECS,
@@ -102,6 +105,8 @@ export function DevelopPanel() {
   const applyPreset = useDevelopStore((s) => s.applyPreset);
   const showDeviation = useDevelopStore((s) => s.showDeviation);
   const toggleDeviation = useDevelopStore((s) => s.toggleDeviation);
+  const gridlines = useDevelopStore((s) => s.gridlines);
+  const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -237,17 +242,19 @@ export function DevelopPanel() {
 
       <section className="develop-group">
         <h4>Analysis</h4>
-        {/* One button labelled with the state it is in; clicking switches. */}
-        <button
-          className="develop-toggle"
-          onClick={() => setOverlay(overlay === "sharpness" ? "none" : "sharpness")}
-        >
-          focus map: {overlay === "sharpness" ? "on" : "off"}
+        {/* One button labelled with the state it is in; clicking moves to the
+            next. These replace what the photograph looks like, so only one can
+            be on — which is why they share a control rather than having one
+            switch each. */}
+        <button className="develop-toggle" onClick={() => setOverlay(nextOverlay(overlay))}>
+          overlay: {OVERLAY_LABELS[overlay]}
         </button>
-        <p className="develop-note">
-          Marks the regions that resolve fine detail. Smooth surfaces read as
-          unsharp because there is no detail there to resolve.
-        </p>
+        <p className="develop-note">{OVERLAY_NOTES[overlay]}</p>
+        {/* Guides are geometry, not pixels: independent of the above, and free
+            to leave on while you work. */}
+        <button className="develop-toggle" onClick={toggleGridlines}>
+          guides: {gridlines ? "thirds" : "off"}
+        </button>
       </section>
     </div>
   );

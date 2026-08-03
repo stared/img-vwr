@@ -39,10 +39,13 @@ pub fn histogram(img: &DecodedImage) -> Histogram {
         let y = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
         luma_bins[(y.round() as usize).min(255)] += 1;
 
+        // Asymmetric, and `composite_clipping` marks exactly these pixels —
+        // see there for why one channel is enough at the top and not at the
+        // bottom.
         if r == 0 && g == 0 && b == 0 {
             clipped_shadows += 1;
         }
-        if r == 255 && g == 255 && b == 255 {
+        if r == 255 || g == 255 || b == 255 {
             clipped_highlights += 1;
         }
     }
@@ -208,6 +211,41 @@ pub fn composite_sharpness(img: &mut DecodedImage, map: &[f32]) {
         });
 }
 
+/// Mark every pixel that has run out of range, so the places with no detail
+/// left are visible rather than merely dark or bright.
+///
+/// The two ends are asked differently, on purpose. A *single* channel at 255
+/// is a blown highlight worth catching — losing only the red of a red petal
+/// leaves it still looking like a petal while it has quietly stopped having
+/// any texture, and no later edit brings that back. At the bottom the same
+/// rule would fire constantly: a deep blue sky has almost no red in it and is
+/// not crushed, it is blue. So shadows are only called clipped when every
+/// channel is at zero, which is the point where there is genuinely nothing
+/// recorded. [`histogram`] counts the same way, so the marks and the
+/// percentages beside them describe the same pixels.
+///
+/// Marked in flat colour rather than tinted: this is a yes-or-no question, and
+/// a wash that varies with the underlying pixel reads as part of the
+/// photograph. Red for blown, blue for crushed, the convention every other
+/// photo editor uses.
+pub fn composite_clipping(img: &mut DecodedImage) {
+    img.rgba.par_chunks_mut(4).for_each(|px| {
+        let blown = px[0] == 255 || px[1] == 255 || px[2] == 255;
+        let crushed = px[0] == 0 && px[1] == 0 && px[2] == 0;
+        // Blown wins when a pixel manages both, since a highlight with no
+        // detail is the one that cannot be recovered by any later edit.
+        if blown {
+            px[0] = 235;
+            px[1] = 40;
+            px[2] = 40;
+        } else if crushed {
+            px[0] = 40;
+            px[1] = 90;
+            px[2] = 235;
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +256,47 @@ mod tests {
             height: 1,
             rgba: pixels.iter().flatten().copied().collect(),
         }
+    }
+
+    #[test]
+    fn clipping_marks_a_single_blown_channel_but_only_fully_crushed_shadows() {
+        let mut img = decoded(&[
+            [255, 120, 60, 255],  // red gone: blown, and invisible in the picture
+            [40, 0, 90, 255],     // a saturated colour, not a crushed shadow
+            [0, 0, 0, 255],       // nothing recorded at all
+            [200, 180, 160, 255], // ordinary highlight, left alone
+        ]);
+        let before = img.rgba.clone();
+        composite_clipping(&mut img);
+        let px = |i: usize| [img.rgba[i * 4], img.rgba[i * 4 + 1], img.rgba[i * 4 + 2]];
+
+        assert_eq!(px(0), [235, 40, 40], "one blown channel is enough");
+        assert_eq!(px(1), before[4..7], "a deep blue is not a crushed shadow");
+        assert_eq!(px(2), [40, 90, 235], "black is marked");
+        assert_eq!(px(3), before[12..15], "an ordinary pixel is untouched");
+    }
+
+    #[test]
+    fn the_marks_and_the_reported_percentages_describe_the_same_pixels() {
+        // The panel prints these counts beside the image the overlay marks;
+        // if they disagreed, one of them would be lying.
+        let pixels = [
+            [255, 120, 60, 255],
+            [40, 0, 90, 255],
+            [0, 0, 0, 255],
+            [200, 180, 160, 255],
+        ];
+        let hist = histogram(&decoded(&pixels));
+        let mut img = decoded(&pixels);
+        composite_clipping(&mut img);
+        let marked = |colour: [u8; 3]| {
+            img.rgba
+                .chunks_exact(4)
+                .filter(|px| px[..3] == colour)
+                .count() as u32
+        };
+        assert_eq!(hist.clipped_highlights, marked([235, 40, 40]));
+        assert_eq!(hist.clipped_shadows, marked([40, 90, 235]));
     }
 
     #[test]

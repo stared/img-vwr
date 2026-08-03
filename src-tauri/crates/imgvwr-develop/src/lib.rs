@@ -10,7 +10,9 @@ pub mod params;
 pub mod pipeline;
 pub mod presets;
 
-pub use analysis::{composite_sharpness, histogram, sharpness_map, Histogram};
+pub use analysis::{
+    composite_clipping, composite_sharpness, histogram, sharpness_map, Histogram,
+};
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use presets::{baseline, opening_params, opening_settings, preset, presets, Preset};
 pub use pipeline::{develop, MID_GREY};
@@ -51,6 +53,7 @@ pub fn render(
             let map = sharpness_map(&linear);
             composite_sharpness(&mut image, &map);
         }
+        Overlay::Clipping => composite_clipping(&mut image),
     }
 
     Ok(Developed {

@@ -1503,6 +1503,32 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
+/* Thirds guides. A hairline in both black and white so the line reads over a
+   bright sky and a dark shadow alike, without either being loud enough to
+   compete with the photograph. */
+.viewer-guides {
+  position: absolute;
+  pointer-events: none;
+}
+
+.viewer-guides span {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+}
+
+.viewer-guides .down {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.viewer-guides .across {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
 /* ---- Right-panel refinements ---- */
 
 /* Linear's restraint: one quiet type size, hairline rules, colour reserved

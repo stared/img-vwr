@@ -75,6 +75,34 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: "saturation", label: "saturation", min: -100, max: 100, step: 1, format: signed(0) },
 ];
 
+/**
+ * The pixel overlays, in the order one control cycles through them.
+ *
+ * Each replaces what the photograph looks like, so they are mutually
+ * exclusive and share a single button. Derived from one list so adding one
+ * means adding it here and in the Rust enum, and nowhere else.
+ */
+export const OVERLAY_CYCLE: Overlay[] = ["none", "sharpness", "clipping"];
+
+export const OVERLAY_LABELS: Record<Overlay, string> = {
+  none: "off",
+  sharpness: "focus map",
+  clipping: "clipping",
+};
+
+export const OVERLAY_NOTES: Record<Overlay, string> = {
+  none: "The photograph, unmarked.",
+  sharpness:
+    "Marks the regions that resolve fine detail. Smooth surfaces read as unsharp because there is no detail there to resolve.",
+  clipping:
+    "Red where a channel has hit white and lost its texture, blue where nothing at all was recorded.",
+};
+
+export function nextOverlay(current: Overlay): Overlay {
+  const at = OVERLAY_CYCLE.indexOf(current);
+  return OVERLAY_CYCLE[(at + 1) % OVERLAY_CYCLE.length] ?? "none";
+}
+
 export const TEMPERATURE_RANGE = { min: 2000, max: 12000, step: 10 };
 export const TINT_RANGE = { min: -150, max: 150, step: 1 };
 
@@ -115,6 +143,17 @@ export interface DevelopStore {
   /** Show each slider's distance from its preset rather than its own value. */
   showDeviation: boolean;
   toggleDeviation: () => void;
+  /**
+   * Thirds guides over the image.
+   *
+   * Not an `Overlay`: those are pixel overlays, computed by the renderer and
+   * mutually exclusive because each one replaces what the photograph looks
+   * like. Guides are geometry drawn on top, so they cost no render, cannot
+   * conflict with a focus map or a clipping warning, and stay put while a
+   * slider drag re-renders underneath them.
+   */
+  gridlines: boolean;
+  toggleGridlines: () => void;
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -351,6 +390,8 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     })(),
     showDeviation: false,
     toggleDeviation: () => set((s) => ({ showDeviation: !s.showDeviation })),
+    gridlines: false,
+    toggleGridlines: () => set((s) => ({ gridlines: !s.gridlines })),
     opening: null,
 
     open: async (path) => {
