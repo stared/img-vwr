@@ -5,12 +5,17 @@ export function StatusBar() {
   const status = useAppStore((s) => s.status);
   const total = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
+  const galleryLayout = useAppStore((s) => s.galleryLayout);
   const index = useAppStore((s) => s.selectedIndex);
   const view = useAppStore((s) => s.viewerView);
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
   const entry = useSelectedEntry();
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
+
+  // Zoom and pixel size describe a viewport, so they belong wherever one is
+  // on screen — the viewer and the darkroom both — and nowhere else.
+  const looking = viewMode === "viewer" || galleryLayout === "darkroom";
 
   // While a scan streams in, the total is a running count, not a final one.
   const totalText = status === "loading" ? `${total}…` : `${total}`;
@@ -32,26 +37,24 @@ export function StatusBar() {
             : `${scope.sourceId} · ${scope.label}`}
       </span>
       <span className="status-right">
-        {viewMode === "viewer" && entry ? (
-          <>
-            {labelsText && <span className="status-labels">{labelsText}</span>}
-            <span>{entry.name}</span>
-            <span>
-              {(index ?? 0) + 1} / {visible.length}
-            </span>
-            {img && (
-              <span>
-                {img.width}×{img.height}
-              </span>
-            )}
-            {view && <span>{Math.round(view.scale * 100)}%</span>}
-          </>
-        ) : (
-          <>
-            {labelsText && <span className="status-labels">{labelsText}</span>}
-            {total > 0 && <span>{countText}</span>}
-          </>
+        {labelsText && <span className="status-labels">{labelsText}</span>}
+        {/* Which file is being looked at, wherever there is one. It used to
+            appear only in the full-screen viewer, which left the darkroom —
+            the view built for working on one photograph — as the one place
+            that never said which photograph. */}
+        {entry && <span>{entry.name}</span>}
+        {entry && (
+          <span>
+            {(index ?? 0) + 1} / {visible.length}
+          </span>
         )}
+        {looking && img && (
+          <span>
+            {img.width}×{img.height}
+          </span>
+        )}
+        {looking && view && <span>{Math.round(view.scale * 100)}%</span>}
+        {!entry && total > 0 && <span>{countText}</span>}
       </span>
     </footer>
   );

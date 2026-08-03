@@ -1526,6 +1526,29 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
+/* The empty canvas while a raw file decodes. The name is the message and the
+   progress note recedes; nothing here persists once pixels arrive. */
+.canvas-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+
+.canvas-waiting-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.canvas-waiting-note {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 /* Thirds guides. A hairline in both black and white so the line reads over a
    bright sky and a dark shadow alike, without either being loud enough to
    compete with the photograph. */

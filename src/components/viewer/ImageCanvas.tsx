@@ -148,11 +148,16 @@ export function ImageCanvas() {
     frame !== null && developed && frame.width > 0 ? session.info.width / frame.width : 1;
 
   if (src === null) {
-    // A raw file whose first frame has not arrived: the decode takes a
-    // couple of seconds and there is nothing meaningful to show meanwhile.
+    // A raw file whose first frame has not arrived. The decode takes a couple
+    // of seconds, and this is the one moment the filename belongs on the
+    // image itself: the canvas is empty anyway, so it costs the photograph
+    // nothing, and it is exactly when you want to know what is coming.
     return (
       <div ref={containerRef} className="viewer-canvas">
-        <p className="hint">Developing {entry.name}…</p>
+        <p className="canvas-waiting">
+          <span className="canvas-waiting-name">{entry.name}</span>
+          <span className="canvas-waiting-note">developing…</span>
+        </p>
       </div>
     );
   }
