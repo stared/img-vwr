@@ -943,6 +943,28 @@ button.stats-row:hover .stats-label {
 }
 
 /* Star badge on rated cells; sits over the thumbnail's bottom-left. */
+/* Five stars, the filled ones carrying the rating. Colour marks only what is
+   set — the empty ones are present so the scale is visible, not to be read. */
+.info-rating {
+  display: flex;
+  gap: 1px;
+}
+
+.info-rating button {
+  padding: 0 1px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--border);
+}
+
+.info-rating button:hover {
+  color: var(--text-dim);
+}
+
+.info-rating button.on {
+  color: var(--accent);
+}
+
 .thumb-stars {
   position: absolute;
   left: 4px;
@@ -1464,6 +1486,7 @@ button.stats-row:hover .stats-label {
 }
 
 .filmstrip-cell {
+  position: relative; /* so a rating can sit in the corner, as in the grid */
   display: flex;
   align-items: center;
   justify-content: center;

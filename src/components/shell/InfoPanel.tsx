@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ImageStats } from "../../ipc";
-import { imageStats } from "../../ipc";
+import { imageStats, labelsSetStars } from "../../ipc";
 import { formatBytes } from "../../state/stats";
 import { useAppStore, useSelectedEntry } from "../../state/store";
 
@@ -24,6 +24,39 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </button>
       {open && children}
     </section>
+  );
+}
+
+/**
+ * The rating, set by clicking.
+ *
+ * The keys (1-5, 0 to clear) have always been the fast way and still are;
+ * this is for the times your hand is on the mouse, and so that a rating is
+ * visible and reachable in the darkroom without remembering a key exists.
+ *
+ * Clicking the star a photograph already has clears it — the same rule
+ * Lightroom uses, and the reason there is no separate clear button.
+ */
+function Rating({ path, stars }: { path: string; stars: number | null }) {
+  const rate = async (next: number | null) => {
+    useAppStore.getState().labelApplied(path, await labelsSetStars(path, next));
+  };
+  return (
+    <div className="info-fact">
+      <span className="info-fact-label">rating</span>
+      <span className="info-rating">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            className={stars !== null && n <= stars ? "on" : ""}
+            title={n === stars ? "click to clear" : `${n} star${n > 1 ? "s" : ""}`}
+            onClick={() => void rate(n === stars ? null : n)}
+          >
+            ★
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
 
@@ -162,12 +195,10 @@ export function InfoPanel() {
           )}
         </Section>
       )}
-      {(stars !== null || tags.length > 0) && (
-        <Section title="Labels">
-          {stars !== null && <Fact label="rating" value={"★".repeat(stars)} />}
-          {tags.length > 0 && <Fact label="tags" value={tags.join(", ")} />}
-        </Section>
-      )}
+      <Section title="Labels">
+        <Rating path={entry.path} stars={stars} />
+        {tags.length > 0 && <Fact label="tags" value={tags.join(", ")} />}
+      </Section>
       {current && (
         <>
           <Section title="Histogram">

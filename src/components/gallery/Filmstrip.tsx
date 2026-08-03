@@ -19,6 +19,7 @@ export function Filmstrip({ height }: { height: number }) {
   const select = useAppStore((s) => s.select);
   const epoch = useAppStore((s) => s.epoch);
   const thumbs = useAppStore((s) => s.thumbs);
+  const labels = useAppStore((s) => s.labels);
   const stripRef = useRef<HTMLDivElement>(null);
 
   // Keep the current frame in view as the selection moves by keyboard.
@@ -65,6 +66,7 @@ export function Filmstrip({ height }: { height: number }) {
     >
       {entries.map((entry, index) => {
         const thumb = thumbs[entry.path];
+        const stars = labels[entry.path]?.stars ?? null;
         return (
           <button
             key={entry.path}
@@ -73,6 +75,10 @@ export function Filmstrip({ height }: { height: number }) {
             title={entry.name}
             onClick={() => select(index)}
           >
+            {/* The same mark the grid puts on a thumbnail. Culling happens
+                here as much as there, and a rating you cannot see while
+                working through a sequence may as well not exist. */}
+            {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
             {thumb === undefined ? (
               <span className="filmstrip-placeholder" />
             ) : (
