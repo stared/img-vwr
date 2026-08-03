@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
-import { useSelectedEntry } from "../../state/store";
+import { siblingsOf } from "../../state/stacks";
+import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
   nextOverlay,
@@ -108,6 +109,8 @@ export function DevelopPanel() {
   const gridlines = useDevelopStore((s) => s.gridlines);
   const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
   const comparing = useDevelopStore((s) => s.comparing);
+  const allEntries = useAppStore((s) => s.entries);
+  const preferMember = useAppStore((s) => s.preferMember);
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -125,6 +128,10 @@ export function DevelopPanel() {
   if (opening !== null) return <p className="panel-hint">Opening {entry.name}…</p>;
   if (!session) return <p className="panel-hint">No develop support for this format.</p>;
 
+  // One other file is the ordinary case (raw beside a JPEG); if a stack ever
+  // holds more, this offers the first and the rest are reachable with
+  // stacking off.
+  const sibling = siblingsOf(allEntries, entry)[0] ?? null;
   const { settings, info, overlay } = session;
   const active = presetOf(settings.params, presets);
   const baseline = baselineOf(settings, presets);
@@ -155,6 +162,15 @@ export function DevelopPanel() {
       </div>
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
+
+      {/* The other file of a pair, named rather than implied. Clicking swaps
+          which one the stack shows, so the choice is per photograph — usually
+          that the camera got this particular frame right. */}
+      {sibling && (
+        <button className="develop-toggle" onClick={() => preferMember(sibling.path)}>
+          also shot: {sibling.formatHint.toUpperCase()}
+        </button>
+      )}
 
       <section className="develop-group">
         <h4>White balance</h4>

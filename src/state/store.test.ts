@@ -185,6 +185,8 @@ describe("selection can be empty", () => {
       meta: {},
       similarity: null,
       labels: {},
+      stacking: false,
+      preferredMember: {},
     };
     // A name filter that keeps only "a" drops the selected "b".
     const dropped = withQuery(state, {
@@ -202,6 +204,8 @@ describe("selection can be empty", () => {
       meta: {},
       similarity: null,
       labels: {},
+      stacking: false,
+      preferredMember: {},
     };
     const kept = withQuery(state, {
       ...defaultQuery,
@@ -218,6 +222,8 @@ describe("selection can be empty", () => {
       meta: {},
       similarity: null,
       labels: {},
+      stacking: false,
+      preferredMember: {},
     };
     expect(
       withQuery(state, { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] })

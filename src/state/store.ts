@@ -23,6 +23,7 @@ import {
   type Scope,
 } from "./collection";
 import type { Query, Sort } from "./query";
+import { collapseStacks, stackKeyOf } from "./stacks";
 import {
   applyQuery,
   defaultQuery,
@@ -93,6 +94,22 @@ export interface AppState {
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
+   * Collapse a raw file and the JPEG shot beside it into one cell.
+   *
+   * Presentation only: the collection still holds both files, statistics
+   * still count both, and format filters still match both. Turning it off
+   * puts everything back with no state to unwind.
+   */
+  stacking: boolean;
+  /**
+   * stack key → the member the user chose to show for that stack.
+   *
+   * Absent means the default, which is the raw file. Recorded per stack
+   * rather than as a global "show JPEGs" mode because the choice is about
+   * one photograph — usually that the camera got a particular frame right.
+   */
+  preferredMember: Record<string, string>;
+  /**
    * Index into the VISIBLE (query-applied) list, or null when nothing is
    * selected.
    *
@@ -150,6 +167,9 @@ interface AppActions {
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
   setGridColumns: (columns: number) => void;
+  toggleStacking: () => void;
+  /** Show `path` in place of whatever its stack was showing. */
+  preferMember: (path: string) => void;
   /** Select one image, or nothing (null) — clicking empty space, or Esc. */
   select: (index: number | null) => void;
   openViewer: (index: number) => void;
@@ -204,6 +224,10 @@ export const initialState: AppState = {
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
   gridColumns: 6,
+  // On by default: a folder shot raw+JPEG is otherwise every photograph
+  // listed twice, which is what the camera wrote but not what was taken.
+  stacking: true,
+  preferredMember: {},
   selectedIndex: null,
   query: defaultQuery,
   findOpen: false,
@@ -256,17 +280,42 @@ export function withSelection(index: number | null): Partial<AppState> {
  * the top: the image the user was looking at is gone, and silently selecting
  * a different one would misreport what the panels are describing.
  */
-export function withQuery(
-  state: Pick<AppState, "entries" | "query" | "selectedIndex" | "meta" | "similarity" | "labels">,
-  query: Query,
+/** Everything `visibleOf` reads, which is what a selection is an index into. */
+type VisibleInputs = Pick<
+  AppState,
+  "entries" | "query" | "selectedIndex" | "meta" | "similarity" | "labels" | "stacking" | "preferredMember"
+>;
+
+/**
+ * Apply a change that reorders or resizes the visible list, keeping the
+ * selection on the same photograph.
+ *
+ * The selection is an index, so anything that changes the list underneath it
+ * would otherwise silently move it to a different image. Following the path
+ * instead is what makes filtering, sorting and stacking safe to change while
+ * something is selected.
+ *
+ * `landOn` is for the case where the change is itself about which file
+ * represents a photograph: picking the JPEG of a pair should leave the
+ * selection on the JPEG, not on whatever used to be there.
+ */
+export function withSelectionHeld(
+  state: VisibleInputs,
+  patch: Partial<AppState>,
+  landOn?: string,
 ): Partial<AppState> {
-  const selectedPath =
+  const before =
     state.selectedIndex === null
       ? undefined
       : visibleOf(state, state.query)[state.selectedIndex]?.path;
-  const nextVisible = visibleOf(state, query);
-  const index = selectedPath ? nextVisible.findIndex((e) => e.path === selectedPath) : -1;
-  return { query, selectedIndex: index >= 0 ? index : null };
+  const next = { ...state, ...patch } as VisibleInputs;
+  const wanted = landOn ?? before;
+  const index = wanted ? visibleOf(next, next.query).findIndex((e) => e.path === wanted) : -1;
+  return { ...patch, selectedIndex: index >= 0 ? index : null };
+}
+
+export function withQuery(state: VisibleInputs, query: Query): Partial<AppState> {
+  return withSelectionHeld(state, { query });
 }
 
 export function withThumb(
@@ -461,6 +510,20 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
 
+  toggleStacking: () =>
+    set((s) => withSelectionHeld(s, { stacking: !s.stacking })),
+
+  preferMember: (path) =>
+    set((s) => {
+      const entry = s.entries.find((e) => e.path === path);
+      if (!entry) return {};
+      return withSelectionHeld(
+        s,
+        { preferredMember: { ...s.preferredMember, [stackKeyOf(entry)]: path } },
+        path,
+      );
+    }),
+
   select: (index) => set(withSelection(index)),
 
   openViewer: (index) => {
@@ -588,12 +651,17 @@ let visibleCache: {
   meta: Record<string, ImageMeta> | null;
   scores: Record<string, number> | null;
   labels: Record<string, ImageLabels> | null;
+  stacking: boolean;
+  preferred: Record<string, string>;
   result: FileEntry[];
 } | null = null;
 
 /** Entries with filters + sort applied, memoized across all callers. */
 export function visibleOf(
-  state: Pick<AppState, "entries" | "meta" | "similarity" | "labels">,
+  state: Pick<
+    AppState,
+    "entries" | "meta" | "similarity" | "labels" | "stacking" | "preferredMember"
+  >,
   query: Query,
 ): FileEntry[] {
   // Only the channels the query reads participate — streaming meta/label
@@ -601,7 +669,15 @@ export function visibleOf(
   const meta = usesMeta(query) ? state.meta : null;
   const scores = usesScores(query) ? (state.similarity?.scores ?? null) : null;
   const labels = usesLabels(query) ? state.labels : null;
-  return applyQueryMemo(state.entries, query, meta, scores, labels);
+  return applyQueryMemo(
+    state.entries,
+    query,
+    meta,
+    scores,
+    labels,
+    state.stacking,
+    state.preferredMember,
+  );
 }
 
 function applyQueryMemo(
@@ -610,6 +686,8 @@ function applyQueryMemo(
   meta: Record<string, ImageMeta> | null,
   scores: Record<string, number> | null,
   labels: Record<string, ImageLabels> | null,
+  stacking: boolean,
+  preferred: Record<string, string>,
 ): FileEntry[] {
   const c = visibleCache;
   if (
@@ -618,16 +696,21 @@ function applyQueryMemo(
     c.query === query &&
     c.meta === meta &&
     c.scores === scores &&
-    c.labels === labels
+    c.labels === labels &&
+    c.stacking === stacking &&
+    c.preferred === preferred
   ) {
     return c.result;
   }
-  const result = applyQuery(entries, query, {
+  const filtered = applyQuery(entries, query, {
     meta: meta ?? {},
     scores: scores ?? {},
     labels: labels ?? {},
   });
-  visibleCache = { entries, query, meta, scores, labels, result };
+  // Stacking collapses what the query already decided, so a filter that
+  // matches only one member of a pair still shows that member.
+  const result = stacking ? collapseStacks(filtered, preferred) : filtered;
+  visibleCache = { entries, query, meta, scores, labels, stacking, preferred, result };
   return result;
 }
 
@@ -651,5 +734,7 @@ export function useVisibleEntries(): FileEntry[] {
   const meta = useAppStore((s) => (usesMeta(s.query) ? s.meta : null));
   const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
   const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
-  return applyQueryMemo(entries, query, meta, scores, labels);
+  const stacking = useAppStore((s) => s.stacking);
+  const preferred = useAppStore((s) => s.preferredMember);
+  return applyQueryMemo(entries, query, meta, scores, labels, stacking, preferred);
 }

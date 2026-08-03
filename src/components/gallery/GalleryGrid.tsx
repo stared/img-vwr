@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { requestThumbnails } from "../../ipc";
+import { groupStacks } from "../../state/stacks";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
@@ -78,6 +79,15 @@ export function GalleryGrid() {
     return () => clearTimeout(timer);
   }, [entries, epoch, columns, firstRow, lastRow]);
 
+  // Whether stacking has anything to do here at all.
+  const allEntries = useAppStore((s) => s.entries);
+  const stacking = useAppStore((s) => s.stacking);
+  const toggleStacking = useAppStore((s) => s.toggleStacking);
+  const hasStacks = useMemo(
+    () => [...groupStacks(allEntries).values()].some((members) => members.length > 1),
+    [allEntries],
+  );
+
   const rowEntries = useMemo(
     () =>
       virtualRows.map((row) => ({
@@ -102,6 +112,18 @@ export function GalleryGrid() {
           />
           {columns} per row
         </label>
+        {/* Says which way it is, and clicking switches — the same shape as
+            every other state control here. Hidden when the folder has no
+            pairs, because a switch for something that never happens is noise. */}
+        {hasStacks && (
+          <button
+            className="gallery-stacking"
+            onClick={toggleStacking}
+            title="a raw file and the JPEG beside it are one photograph"
+          >
+            stacks: {stacking ? "on" : "off"}
+          </button>
+        )}
       </div>
       <div
         ref={scrollRef}
