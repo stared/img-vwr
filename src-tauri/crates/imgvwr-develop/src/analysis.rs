@@ -312,7 +312,7 @@ mod tests {
         LinearImage {
             width: pixels as u32,
             height: 1,
-            rgb: std::iter::repeat(value).take(pixels * 3).collect(),
+            rgb: std::iter::repeat_n(value, pixels * 3).collect(),
         }
     }
 
@@ -336,8 +336,8 @@ mod tests {
         // A night frame: almost all of it near black, one small bright lamp.
         // Median-to-middle-grey alone would ask for something like six stops
         // and turn the lamp into a white disc.
-        let mut rgb: Vec<f32> = std::iter::repeat(0.002).take(990 * 3).collect();
-        rgb.extend(std::iter::repeat(0.9).take(10 * 3));
+        let mut rgb: Vec<f32> = std::iter::repeat_n(0.002, 990 * 3).collect();
+        rgb.extend(std::iter::repeat_n(0.9, 10 * 3));
         let night = LinearImage { width: 1000, height: 1, rgb };
 
         let naive = (crate::pipeline::MID_GREY / 0.002f32).log2();

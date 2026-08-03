@@ -104,7 +104,7 @@ impl Crop {
     ///
     /// `aspect` is the frame's width over its height. Without it the rotation
     /// happens in a stretched space and shears the picture.
-    fn to_original(&self, dx: f32, dy: f32, aspect: f32) -> (f32, f32) {
+    fn rotated_to_original(&self, dx: f32, dy: f32, aspect: f32) -> (f32, f32) {
         let (cx, cy) = self.centre();
         let (sin, cos) = self.angle.to_radians().sin_cos();
         // Into a square space, turn, and back out.
@@ -120,7 +120,7 @@ impl Crop {
     /// a place on what the user can see, and the plugin only knows where
     /// things are on the sensor.
     pub fn point_in_original(&self, u: f32, v: f32, aspect: f32) -> (f32, f32) {
-        let (x, y) = self.to_original((u - 0.5) * self.width, (v - 0.5) * self.height, aspect);
+        let (x, y) = self.rotated_to_original((u - 0.5) * self.width, (v - 0.5) * self.height, aspect);
         (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))
     }
 
@@ -137,7 +137,7 @@ impl Crop {
         }
         let (hw, hh) = (self.width / 2.0, self.height / 2.0);
         let corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
-            .map(|(dx, dy)| self.to_original(dx, dy, aspect));
+            .map(|(dx, dy)| self.rotated_to_original(dx, dy, aspect));
         let min_x = corners.iter().map(|c| c.0).fold(f32::MAX, f32::min);
         let max_x = corners.iter().map(|c| c.0).fold(f32::MIN, f32::max);
         let min_y = corners.iter().map(|c| c.1).fold(f32::MAX, f32::min);
@@ -167,7 +167,7 @@ impl Crop {
         // crop's centre, in the rotated frame.
         let dx = (r.x + r.width / 2.0 - 0.5) * self.width;
         let dy = (r.y + r.height / 2.0 - 0.5) * self.height;
-        let (cx, cy) = self.to_original(dx, dy, aspect);
+        let (cx, cy) = self.rotated_to_original(dx, dy, aspect);
         let (width, height) = (self.width * r.width, self.height * r.height);
         Self {
             x: cx - width / 2.0,
@@ -216,7 +216,7 @@ pub fn resample(
             // crop's centre in the rotated frame.
             let dx = ((i as f32 + 0.5) / ow as f32 - 0.5) * crop.width;
             let dy = ((j as f32 + 0.5) / oh as f32 - 0.5) * crop.height;
-            let (ox, oy) = crop.to_original(dx, dy, aspect);
+            let (ox, oy) = crop.rotated_to_original(dx, dy, aspect);
 
             // ...and where that lands in the patch we were given.
             let u = (ox - region.x) / region.width.max(f32::EPSILON) * sw - 0.5;
@@ -361,7 +361,7 @@ mod tests {
         let (hw, hh) = (0.2, 0.2);
         let corners: Vec<(f32, f32)> = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
             .iter()
-            .map(|(dx, dy)| crop.to_original(*dx, *dy, aspect))
+            .map(|(dx, dy)| crop.rotated_to_original(*dx, *dy, aspect))
             .collect();
         let (cx, cy) = crop.centre();
 
