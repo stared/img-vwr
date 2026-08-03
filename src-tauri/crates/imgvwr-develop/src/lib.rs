@@ -11,7 +11,7 @@ pub mod pipeline;
 pub mod presets;
 
 pub use analysis::{
-    composite_clipping, composite_sharpness, histogram, sharpness_map, Histogram,
+    auto_exposure, composite_clipping, composite_sharpness, histogram, sharpness_map, Histogram,
 };
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use presets::{baseline, opening_params, opening_settings, preset, presets, Preset};

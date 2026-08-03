@@ -107,6 +107,7 @@ export function DevelopPanel() {
   const toggleDeviation = useDevelopStore((s) => s.toggleDeviation);
   const gridlines = useDevelopStore((s) => s.gridlines);
   const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
+  const comparing = useDevelopStore((s) => s.comparing);
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -138,6 +139,9 @@ export function DevelopPanel() {
       <div className="develop-status">
         <span>
           {info.width} × {info.height}
+          {/* An edit that appears to have vanished is alarming, so the panel
+              says which of the two you are looking at. */}
+          {comparing ? " · before" : ""}
           {session.rendering ? " · rendering…" : ""}
         </span>
         <button

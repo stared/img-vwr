@@ -164,6 +164,18 @@ async developPresets() : Promise<Result<Preset[], string>> {
 }
 },
 /**
+ * The exposure this image wants, in stops, measured from the light it
+ * recorded rather than from the preview it currently produces.
+ */
+async developAutoExposure(path: string, settings: DevelopSettings) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_auto_exposure", { path, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Render a preview at `max_edge` under `settings`. The pixels are fetched
  * separately over the `develop:` protocol using the returned token; the
  * histogram of those same pixels comes back here.

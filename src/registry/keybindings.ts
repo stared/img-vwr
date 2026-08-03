@@ -55,6 +55,10 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["arrowright", "image.next"],
   ["arrowleft", "image.prev"],
   ["enter", "viewer.open"],
+  ["mod+shift+c", "develop.copy"],
+  ["mod+shift+v", "develop.paste"],
+  // The photographer's habit: one key, held or tapped, to see what you had.
+  ["\\", "develop.compare"],
   ["escape", "viewer.close"],
   // Falls through when there is no viewer to close.
   ["escape", "selection.clear"],

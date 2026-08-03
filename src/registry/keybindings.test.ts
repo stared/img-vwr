@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   chordsForCommand,
   commandsForEvent,
+  defaultKeybindings,
   eventMatchesChord,
   parseChord,
   type Keybinding,
@@ -66,5 +67,34 @@ describe("chordsForCommand", () => {
       ["mod+p", "palette.open"],
     ];
     expect(chordsForCommand("palette.open", bindings)).toEqual(["mod+k", "mod+p"]);
+  });
+});
+
+describe("the shipped table", () => {
+  it("resolves the develop chords, backslash included", () => {
+    // Backslash has to survive being a string escape in the source, a chord
+    // parse that splits on "+", and a KeyboardEvent's own `key`. Cheap to get
+    // wrong at any of the three, and silent when it is.
+    expect(commandsForEvent(keyEvent({ key: "\\" }), defaultKeybindings)).toEqual([
+      "develop.compare",
+    ]);
+    expect(
+      commandsForEvent(keyEvent({ key: "c", metaKey: true, shiftKey: true }), defaultKeybindings),
+    ).toEqual(["develop.copy"]);
+    expect(
+      commandsForEvent(keyEvent({ key: "v", metaKey: true, shiftKey: true }), defaultKeybindings),
+    ).toEqual(["develop.paste"]);
+  });
+
+  it("binds no chord to two commands that could both be applicable at once", () => {
+    // Two bindings on one chord is deliberate (Escape), but only where the
+    // `when` clauses are exclusive. A duplicate added by accident would make
+    // one of them unreachable and nothing would say so.
+    const seen = new Map<string, string[]>();
+    for (const [chord, id] of defaultKeybindings) {
+      seen.set(chord, [...(seen.get(chord) ?? []), id]);
+    }
+    const shared = [...seen.entries()].filter(([, ids]) => ids.length > 1);
+    expect(shared.map(([chord]) => chord)).toEqual(["escape"]);
   });
 });

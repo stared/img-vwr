@@ -5,6 +5,7 @@ import { exportName } from "../commands/develop";
 import {
   baselineOf,
   isNeutral,
+  pastedSettings,
   needsDetail,
   needsDevelopedFrame,
   nextPreset,
@@ -278,5 +279,32 @@ describe("the slider list", () => {
       expect(spec.min).toBeLessThanOrEqual(0);
       expect(spec.max).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe("pastedSettings", () => {
+  const copied = {
+    whiteBalance: { temperature: 7800, tint: 12 },
+    params: { ...neutralSettings.params, exposure: 1.4, contrast: 36 },
+    basis: "nikon",
+  };
+  const target = {
+    whiteBalance: { temperature: 4200, tint: -6 },
+    params: neutralSettings.params,
+    basis: "flat",
+  };
+
+  it("carries the look, and the basis it is a variation of", () => {
+    // "nikon plus a bit of exposure" must land as the same variation of
+    // nikon, not as a bare set of numbers sitting on top of flat.
+    const pasted = pastedSettings(target, copied);
+    expect(pasted.params).toEqual(copied.params);
+    expect(pasted.basis).toBe("nikon");
+  });
+
+  it("leaves the white balance where it was", () => {
+    // The two frames were shot under different light; the copied reading
+    // describes the other one.
+    expect(pastedSettings(target, copied).whiteBalance).toEqual(target.whiteBalance);
   });
 });

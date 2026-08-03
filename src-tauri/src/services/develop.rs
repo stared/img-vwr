@@ -178,6 +178,25 @@ impl DevelopService {
         })
     }
 
+    /// The exposure this frame wants, measured from the light it recorded.
+    ///
+    /// Rendered small on purpose: brightness is a statistic of the whole
+    /// frame, and a few hundred pixels give the same percentiles as twenty
+    /// million for a fraction of the time.
+    pub fn auto_exposure(&self, path: &str, settings: &DevelopSettings) -> Result<f32, String> {
+        const MEASURE_EDGE: u32 = 400;
+        let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+        let linear = entry
+            .scene
+            .render(imgvwr_core::RenderRequest {
+                max_edge: MEASURE_EDGE,
+                white_balance: settings.clamped().white_balance,
+                region: Region::FULL,
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(imgvwr_develop::auto_exposure(&linear))
+    }
+
     /// Render one preview frame and keep its encoded bytes addressable.
     pub fn render(
         &self,

@@ -338,6 +338,21 @@ pub async fn develop_presets() -> Result<Vec<Preset>, String> {
     Ok(imgvwr_develop::presets())
 }
 
+/// The exposure this image wants, in stops, measured from the light it
+/// recorded rather than from the preview it currently produces.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_auto_exposure(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+) -> Result<f32, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.auto_exposure(&path, &settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Render a preview at `max_edge` under `settings`. The pixels are fetched
 /// separately over the `develop:` protocol using the returned token; the
 /// histogram of those same pixels comes back here.

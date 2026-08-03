@@ -68,6 +68,50 @@ export function registerDevelopCommands(): void {
   });
 
   registerCommand({
+    id: "develop.copy",
+    title: "Copy Develop Settings",
+    keywords: ["clipboard", "settings", "sync", "apply to"],
+    menus: [{ menu: "image", submenu: null, label: "Copy develop settings" }],
+    when: hasSession,
+    run: () => {
+      useDevelopStore.getState().copySettings();
+    },
+  });
+
+  registerCommand({
+    id: "develop.paste",
+    title: "Paste Develop Settings",
+    keywords: ["clipboard", "settings", "sync", "apply"],
+    menus: [{ menu: "image", submenu: null, label: "Paste develop settings" }],
+    when: () => hasSession() && useDevelopStore.getState().copied !== null,
+    run: () => {
+      useDevelopStore.getState().pasteSettings();
+    },
+  });
+
+  registerCommand({
+    id: "develop.compare",
+    title: "Compare With Before",
+    keywords: ["before", "after", "original", "toggle", "preview"],
+    menus: [],
+    when: hasSession,
+    run: () => {
+      useDevelopStore.getState().toggleComparing();
+    },
+  });
+
+  registerCommand({
+    id: "develop.autoTone",
+    title: "Auto Tone",
+    keywords: ["auto", "exposure", "brightness", "levels"],
+    menus: [{ menu: "image", submenu: null, label: "Auto tone" }],
+    when: hasSession,
+    run: async () => {
+      await useDevelopStore.getState().autoTone();
+    },
+  });
+
+  registerCommand({
     id: "develop.panel",
     title: "Show Develop Panel",
     keywords: ["exposure", "white balance", "edit"],

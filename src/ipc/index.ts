@@ -139,6 +139,14 @@ export async function developPresets(): Promise<Preset[]> {
   return unwrap(await commands.developPresets());
 }
 
+/** The exposure this image wants, in stops, from the light it recorded. */
+export async function developAutoExposure(
+  path: string,
+  settings: DevelopSettings,
+): Promise<number> {
+  return unwrap(await commands.developAutoExposure(path, settings));
+}
+
 /** Render a preview; the pixels are then loaded from `developFrameUrl`. */
 export async function developRender(
   path: string,

@@ -10,6 +10,7 @@ import type {
   RegionArg,
 } from "../ipc";
 import {
+  developAutoExposure,
   developPickWhiteBalance,
   developPresets,
   developRender,
@@ -176,6 +177,30 @@ export interface DevelopStore {
   /** Set every tone and colour slider to a named preset, leaving the white
    * balance alone — that is the camera's measurement, not a matter of look. */
   applyPreset: (id: string) => void;
+
+  /**
+   * Settings copied from one image, waiting to be pasted onto another.
+   *
+   * Tone and colour only, exactly as a preset is: white balance describes the
+   * light a photograph was taken in, and carrying it to a frame shot under
+   * different light would be carrying a mistake.
+   */
+  copied: DevelopSettings | null;
+  copySettings: () => void;
+  pasteSettings: () => void;
+
+  /**
+   * Showing the image as it opened, for comparison.
+   *
+   * A toggle rather than a held key, so it survives letting go of the mouse
+   * to look properly — and the panel says so, because an edit that appears to
+   * have vanished is alarming.
+   */
+  comparing: boolean;
+  toggleComparing: () => void;
+
+  /** Set exposure from the light this frame recorded. */
+  autoTone: () => Promise<void>;
 }
 
 /** Largest detail crop we will develop, in pixels of the longest edge. */
@@ -292,6 +317,22 @@ export function presetOf(params: DevelopParams, presets: Preset[]): Preset | nul
 }
 
 /**
+ * A copied edit landed on another image.
+ *
+ * The look travels — tone, colour, and the basis they are a variation of, so
+ * the sliders measure from where they did on the image it came from. The white
+ * balance stays behind: it describes the light this frame was shot in, and
+ * carrying one image's reading onto another shot under different light would
+ * be carrying a mistake.
+ */
+export function pastedSettings(
+  target: DevelopSettings,
+  copied: DevelopSettings,
+): DevelopSettings {
+  return { ...target, params: copied.params, basis: copied.basis };
+}
+
+/**
  * The preset a slider measures its deviation from — its zero level.
  *
  * The stored basis, except that sitting exactly on some preset makes that one
@@ -338,7 +379,11 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (!start || start.rendering) return;
 
     set({ session: { ...start, rendering: true, dirty: false } });
-    const { path, settings, overlay } = start;
+    const { path, overlay } = start;
+    // Comparing renders what the image opened with instead of the live
+    // settings, so "before" means the same thing whether the edit is one
+    // slider or a whole preset.
+    const settings = get().comparing ? start.info.settings : start.settings;
 
     const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
       (frame) => ({ ok: true as const, frame }),
@@ -392,6 +437,8 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     toggleDeviation: () => set((s) => ({ showDeviation: !s.showDeviation })),
     gridlines: false,
     toggleGridlines: () => set((s) => ({ gridlines: !s.gridlines })),
+    copied: null,
+    comparing: false,
     opening: null,
 
     open: async (path) => {
@@ -520,6 +567,33 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // have to remember to leave.
       set({ session: { ...now, picking: false } });
       change({ ...now.settings, whiteBalance: balance });
+    },
+
+    copySettings: () => {
+      const session = get().session;
+      if (session) set({ copied: session.settings });
+    },
+
+    pasteSettings: () => {
+      const { session, copied } = get();
+      if (!session || !copied) return;
+      change(pastedSettings(session.settings, copied));
+    },
+
+    toggleComparing: () => {
+      const session = get().session;
+      if (!session) return;
+      set({ comparing: !get().comparing });
+      void pump();
+    },
+
+    autoTone: async () => {
+      const session = get().session;
+      if (!session) return;
+      const exposure = await developAutoExposure(session.path, session.settings);
+      const now = get().session;
+      if (!now || now.path !== session.path) return;
+      change({ ...now.settings, params: { ...now.settings.params, exposure } });
     },
 
     applyPreset: (id) => {

@@ -211,6 +211,56 @@ pub fn composite_sharpness(img: &mut DecodedImage, map: &[f32]) {
         });
 }
 
+/// The exposure that puts this frame where a frame should sit, in stops.
+///
+/// Measured on scene-linear luminance rather than on the developed histogram,
+/// because the developed histogram is a picture of the answer: adjusting
+/// exposure from it means chasing a number that moves as you change it. The
+/// light that arrived is fixed, so one measurement of it gives one answer.
+///
+/// The rule is the median to middle grey — the classic reading, and the one
+/// that behaves for the ordinary case — with a ceiling that stops it blowing
+/// the highlights of a scene whose subject really is dark. A night shot lit by
+/// one lamp has a median near black and would otherwise be dragged up several
+/// stops until the lamp was a white disc.
+///
+/// Deliberately only exposure. Contrast, colour and roll-off are what a look
+/// is made of, and a preset has already chosen them; brightness is the part
+/// that genuinely differs frame to frame.
+pub fn auto_exposure(src: &LinearImage) -> f32 {
+    /// Above this many stops over middle grey, a highlight is gone.
+    const HEADROOM_STOPS: f32 = 2.4;
+    /// Percentile treated as "the highlights", high enough to ignore a
+    /// specular glint that no exposure choice could have saved.
+    const HIGHLIGHT: f32 = 0.995;
+
+    let mut luma: Vec<f32> = src
+        .rgb
+        .chunks_exact(3)
+        .map(|px| luma(px[0], px[1], px[2]))
+        .filter(|y| y.is_finite() && *y > 0.0)
+        .collect();
+    if luma.is_empty() {
+        return 0.0;
+    }
+    luma.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let at = |q: f32| luma[((luma.len() - 1) as f32 * q) as usize];
+    let median = at(0.5);
+    if median <= 0.0 {
+        return 0.0;
+    }
+
+    let wanted = (crate::pipeline::MID_GREY / median).log2();
+    let highlights = at(HIGHLIGHT);
+    let ceiling = if highlights > 0.0 {
+        HEADROOM_STOPS - (highlights / crate::pipeline::MID_GREY).log2()
+    } else {
+        f32::MAX
+    };
+    wanted.min(ceiling).clamp(-5.0, 5.0)
+}
+
 /// Mark every pixel that has run out of range, so the places with no detail
 /// left are visible rather than merely dark or bright.
 ///
@@ -256,6 +306,54 @@ mod tests {
             height: 1,
             rgba: pixels.iter().flatten().copied().collect(),
         }
+    }
+
+    fn flat_scene(value: f32, pixels: usize) -> LinearImage {
+        LinearImage {
+            width: pixels as u32,
+            height: 1,
+            rgb: std::iter::repeat(value).take(pixels * 3).collect(),
+        }
+    }
+
+    #[test]
+    fn auto_exposure_puts_an_ordinary_scene_at_middle_grey() {
+        // Two stops under: it should ask for two stops.
+        let dim = flat_scene(crate::pipeline::MID_GREY / 4.0, 64);
+        assert!((auto_exposure(&dim) - 2.0).abs() < 0.01, "{}", auto_exposure(&dim));
+
+        // Already right: it should ask for nothing.
+        let right = flat_scene(crate::pipeline::MID_GREY, 64);
+        assert!(auto_exposure(&right).abs() < 0.01);
+
+        // Over: it should come down.
+        let bright = flat_scene(crate::pipeline::MID_GREY * 4.0, 64);
+        assert!((auto_exposure(&bright) + 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn auto_exposure_does_not_blow_a_scene_that_is_meant_to_be_dark() {
+        // A night frame: almost all of it near black, one small bright lamp.
+        // Median-to-middle-grey alone would ask for something like six stops
+        // and turn the lamp into a white disc.
+        let mut rgb: Vec<f32> = std::iter::repeat(0.002).take(990 * 3).collect();
+        rgb.extend(std::iter::repeat(0.9).take(10 * 3));
+        let night = LinearImage { width: 1000, height: 1, rgb };
+
+        let naive = (crate::pipeline::MID_GREY / 0.002f32).log2();
+        let chosen = auto_exposure(&night);
+        assert!(chosen < naive - 2.0, "held back from {naive:.1}: {chosen:.1}");
+        // And the lamp still has somewhere to go afterwards.
+        assert!(0.9 * chosen.exp2() < 8.0, "lamp at {}", 0.9 * chosen.exp2());
+    }
+
+    #[test]
+    fn auto_exposure_survives_a_black_or_empty_frame() {
+        assert_eq!(auto_exposure(&flat_scene(0.0, 16)), 0.0);
+        assert_eq!(
+            auto_exposure(&LinearImage { width: 0, height: 0, rgb: Vec::new() }),
+            0.0
+        );
     }
 
     #[test]
