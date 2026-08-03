@@ -91,6 +91,47 @@ export function commandsForEvent(
     .map(([, commandId]) => commandId);
 }
 
+/** Keys a slider acts on itself. */
+const NUDGE_KEYS = new Set([
+  "arrowleft",
+  "arrowright",
+  "arrowup",
+  "arrowdown",
+  "home",
+  "end",
+  "pageup",
+  "pagedown",
+]);
+
+/**
+ * Whether the focused control consumes this key, so the app must not also
+ * act on it.
+ *
+ * Not simply "is a form field focused". Dragging an exposure slider leaves it
+ * focused, and treating that like a text box swallowed every shortcut for as
+ * long as the slider held focus — so in the darkroom, where the panel is all
+ * sliders, rating a photograph with 1–5 quietly stopped working after the
+ * first adjustment. A slider only wants the keys that nudge it; the digits
+ * and letters mean nothing to it and belong to the app.
+ */
+export function focusOwnsKey(target: EventTarget | null, key: string): boolean {
+  const el = target as (HTMLElement & { type?: string }) | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  switch (el.type) {
+    case "range":
+      return NUDGE_KEYS.has(key.toLowerCase());
+    case "checkbox":
+    case "radio":
+      return key === " " || NUDGE_KEYS.has(key.toLowerCase());
+    default:
+      // Something you type into: every key is its own.
+      return true;
+  }
+}
+
 /** Chords bound to a command, for display in the palette ("⌘K"). */
 export function chordsForCommand(
   commandId: string,

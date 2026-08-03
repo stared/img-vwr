@@ -5,6 +5,7 @@ import {
   commandsForEvent,
   defaultKeybindings,
   eventMatchesChord,
+  focusOwnsKey,
   parseChord,
   type Keybinding,
 } from "./keybindings";
@@ -96,5 +97,37 @@ describe("the shipped table", () => {
     }
     const shared = [...seen.entries()].filter(([, ids]) => ids.length > 1);
     expect(shared.map(([chord]) => chord)).toEqual(["escape"]);
+  });
+});
+
+describe("focusOwnsKey", () => {
+  const el = (tagName: string, type?: string) =>
+    ({ tagName, type, isContentEditable: false }) as unknown as EventTarget;
+
+  it("gives a text field every key", () => {
+    expect(focusOwnsKey(el("INPUT", "text"), "3")).toBe(true);
+    expect(focusOwnsKey(el("INPUT", "search"), "ArrowRight")).toBe(true);
+    expect(focusOwnsKey(el("TEXTAREA"), "t")).toBe(true);
+  });
+
+  it("gives a slider only the keys that nudge it", () => {
+    // The bug this exists for: an exposure slider keeps focus after a drag,
+    // and rating the photograph with 1-5 stopped working until you clicked
+    // somewhere else.
+    expect(focusOwnsKey(el("INPUT", "range"), "3")).toBe(false);
+    expect(focusOwnsKey(el("INPUT", "range"), "\\")).toBe(false);
+    expect(focusOwnsKey(el("INPUT", "range"), "ArrowLeft")).toBe(true);
+    expect(focusOwnsKey(el("INPUT", "range"), "Home")).toBe(true);
+  });
+
+  it("leaves everything else to the app", () => {
+    expect(focusOwnsKey(el("BUTTON"), "3")).toBe(false);
+    expect(focusOwnsKey(el("DIV"), "ArrowRight")).toBe(false);
+    expect(focusOwnsKey(null, "3")).toBe(false);
+  });
+
+  it("respects contenteditable", () => {
+    const editable = { tagName: "DIV", isContentEditable: true } as unknown as EventTarget;
+    expect(focusOwnsKey(editable, "3")).toBe(true);
   });
 });

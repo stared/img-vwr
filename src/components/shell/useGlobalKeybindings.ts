@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import { executeCommand, getCommand, type CommandContext } from "../../registry/commands";
-import { commandsForEvent } from "../../registry/keybindings";
+import { commandsForEvent, focusOwnsKey } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
 
 /** The single window keydown handler: chord → command id → registry. */
@@ -9,10 +9,11 @@ export function useGlobalKeybindings() {
   useEffect(() => {
     const ctx: CommandContext = { store: useAppStore };
     const onKeyDown = (e: KeyboardEvent) => {
-      // The palette owns the keyboard while open; typing fields keep their keys.
+      // The palette owns the keyboard while open, and a focused control keeps
+      // the keys it actually uses — no more than those, so a slider left
+      // focused after a drag does not swallow the rest of the app's keys.
       if (useAppStore.getState().paletteOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (focusOwnsKey(e.target, e.key)) return;
 
       // A chord can be bound several times; the first applicable command
       // wins, so Escape closes the viewer when there is one and clears the
