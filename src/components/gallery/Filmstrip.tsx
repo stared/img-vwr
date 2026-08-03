@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { fileUrl, requestThumbnails } from "../../ipc";
+import { siblingsOf, stackCaption } from "../../state/stacks";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 
 /**
@@ -20,6 +21,10 @@ export function Filmstrip({ height }: { height: number }) {
   const epoch = useAppStore((s) => s.epoch);
   const thumbs = useAppStore((s) => s.thumbs);
   const labels = useAppStore((s) => s.labels);
+  // Every file in the collection, so a collapsed cell can say what else is
+  // in its stack — the strip itself is showing one member of each.
+  const allEntries = useAppStore((s) => s.entries);
+  const stacking = useAppStore((s) => s.stacking);
   const stripRef = useRef<HTMLDivElement>(null);
 
   // Keep the current frame in view as the selection moves by keyboard.
@@ -72,7 +77,7 @@ export function Filmstrip({ height }: { height: number }) {
             key={entry.path}
             className={index === selectedIndex ? "filmstrip-cell selected" : "filmstrip-cell"}
             style={{ width: height - 12, height: height - 12 }}
-            title={entry.name}
+            title={stacking ? stackCaption(entry, siblingsOf(allEntries, entry)) : entry.name}
             onClick={() => select(index)}
           >
             {/* The same mark the grid puts on a thumbnail. Culling happens

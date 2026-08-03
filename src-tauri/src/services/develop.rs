@@ -21,9 +21,14 @@ use serde::Serialize;
 /// hundreds of megabytes of decoded sensor data.
 const OPEN_SCENES: usize = 3;
 
-/// How many encoded previews to keep addressable by token. Each is one
-/// in-flight `<img src>`; a handful covers a fast slider drag.
-const CACHED_FRAMES: usize = 6;
+/// How many encoded previews to keep addressable by token.
+///
+/// Each is one in-flight `<img src>`, a few hundred kilobytes of JPEG. Most
+/// are the tail of a slider drag, but the neighbours the viewer develops ahead
+/// are in here too — and those have to outlive a drag on the *current* image,
+/// or stepping to the next frame would find its token already evicted and
+/// develop it again from scratch, which is the delay they exist to remove.
+const CACHED_FRAMES: usize = 16;
 
 /// Preview JPEG quality. High enough that the user is judging their photo
 /// rather than the codec, low enough to encode in a few milliseconds.

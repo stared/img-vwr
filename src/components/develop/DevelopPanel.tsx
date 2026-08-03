@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
-import { siblingsOf } from "../../state/stacks";
+import { groupStacks, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
@@ -116,6 +116,16 @@ export function DevelopPanel() {
   const setCrop = useDevelopStore((s) => s.setCrop);
   const allEntries = useAppStore((s) => s.entries);
   const preferMember = useAppStore((s) => s.preferMember);
+  const stacking = useAppStore((s) => s.stacking);
+  const toggleStacking = useAppStore((s) => s.toggleStacking);
+
+  // Whether stacking has anything to do in this collection at all. A switch
+  // for something that never happens is noise, so a folder of single files
+  // never shows it.
+  const hasStacks = useMemo(
+    () => [...groupStacks(allEntries).values()].some((members) => members.length > 1),
+    [allEntries],
+  );
 
   // Follow the selection. Remote entries have no local file to develop.
   const path = entry?.path;
@@ -175,6 +185,21 @@ export function DevelopPanel() {
         <button className="develop-toggle" onClick={() => preferMember(sibling.path)}>
           also shot: {sibling.formatHint.toUpperCase()}
         </button>
+      )}
+      {/* And whether a pair is one photograph or two files at all. It lives
+          here rather than over the grid because it is a darkroom rule: the
+          grid always lists every file the camera wrote. */}
+      {hasStacks && (
+        <>
+          <button className="develop-toggle" onClick={toggleStacking}>
+            raw + JPG: {stacking ? "one photograph" : "two files"}
+          </button>
+          <p className="develop-note">
+            {stacking
+              ? "Stepping through the strip moves a shot at a time."
+              : "Every file the camera wrote, in the strip separately."}
+          </p>
+        </>
       )}
 
       <section className="develop-group">

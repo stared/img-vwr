@@ -44,6 +44,33 @@ function centered(img: Size, win: Size, scale: number): Viewport {
   };
 }
 
+/**
+ * The same magnification, on the same part of the frame, for a different
+ * image — what stepping to the next take should do once you have zoomed in.
+ *
+ * Scale is screen pixels per image pixel, so carrying it across means 100%
+ * stays 100% and two frames from the same camera are magnified identically.
+ * Position is carried as a fraction of the frame rather than in pixels,
+ * because the useful invariant is "the middle of the window is still looking
+ * at the eyes", and that survives a differently sized or cropped neighbour.
+ */
+export function heldView(prev: Viewport, prevImg: Size, next: Size, win: Size): Viewport {
+  if (prevImg.width <= 0 || prevImg.height <= 0 || prev.scale <= 0) {
+    return fitToWindow(next, win);
+  }
+  const cx = (win.width / 2 - prev.tx) / (prev.scale * prevImg.width);
+  const cy = (win.height / 2 - prev.ty) / (prev.scale * prevImg.height);
+  return clampPan(
+    {
+      scale: prev.scale,
+      tx: win.width / 2 - cx * prev.scale * next.width,
+      ty: win.height / 2 - cy * prev.scale * next.height,
+    },
+    next,
+    win,
+  );
+}
+
 /** Zoom by `factor` keeping the image point under `cursor` fixed on screen. */
 export function zoomAtPoint(view: Viewport, cursor: Point, factor: number): Viewport {
   const scale = clamp(view.scale * factor, MIN_SCALE, MAX_SCALE);

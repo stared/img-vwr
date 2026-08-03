@@ -1220,17 +1220,6 @@ button.stats-row:hover .stats-label {
   width: 110px;
 }
 
-/* Sits in the same quiet register as the row-count label beside it. */
-.gallery-stacking {
-  margin-left: 14px;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-.gallery-stacking:hover {
-  color: var(--text);
-}
-
 .tl-fit {
   margin-left: 8px;
 }

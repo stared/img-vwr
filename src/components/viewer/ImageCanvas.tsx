@@ -81,6 +81,23 @@ export function ImageCanvas() {
     }
   }, [entries, index]);
 
+  // And develop them ahead, which is the expensive half. Only once this
+  // image's own frame has arrived: the user is waiting on that one, and a
+  // speculative render must never be what they are waiting behind. Next
+  // before previous — forward is the way a shoot is usually walked.
+  // Asked after every frame rather than once per image: the warm cache is
+  // dropped whenever the viewport resizes, and this is what fills it again.
+  // `prefetch` itself decides when there is room to do any of it.
+  const prefetch = useDevelopStore((s) => s.prefetch);
+  const settled = session?.path === entry?.path ? (session?.frame?.token ?? null) : null;
+  useEffect(() => {
+    if (index === null || settled === null) return;
+    const near = [entries[index + 1], entries[index - 1]]
+      .filter((e) => e !== undefined)
+      .map((e) => e.path);
+    prefetch(near);
+  }, [entries, index, settled, prefetch]);
+
   // Zoomed in past what the preview resolves? Develop just the visible crop
   // at full sensor resolution, so 1:1 shows real detail instead of an
   // upscaled preview. Only the crop is developed, so it stays affordable.

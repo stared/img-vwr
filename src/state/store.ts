@@ -5,6 +5,7 @@ import {
   actualSize,
   clampPan,
   fitToWindow,
+  heldView,
   panBy,
   zoomAtPoint,
   type Point,
@@ -23,7 +24,7 @@ import {
   type Scope,
 } from "./collection";
 import type { Query, Sort } from "./query";
-import { collapseStacks, stackKeyOf } from "./stacks";
+import { collapseStacks, stackKeyOf, stackKeyOfPath } from "./stacks";
 import {
   applyQuery,
   defaultQuery,
@@ -94,11 +95,12 @@ export interface AppState {
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
-   * Collapse a raw file and the JPEG shot beside it into one cell.
+   * Collapse a raw file and the JPEG shot beside it into one photograph.
    *
-   * Presentation only: the collection still holds both files, statistics
-   * still count both, and format filters still match both. Turning it off
-   * puts everything back with no state to unwind.
+   * Only where one photograph is on screen at a time — see `stacksCollapse`.
+   * Presentation only: the collection still holds both files and format
+   * filters still match both. Turning it off puts everything back with no
+   * state to unwind.
    */
   stacking: boolean;
   /**
@@ -224,8 +226,9 @@ export const initialState: AppState = {
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
   gridColumns: 6,
-  // On by default: a folder shot raw+JPEG is otherwise every photograph
-  // listed twice, which is what the camera wrote but not what was taken.
+  // On by default: working through a folder shot raw+JPEG otherwise means
+  // every photograph twice, which is what the camera wrote but not what was
+  // taken.
   stacking: true,
   preferredMember: {},
   selectedIndex: null,
@@ -249,9 +252,9 @@ export const initialState: AppState = {
 /* Pure transitions — actions only apply these. */
 
 /**
- * Move the selection by `delta` within `count` items; a real move resets the
- * viewport. From an empty selection an arrow key enters the collection at
- * whichever end it points from, so ← lands on the last image and → the first.
+ * Move the selection by `delta` within `count` items. From an empty selection
+ * an arrow key enters the collection at whichever end it points from, so ←
+ * lands on the last image and → the first.
  */
 export function movedSelection(
   state: Pick<AppState, "selectedIndex">,
@@ -266,12 +269,21 @@ export function movedSelection(
         : 0
       : Math.min(count - 1, Math.max(0, state.selectedIndex + delta));
   if (index === state.selectedIndex) return {};
-  return { selectedIndex: index, viewerView: null, viewerImg: null, viewerFitted: true };
+  return { selectedIndex: index };
 }
 
-/** Select an index, or nothing. Selecting always resets the viewport. */
+/**
+ * Select an index, or nothing.
+ *
+ * The viewport is deliberately left alone. A frame at fit refits itself when
+ * the next image loads, and one that has been zoomed in holds its
+ * magnification and its place in the frame — which is the whole point of
+ * zooming in while stepping through a sequence: you are checking the same
+ * feature on take after take, and being thrown back to fit each time means
+ * finding it again every time. See `heldView`.
+ */
 export function withSelection(index: number | null): Partial<AppState> {
-  return { selectedIndex: index, viewerView: null, viewerImg: null, viewerFitted: true };
+  return { selectedIndex: index };
 }
 
 /**
@@ -283,8 +295,30 @@ export function withSelection(index: number | null): Partial<AppState> {
 /** Everything `visibleOf` reads, which is what a selection is an index into. */
 type VisibleInputs = Pick<
   AppState,
-  "entries" | "query" | "selectedIndex" | "meta" | "similarity" | "labels" | "stacking" | "preferredMember"
+  | "entries"
+  | "query"
+  | "selectedIndex"
+  | "meta"
+  | "similarity"
+  | "labels"
+  | "stacking"
+  | "preferredMember"
+  | "viewMode"
+  | "galleryLayout"
 >;
+
+/**
+ * Whether raw+JPEG pairs collapse right now.
+ *
+ * Stacking is about working through a sequence one photograph at a time, so
+ * it applies exactly where that is what is happening. The grid, the timeline
+ * and the map list every file — they are how you see what is on the card.
+ */
+export function stacksCollapse(
+  state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
+): boolean {
+  return state.stacking && (state.viewMode === "viewer" || state.galleryLayout === "darkroom");
+}
 
 /**
  * Apply a change that reorders or resizes the visible list, keeping the
@@ -310,7 +344,15 @@ export function withSelectionHeld(
       : visibleOf(state, state.query)[state.selectedIndex]?.path;
   const next = { ...state, ...patch } as VisibleInputs;
   const wanted = landOn ?? before;
-  const index = wanted ? visibleOf(next, next.query).findIndex((e) => e.path === wanted) : -1;
+  if (!wanted) return { ...patch, selectedIndex: null };
+  const after = visibleOf(next, next.query);
+  let index = after.findIndex((e) => e.path === wanted);
+  if (index < 0) {
+    // The file itself is gone from the list, but its photograph may still be
+    // there under the other of a pair — collapsing a stack is exactly that.
+    const key = stackKeyOfPath(wanted);
+    index = after.findIndex((e) => stackKeyOf(e) === key);
+  }
   return { ...patch, selectedIndex: index >= 0 ? index : null };
 }
 
@@ -502,7 +544,9 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
 
-  setGalleryLayout: (layout) => set({ galleryLayout: layout }),
+  // Held, because the darkroom collapses raw+JPEG pairs and the grid does
+  // not: the list is a different length on either side of this.
+  setGalleryLayout: (layout) => set((s) => withSelectionHeld(s, { galleryLayout: layout })),
 
   setTimelineOrientation: (orientation) => set({ timelineOrientation: orientation }),
 
@@ -526,20 +570,23 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   select: (index) => set(withSelection(index)),
 
+  // The index is into the list as it is *now*; the viewer stacks pairs and
+  // the grid does not, so it is resolved to a file before the mode changes
+  // and followed across. Opening starts fitted, whatever the last image did.
   openViewer: (index) => {
-    const visibleCount = visibleOf(get(), get().query).length;
-    if (index >= 0 && index < visibleCount) {
-      set({
-        viewMode: "viewer",
-        selectedIndex: index,
-        viewerView: null,
-        viewerImg: null,
-        viewerFitted: true,
-      });
-    }
+    const state = get();
+    const path = visibleOf(state, state.query)[index]?.path;
+    if (path === undefined) return;
+    set(
+      withSelectionHeld(
+        state,
+        { viewMode: "viewer", viewerView: null, viewerImg: null, viewerFitted: true },
+        path,
+      ),
+    );
   },
 
-  closeViewer: () => set({ viewMode: "gallery" }),
+  closeViewer: () => set((s) => withSelectionHeld(s, { viewMode: "gallery" })),
 
   navigate: (delta) => {
     const visibleCount = visibleOf(get(), get().query).length;
@@ -610,12 +657,27 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setEmbedProgress: (embedProgress) => set({ embedProgress }),
 
-  viewerImageLoaded: (size) =>
+  /**
+   * A new set of pixels is on screen: either the next photograph, or the same
+   * one re-developed after a slider moved.
+   *
+   * Fit is a *state*, not a one-off: a view that is tracking fit refits to
+   * whatever just arrived, and a view that has been zoomed in holds where it
+   * was. That is what makes both "step to the next take and check the same
+   * eye at 100%" and "drag contrast while zoomed in" work — before this, every
+   * arriving frame snapped the image back to fit.
+   */
+  viewerImageLoaded: (size) => {
+    const { viewerFitted, viewerView, viewerImg, viewerWin } = get();
+    const holding = !viewerFitted && viewerView !== null && viewerImg !== null;
     set({
       viewerImg: size,
-      viewerView: fitToWindow(size, get().viewerWin),
-      viewerFitted: true,
-    }),
+      viewerView: holding
+        ? heldView(viewerView, viewerImg, size, viewerWin)
+        : fitToWindow(size, viewerWin),
+      viewerFitted: !holding,
+    });
+  },
 
   viewerWinResized: (size) => {
     const { viewerFitted, viewerImg } = get();
@@ -660,7 +722,14 @@ let visibleCache: {
 export function visibleOf(
   state: Pick<
     AppState,
-    "entries" | "meta" | "similarity" | "labels" | "stacking" | "preferredMember"
+    | "entries"
+    | "meta"
+    | "similarity"
+    | "labels"
+    | "stacking"
+    | "preferredMember"
+    | "viewMode"
+    | "galleryLayout"
   >,
   query: Query,
 ): FileEntry[] {
@@ -675,7 +744,7 @@ export function visibleOf(
     meta,
     scores,
     labels,
-    state.stacking,
+    stacksCollapse(state),
     state.preferredMember,
   );
 }
@@ -734,7 +803,7 @@ export function useVisibleEntries(): FileEntry[] {
   const meta = useAppStore((s) => (usesMeta(s.query) ? s.meta : null));
   const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
   const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
-  const stacking = useAppStore((s) => s.stacking);
+  const stacking = useAppStore(stacksCollapse);
   const preferred = useAppStore((s) => s.preferredMember);
   return applyQueryMemo(entries, query, meta, scores, labels, stacking, preferred);
 }

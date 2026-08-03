@@ -1,6 +1,5 @@
 import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
-import { siblingsOf, stackCaption } from "../../state/stacks";
 import { useAppStore } from "../../state/store";
 
 interface ThumbCellProps {
@@ -15,9 +14,6 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const selected = useAppStore((s) => s.selectedIndex === index);
   const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
-  const stacking = useAppStore((s) => s.stacking);
-  const allEntries = useAppStore((s) => s.entries);
-  const caption = stacking ? stackCaption(entry, siblingsOf(allEntries, entry)) : entry.name;
 
   return (
     <figure
@@ -43,10 +39,10 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
           <span className="thumb-pending" />
         )}
       </div>
-      {/* When a stack is collapsed, the caption says what else is in it —
-          words on the caption the cell already has, rather than a badge that
-          would have to be learned. */}
-      <figcaption title={entry.path}>{caption}</figcaption>
+      {/* The file, named. The grid lists every file the camera wrote — a raw
+          and its JPEG are two cells here, and the darkroom is where they
+          become one photograph. */}
+      <figcaption title={entry.path}>{entry.name}</figcaption>
     </figure>
   );
 }

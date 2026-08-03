@@ -8,7 +8,10 @@ import {
   movedSelection,
   scanBatchArrived,
   sortForScope,
+  stacksCollapse,
   withQuery,
+  withSelection,
+  withSelectionHeld,
   type Scope,
 } from "./store";
 
@@ -170,11 +173,12 @@ describe("selection can be empty", () => {
     expect(movedSelection({ selectedIndex: null }, 0, 1)).toEqual({});
   });
 
-  it("resets the viewport whenever the selection actually moves", () => {
-    expect(movedSelection({ selectedIndex: null }, 3, 1)).toMatchObject({
-      viewerView: null,
-      viewerFitted: true,
-    });
+  it("leaves the viewport alone, so a zoomed-in comparison survives the move", () => {
+    // Fit is a state the viewport tracks, not something re-imposed on every
+    // step: a view sitting at fit refits itself when the next image loads,
+    // and one that has been zoomed in stays where the user put it.
+    expect(movedSelection({ selectedIndex: null }, 3, 1)).toEqual({ selectedIndex: 0 });
+    expect(withSelection(2)).toEqual({ selectedIndex: 2 });
   });
 
   it("clears rather than reassigns when the selected image is filtered out", () => {
@@ -187,6 +191,8 @@ describe("selection can be empty", () => {
       labels: {},
       stacking: false,
       preferredMember: {},
+      viewMode: "gallery" as const,
+      galleryLayout: "grid" as const,
     };
     // A name filter that keeps only "a" drops the selected "b".
     const dropped = withQuery(state, {
@@ -206,6 +212,8 @@ describe("selection can be empty", () => {
       labels: {},
       stacking: false,
       preferredMember: {},
+      viewMode: "gallery" as const,
+      galleryLayout: "grid" as const,
     };
     const kept = withQuery(state, {
       ...defaultQuery,
@@ -224,10 +232,87 @@ describe("selection can be empty", () => {
       labels: {},
       stacking: false,
       preferredMember: {},
+      viewMode: "gallery" as const,
+      galleryLayout: "grid" as const,
     };
     expect(
       withQuery(state, { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] })
         .selectedIndex,
     ).toBeNull();
+  });
+});
+
+describe("stacking is a darkroom rule", () => {
+  const state = (
+    patch: Partial<{
+      stacking: boolean;
+      viewMode: "gallery" | "viewer";
+      galleryLayout: "grid" | "timeline" | "map" | "darkroom";
+    }>,
+  ) => ({
+    stacking: true,
+    viewMode: "gallery" as const,
+    galleryLayout: "grid" as const,
+    ...patch,
+  });
+
+  it("collapses pairs where one photograph is on screen at a time", () => {
+    expect(stacksCollapse(state({ galleryLayout: "darkroom" }))).toBe(true);
+    expect(stacksCollapse(state({ viewMode: "viewer" }))).toBe(true);
+  });
+
+  it("leaves the grid, the timeline and the map listing every file", () => {
+    expect(stacksCollapse(state({}))).toBe(false);
+    expect(stacksCollapse(state({ galleryLayout: "timeline" }))).toBe(false);
+    expect(stacksCollapse(state({ galleryLayout: "map" }))).toBe(false);
+  });
+
+  it("is still a switch — off means off wherever you are", () => {
+    expect(stacksCollapse(state({ stacking: false, galleryLayout: "darkroom" }))).toBe(false);
+    expect(stacksCollapse(state({ stacking: false, viewMode: "viewer" }))).toBe(false);
+  });
+});
+
+describe("a selection follows its photograph across a collapse", () => {
+  const pair = [
+    { path: "/p/DSC_1.NEF", name: "DSC_1.NEF", size: 1, modifiedMs: 1, formatHint: "nef" },
+    { path: "/p/DSC_1.JPG", name: "DSC_1.JPG", size: 1, modifiedMs: 1, formatHint: "jpg" },
+    { path: "/p/DSC_2.JPG", name: "DSC_2.JPG", size: 1, modifiedMs: 1, formatHint: "jpg" },
+  ];
+  const base = {
+    entries: pair,
+    query: defaultQuery,
+    meta: {},
+    similarity: null,
+    labels: {},
+    stacking: true,
+    preferredMember: {},
+    viewMode: "gallery" as const,
+    galleryLayout: "grid" as const,
+  };
+
+  /* Sorted by name, the grid lists DSC_1.JPG, DSC_1.NEF, DSC_2.JPG; the
+   * darkroom collapses the first two into one photograph led by the raw
+   * file, and lists DSC_1, DSC_2. */
+
+  it("lands on the stack's lead when the selected file is the one collapsed away", () => {
+    // Looking at DSC_1.JPG in the grid, then opening the darkroom: that file
+    // is not in the list any more, but its photograph is — under the raw
+    // file. Emptying the selection there would be losing the user's place.
+    const held = withSelectionHeld({ ...base, selectedIndex: 0 }, { galleryLayout: "darkroom" });
+    expect(held.selectedIndex).toBe(0);
+  });
+
+  it("keeps the file itself when it is still listed", () => {
+    // DSC_2.JPG survives the collapse; it just sits one place earlier.
+    const held = withSelectionHeld({ ...base, selectedIndex: 2 }, { galleryLayout: "darkroom" });
+    expect(held.selectedIndex).toBe(1);
+  });
+
+  it("expands back onto the file that was showing", () => {
+    const darkroom = { ...base, galleryLayout: "darkroom" as const, selectedIndex: 0 };
+    const held = withSelectionHeld(darkroom, { galleryLayout: "grid" });
+    // The raw file, which is where the JPEG beside it now sits at index 0.
+    expect(held.selectedIndex).toBe(1);
   });
 });

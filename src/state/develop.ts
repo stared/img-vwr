@@ -138,6 +138,18 @@ export interface Session {
   error: string | null;
 }
 
+/**
+ * An image opened ahead of time.
+ *
+ * The frame is null for a file the viewer will show directly — an unedited
+ * JPEG needs no developed pixels, and rendering some would be work nobody
+ * ever looks at. Opening it was still worth doing: that is the slow part.
+ */
+export interface Warm {
+  info: DevelopState;
+  frame: DevelopFrame | null;
+}
+
 export interface DevelopStore {
   session: Session | null;
   /** The preset catalog, fetched once. Empty until it arrives. */
@@ -160,6 +172,22 @@ export interface DevelopStore {
   opening: string | null;
   open: (path: string) => Promise<void>;
   close: () => void;
+  /**
+   * Open and develop these images ahead of being asked for, nearest first.
+   *
+   * Opening a raw file is ~2 s (parse plus demosaic setup) against ~20 ms to
+   * re-render one already open, so stepping along a shoot spends nearly all
+   * its time on work that could have happened while the user was looking at
+   * the previous frame. Warming both neighbours turns arrow-key navigation
+   * from "developing…" into an image that is simply there.
+   *
+   * Strictly second in line: nothing is warmed while the image in front of
+   * the user is still being rendered, because trading their wait for a
+   * stranger's would be worse than not doing this at all.
+   */
+  prefetch: (paths: string[]) => void;
+  /** Neighbours already opened and developed, by path. */
+  warm: Record<string, Warm>;
   setParam: (key: ParamKey, value: number) => void;
   setTemperature: (kelvin: number) => void;
   setTint: (tint: number) => void;
@@ -434,6 +462,34 @@ export function nextPreset(
  * a rendering detail the UI never displays. */
 let currentEdge = 1600;
 
+/**
+ * How many neighbours to keep developed ahead.
+ *
+ * Two — the next and the previous — which is what the backend holds open
+ * alongside the current image. Warming more would evict the ones actually
+ * about to be needed, and the third image away is not one keystroke from
+ * being on screen anyway.
+ */
+const WARM_LIMIT = 2;
+
+/** A fresh session for a just-opened image. One place, so an image installed
+ * from the warm cache is in exactly the state one opened the slow way is. */
+function sessionFor(path: string, info: DevelopState, frame: DevelopFrame | null): Session {
+  return {
+    path,
+    info,
+    settings: info.settings,
+    frame,
+    detail: null,
+    detailing: false,
+    picking: false,
+    overlay: "none",
+    rendering: false,
+    dirty: false,
+    error: null,
+  };
+}
+
 export const useDevelopStore = create<DevelopStore>((set, get) => {
   /**
    * Render the session's current settings, coalescing concurrent requests.
@@ -479,6 +535,54 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (get().session?.dirty) void pump();
   }
 
+  /* Neighbours to develop ahead, nearest first, and whether the loop that
+   * does it is running. Module state: it is a scheduling detail, and nothing
+   * in the UI describes it. */
+  let wanted: string[] = [];
+  let warming = false;
+
+  /**
+   * Develop the wanted neighbours, one at a time, while nothing is waiting.
+   *
+   * One at a time because these renders share a thread pool with the one the
+   * user is watching, and two speculative renders in flight would make the
+   * next slider drag wait behind them.
+   */
+  async function warmUp(): Promise<void> {
+    if (warming) return;
+    warming = true;
+    try {
+      for (;;) {
+        const session = get().session;
+        // Never ahead of the image actually on screen — including mid-drag,
+        // where a render has just landed and the next one is already owed.
+        // Opening a neighbour in that gap would stall the drag for seconds.
+        // The canvas asks again after every frame, so nothing is lost by
+        // waiting.
+        if (!session || session.rendering || session.dirty || session.frame === null) return;
+        const path = wanted.find((p) => p !== session.path && !(p in get().warm));
+        if (path === undefined) return;
+
+        const warmed = await developState(path).then(
+          async (info) => ({
+            info,
+            // Only pixels somebody will look at: a plain JPEG with no edit is
+            // shown by the webview from the file itself.
+            frame: needsDevelopedFrame(sessionFor(path, info, null))
+              ? await developRender(path, info.settings, currentEdge, "none", FULL_REGION)
+              : null,
+          }),
+          () => null,
+        );
+        if (warmed) set({ warm: { ...get().warm, [path]: warmed } });
+        // A file with no develop plugin must not be retried on every step.
+        else wanted = wanted.filter((p) => p !== path);
+      }
+    } finally {
+      warming = false;
+    }
+  }
+
   /** Apply a settings change: the sliders move immediately, the pixels catch
    * up. Persisting is fire-and-forget — an edit that fails to save is worth
    * reporting, but never worth blocking the drag on. */
@@ -515,30 +619,32 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     cropping: false,
     opening: null,
 
+    warm: {},
+
     open: async (path) => {
       if (get().session?.path === path) return;
+      // Crop is about one photograph, and arriving at the next one already in
+      // crop mode would mean a drag across it meant something unexpected.
+      if (get().cropping) set({ cropping: false });
+
+      // Already developed while the user was looking at its neighbour: show
+      // it now, with no round trip at all. Taken out of the cache on the way
+      // past, so a later edit is never shadowed by a stale copy of it.
+      const warmed = get().warm[path];
+      if (warmed) {
+        const rest = Object.fromEntries(Object.entries(get().warm).filter(([p]) => p !== path));
+        set({ warm: rest, opening: null, session: sessionFor(path, warmed.info, warmed.frame) });
+        // No pump: the warm frame is exactly what one would produce.
+        return;
+      }
+
       set({ opening: path, session: null });
       try {
         const info = await developState(path);
         // A slower open for an image the user has already navigated past
         // must not install itself over their current one.
         if (get().opening !== path) return;
-        set({
-          opening: null,
-          session: {
-            path,
-            info,
-            settings: info.settings,
-            frame: null,
-            detail: null,
-            detailing: false,
-            picking: false,
-            overlay: "none",
-            rendering: false,
-            dirty: false,
-            error: null,
-          },
-        });
+        set({ opening: null, session: sessionFor(path, info, null) });
         void pump();
       } catch (error) {
         if (get().opening !== path) return;
@@ -547,6 +653,16 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         // worth surfacing, the viewer simply shows the file directly.
         void error;
       }
+    },
+
+    prefetch: (paths) => {
+      wanted = paths.slice(0, WARM_LIMIT);
+      // Forget anything no longer nearby: the backend has probably evicted
+      // its scene by now, and a frame token outlives its pixels.
+      const warm = get().warm;
+      const near = Object.fromEntries(Object.entries(warm).filter(([p]) => wanted.includes(p)));
+      if (Object.keys(near).length !== Object.keys(warm).length) set({ warm: near });
+      void warmUp();
     },
 
     close: () => set({ session: null, opening: null }),
@@ -702,6 +818,9 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     requestRender: (maxEdge) => {
       if (maxEdge === currentEdge) return;
       currentEdge = maxEdge;
+      // Warm frames were developed for the old viewport, so they are the
+      // wrong size now; dropping them has them warmed again at this one.
+      if (Object.keys(get().warm).length > 0) set({ warm: {} });
       const session = get().session;
       if (!session) return;
       set({ session: { ...session, dirty: true } });

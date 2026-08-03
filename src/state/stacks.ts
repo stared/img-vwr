@@ -2,14 +2,21 @@ import type { FileEntry } from "../ipc";
 
 /**
  * Stacking: a raw file and the JPEG a camera wrote beside it are one
- * photograph, and a gallery that lists both is counting the same picture
+ * photograph, and stepping through both means looking at the same picture
  * twice.
+ *
+ * Which is a complaint about *working* through a shoot, not about browsing
+ * one — so the collapse applies where one photograph is on screen at a time
+ * (the darkroom and the viewer) and nowhere else. The grid stays a contact
+ * sheet of the files that are actually on the card.
  *
  * The collapse is deliberately a *presentation* step over the already
  * filtered and sorted list, not a change to what the collection contains.
- * Files stay files: the statistics keep counting them, format filters keep
- * matching them, and turning stacking off puts everything back with no state
- * to unwind.
+ * Files stay files: the scan still holds both, format filters still match
+ * both, and turning stacking off puts everything back with no state to
+ * unwind. Anything reading the visible list — the count in the status bar,
+ * the statistics panel — describes what is on screen, which is the whole
+ * point of it being a view.
  *
  * What a stack shows is one of its members, not a synthetic thing. That is
  * what makes picking the other one work without any special case — choosing
@@ -58,9 +65,15 @@ export function isRawEntry(entry: FileEntry): boolean {
  * at all.
  */
 export function stackKeyOf(entry: FileEntry): string {
-  const slash = entry.path.lastIndexOf("/");
-  const dir = slash < 0 ? "" : entry.path.slice(0, slash);
-  const name = slash < 0 ? entry.path : entry.path.slice(slash + 1);
+  return stackKeyOfPath(entry.path);
+}
+
+/** The same, for a path with no entry to hand — following a selection across
+ * a change that removed the file it was on. */
+export function stackKeyOfPath(path: string): string {
+  const slash = path.lastIndexOf("/");
+  const dir = slash < 0 ? "" : path.slice(0, slash);
+  const name = slash < 0 ? path : path.slice(slash + 1);
   const dot = name.lastIndexOf(".");
   return `${dir}/${dot <= 0 ? name : name.slice(0, dot)}`;
 }
