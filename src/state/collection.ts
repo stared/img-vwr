@@ -36,6 +36,8 @@ export function scopeLoading(scope: Scope, epoch: number) {
     labels: {},
     viewMode: "gallery" as const,
     selectedIndex: null,
+    selection: [] as string[],
+    selectionAnchor: null,
     similarity: null,
     embedProgress: null,
     viewerView: null,
@@ -114,7 +116,8 @@ export function folderRescanned(
   };
 }
 
-function without<T>(record: Record<string, T>, drop: Set<string>): Record<string, T> {
+/** A record with some keys taken out; the same record when none were. */
+export function without<T>(record: Record<string, T>, drop: Set<string>): Record<string, T> {
   if (drop.size === 0) return record;
   return Object.fromEntries(Object.entries(record).filter(([key]) => !drop.has(key)));
 }

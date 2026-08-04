@@ -39,8 +39,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  * Lightroom uses, and the reason there is no separate clear button.
  */
 function Rating({ path, stars }: { path: string; stars: number | null }) {
+  // This one photograph, not the selection: the panel is describing a single
+  // image, and its controls should change what it is describing.
   const rate = async (next: number | null) => {
-    useAppStore.getState().labelApplied(path, await labelsSetStars(path, next));
+    useAppStore.getState().labelsApplied(await labelsSetStars([path], next));
   };
   return (
     <div className="info-fact">

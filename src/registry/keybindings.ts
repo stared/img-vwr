@@ -52,6 +52,11 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+i", "stats.toggle"],
   ["f", "filter.find"],
   ["mod+f", "filter.find"],
+  ["mod+a", "selection.all"],
+  // As in the Finder: deleting takes a modifier, and never a bare key — the
+  // gallery's bare keys rate photographs, and one slip away from a rating
+  // should not be a file in the Trash.
+  ["mod+backspace", "image.trash"],
   ["arrowright", "image.next"],
   ["arrowleft", "image.prev"],
   ["enter", "viewer.open"],
@@ -159,6 +164,8 @@ export function formatChord(spec: string): string {
           return "←";
         case "arrowright":
           return "→";
+        case "backspace":
+          return "⌫";
         default:
           return part.toUpperCase();
       }

@@ -8,10 +8,13 @@ import { folderRescanned } from "./collection";
 import {
   movedSelection,
   scanBatchArrived,
+  selectMode,
   sortForScope,
   stacksCollapse,
+  withDeleted,
   withQuery,
   withSelection,
+  withSelectionAt,
   withSelectionHeld,
   type Scope,
 } from "./store";
@@ -152,13 +155,34 @@ describe("scanBatchArrived", () => {
   });
 });
 
-describe("selection can be empty", () => {
-  const entries = [
-    { path: "/a.jpg", name: "a.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
-    { path: "/b.jpg", name: "b.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
-    { path: "/c.jpg", name: "c.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
-  ];
+const entries = [
+  { path: "/a.jpg", name: "a.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+  { path: "/b.jpg", name: "b.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+  { path: "/c.jpg", name: "c.jpg", size: 1, modifiedMs: 1, formatHint: "jpg" },
+];
 
+/** A gallery of a.jpg, b.jpg, c.jpg with the given photographs selected. */
+function showing(selected: number[], anchor: number | null = null) {
+  const chosen = selected.map((i) => entries[i]?.path ?? "");
+  return {
+    entries,
+    query: defaultQuery,
+    selectedIndex: selected.length === 0 ? null : (selected[selected.length - 1] ?? null),
+    selection: chosen,
+    selectionAnchor: anchor === null ? (chosen[0] ?? null) : (entries[anchor]?.path ?? null),
+    meta: {},
+    similarity: null,
+    labels: {},
+    thumbs: {},
+    thumbErrors: {},
+    stacking: false,
+    preferredMember: {},
+    viewMode: "gallery" as const,
+    galleryLayout: "grid" as const,
+  };
+}
+
+describe("selection can be empty", () => {
   it("enters the collection from whichever end the arrow points from", () => {
     expect(movedSelection({ selectedIndex: null }, 3, 1).selectedIndex).toBe(0);
     expect(movedSelection({ selectedIndex: null }, 3, -1).selectedIndex).toBe(2);
@@ -179,67 +203,133 @@ describe("selection can be empty", () => {
     // step: a view sitting at fit refits itself when the next image loads,
     // and one that has been zoomed in stays where the user put it.
     expect(movedSelection({ selectedIndex: null }, 3, 1)).toEqual({ selectedIndex: 0 });
-    expect(withSelection(2)).toEqual({ selectedIndex: 2 });
+    expect(withSelection(showing([]), 2)).toEqual({
+      selectedIndex: 2,
+      selection: ["/c.jpg"],
+      selectionAnchor: "/c.jpg",
+    });
   });
 
   it("clears rather than reassigns when the selected image is filtered out", () => {
-    const state = {
-      entries,
-      query: defaultQuery,
-      selectedIndex: 1,
-      meta: {},
-      similarity: null,
-      labels: {},
-      stacking: false,
-      preferredMember: {},
-      viewMode: "gallery" as const,
-      galleryLayout: "grid" as const,
-    };
     // A name filter that keeps only "a" drops the selected "b".
-    const dropped = withQuery(state, {
+    const dropped = withQuery(showing([1]), {
       ...defaultQuery,
       filters: [{ kind: "name", substring: "a." }],
     });
     expect(dropped.selectedIndex).toBeNull();
+    expect(dropped.selection).toEqual([]);
   });
 
   it("keeps the same image selected when it survives the new query", () => {
-    const state = {
-      entries,
-      query: defaultQuery,
-      selectedIndex: 2,
-      meta: {},
-      similarity: null,
-      labels: {},
-      stacking: false,
-      preferredMember: {},
-      viewMode: "gallery" as const,
-      galleryLayout: "grid" as const,
-    };
-    const kept = withQuery(state, {
+    const kept = withQuery(showing([2]), {
       ...defaultQuery,
       filters: [{ kind: "name", substring: "c." }],
     });
     expect(kept.selectedIndex).toBe(0);
+    expect(kept.selection).toEqual(["/c.jpg"]);
   });
 
   it("stays empty across a query change", () => {
-    const state = {
-      entries,
-      query: defaultQuery,
-      selectedIndex: null,
-      meta: {},
-      similarity: null,
-      labels: {},
-      stacking: false,
-      preferredMember: {},
-      viewMode: "gallery" as const,
-      galleryLayout: "grid" as const,
-    };
     expect(
-      withQuery(state, { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] })
+      withQuery(showing([]), { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] })
         .selectedIndex,
     ).toBeNull();
+  });
+});
+
+describe("several photographs at once", () => {
+  it("reads the modifiers the platform uses for adding and for reaching", () => {
+    const plain = { metaKey: false, ctrlKey: false, shiftKey: false };
+    expect(selectMode(plain)).toBe("replace");
+    expect(selectMode({ ...plain, metaKey: true })).toBe("extend");
+    expect(selectMode({ ...plain, ctrlKey: true })).toBe("extend");
+    expect(selectMode({ ...plain, shiftKey: true })).toBe("range");
+    // Both held: reaching wins, as it does in every file manager.
+    expect(selectMode({ ...plain, metaKey: true, shiftKey: true })).toBe("range");
+  });
+
+  it("adds one and takes one back out", () => {
+    const added = withSelectionAt(showing([0]), 2, "extend");
+    expect(added.selection).toEqual(["/a.jpg", "/c.jpg"]);
+    expect(added.selectedIndex).toBe(2);
+
+    const removed = withSelectionAt(showing([0, 2]), 2, "extend");
+    expect(removed.selection).toEqual(["/a.jpg"]);
+    // The lead was the one taken out, so it moves to what is left.
+    expect(removed.selectedIndex).toBe(0);
+  });
+
+  it("selects nothing at all once the last one is taken out", () => {
+    expect(withSelectionAt(showing([1]), 1, "extend")).toEqual({
+      selectedIndex: null,
+      selection: [],
+      selectionAnchor: null,
+    });
+  });
+
+  it("reaches from the anchor, and keeps reaching from it", () => {
+    const reached = withSelectionAt(showing([1]), 2, "range");
+    expect(reached.selection).toEqual(["/b.jpg", "/c.jpg"]);
+    expect(reached.selectionAnchor).toBe("/b.jpg");
+
+    // Reaching the other way corrects the range rather than adding to it:
+    // b is still the anchor, so this is b..a, not a..c.
+    const corrected = withSelectionAt({ ...showing([1, 2], 1), selectedIndex: 2 }, 0, "range");
+    expect(corrected.selection).toEqual(["/a.jpg", "/b.jpg"]);
+  });
+
+  it("keeps every survivor of a query change, in the order they now appear", () => {
+    const state = { ...showing([0, 2]), selectedIndex: 0 };
+    const kept = withQuery(state, { ...defaultQuery, sort: { key: "name", dir: "desc" } });
+    expect(kept.selection).toEqual(["/c.jpg", "/a.jpg"]);
+    expect(kept.selectedIndex).toBe(2);
+  });
+
+  it("moves the lead onto another chosen photograph when the lead is filtered away", () => {
+    // Selecting a and c, leading on c, then filtering to just a: c is gone,
+    // but a is still one the user picked, so it leads rather than the whole
+    // selection being dropped for one missing member.
+    const state = { ...showing([0, 2]), selectedIndex: 2 };
+    const kept = withQuery(state, {
+      ...defaultQuery,
+      filters: [{ kind: "name", substring: "a." }],
+    });
+    expect(kept.selectedIndex).toBe(0);
+    expect(kept.selection).toEqual(["/a.jpg"]);
+  });
+});
+
+describe("deleting takes photographs out of the collection", () => {
+  it("lands on what took the deleted photograph's place, ready for the next one", () => {
+    const after = withDeleted({ ...showing([1]), thumbs: { "/b.jpg": "/cache/b" } }, ["/b.jpg"]);
+    expect(after.entries?.map((e) => e.name)).toEqual(["a.jpg", "c.jpg"]);
+    expect(after.selectedIndex).toBe(1);
+    expect(after.selection).toEqual(["/c.jpg"]);
+    // The cached pixels of a file that is gone are gone with it.
+    expect(after.thumbs).toEqual({});
+  });
+
+  it("falls back to the end when the last photograph was the one deleted", () => {
+    const after = withDeleted(showing([2]), ["/c.jpg"]);
+    expect(after.selectedIndex).toBe(1);
+    expect(after.selection).toEqual(["/b.jpg"]);
+  });
+
+  it("selects nothing when the whole collection went", () => {
+    const after = withDeleted(showing([0, 1, 2]), ["/a.jpg", "/b.jpg", "/c.jpg"]);
+    expect(after.entries).toEqual([]);
+    expect(after.selectedIndex).toBeNull();
+    expect(after.selection).toEqual([]);
+  });
+
+  it("leaves the lead alone when something else was deleted", () => {
+    const after = withDeleted(showing([2]), ["/a.jpg"]);
+    expect(after.selectedIndex).toBe(1);
+    expect(after.selection).toEqual(["/c.jpg"]);
+  });
+
+  it("does nothing at all when none of the paths were in the collection", () => {
+    expect(withDeleted(showing([1]), ["/elsewhere.jpg"])).toEqual({});
   });
 });
 
@@ -290,6 +380,8 @@ describe("a selection follows its photograph across a collapse", () => {
     preferredMember: {},
     viewMode: "gallery" as const,
     galleryLayout: "grid" as const,
+    selection: [] as string[],
+    selectionAnchor: null as string | null,
   };
 
   /* Sorted by name, the grid lists DSC_1.JPG, DSC_1.NEF, DSC_2.JPG; the

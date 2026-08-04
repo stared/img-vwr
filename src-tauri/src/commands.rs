@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
+use crate::services::files::TrashOutcome;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 use crate::services::watcher::WatchService;
@@ -157,6 +158,20 @@ pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
         .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
 }
 
+/// Move photographs to the platform Trash, reporting on each one.
+///
+/// The frontend has already asked the user, and asks every time — this end
+/// never prompts, never guesses which paths were meant, and never reports
+/// more as gone than actually went. Async + `spawn_blocking` like every other
+/// filesystem command: a slow volume must not freeze the window.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_files(paths: Vec<String>) -> Result<TrashOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::files::to_trash(paths))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Begin a new collection, invalidating everything in flight for the old one.
 ///
 /// Also stops watching: every scope change goes through here, and a folder
@@ -277,15 +292,19 @@ pub async fn labels_for_paths(
         .map_err(|e| e.to_string())?
 }
 
+/* Writes take a list of paths because rating and tagging apply to the
+ * selection, which can be the whole folder. Both answer for every path they
+ * were given, so the frontend can install the result as it stands. */
+
 #[tauri::command]
 #[specta::specta]
 pub async fn labels_set_stars(
     service: State<'_, Arc<LabelService>>,
-    path: String,
+    paths: Vec<String>,
     stars: Option<u8>,
-) -> Result<ImageLabels, String> {
+) -> Result<HashMap<String, ImageLabels>, String> {
     let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.set_stars(&path, stars))
+    tauri::async_runtime::spawn_blocking(move || service.set_stars(&paths, stars))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -294,11 +313,11 @@ pub async fn labels_set_stars(
 #[specta::specta]
 pub async fn labels_toggle_tag(
     service: State<'_, Arc<LabelService>>,
-    path: String,
+    paths: Vec<String>,
     tag: String,
-) -> Result<ImageLabels, String> {
+) -> Result<HashMap<String, ImageLabels>, String> {
     let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.toggle_tag(&path, &tag))
+    tauri::async_runtime::spawn_blocking(move || service.toggle_tag(&paths, &tag))
         .await
         .map_err(|e| e.to_string())?
 }

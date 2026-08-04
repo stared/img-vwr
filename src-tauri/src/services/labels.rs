@@ -80,50 +80,92 @@ impl LabelService {
         Ok(out)
     }
 
-    /// Set or clear (None) an image's star rating; returns the full labels.
-    pub fn set_stars(&self, path: &str, stars: Option<u8>) -> Result<ImageLabels, String> {
+    /// Set or clear (None) the star rating of every path, in one transaction.
+    ///
+    /// Takes a list because rating is something the user does to a selection,
+    /// and a selection can be the whole folder: one round trip and one
+    /// transaction rather than a thousand of each.
+    pub fn set_stars(
+        &self,
+        paths: &[String],
+        stars: Option<u8>,
+    ) -> Result<HashMap<String, ImageLabels>, String> {
         {
-            let conn = self.conn.lock().unwrap();
-            match stars {
-                Some(n) => conn
-                    .execute(
-                        "INSERT INTO stars (path, stars) VALUES (?1, ?2)
-                         ON CONFLICT(path) DO UPDATE SET stars = ?2",
-                        rusqlite::params![path, n],
-                    )
-                    .map_err(|e| e.to_string())?,
-                None => conn
-                    .execute("DELETE FROM stars WHERE path = ?1", [path])
-                    .map_err(|e| e.to_string())?,
-            };
+            let mut conn = self.conn.lock().unwrap();
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            for path in paths {
+                match stars {
+                    Some(n) => tx
+                        .execute(
+                            "INSERT INTO stars (path, stars) VALUES (?1, ?2)
+                             ON CONFLICT(path) DO UPDATE SET stars = ?2",
+                            rusqlite::params![path, n],
+                        )
+                        .map_err(|e| e.to_string())?,
+                    None => tx
+                        .execute("DELETE FROM stars WHERE path = ?1", [path])
+                        .map_err(|e| e.to_string())?,
+                };
+            }
+            tx.commit().map_err(|e| e.to_string())?;
         }
-        self.labels_for(path)
+        self.labels_of(paths)
     }
 
-    /// Add the tag if absent, remove it if present; returns the full labels.
-    pub fn toggle_tag(&self, path: &str, tag: &str) -> Result<ImageLabels, String> {
+    /// Toggle a tag across every path.
+    ///
+    /// One verdict for the whole selection rather than each file flipping on
+    /// its own: if they all carry the tag this takes it off, and otherwise it
+    /// goes on all of them. Per-file flipping would make a mixed selection
+    /// swap which half is tagged, which is never what anyone means.
+    pub fn toggle_tag(
+        &self,
+        paths: &[String],
+        tag: &str,
+    ) -> Result<HashMap<String, ImageLabels>, String> {
         {
-            let conn = self.conn.lock().unwrap();
-            let removed = conn
-                .execute(
-                    "DELETE FROM tags WHERE path = ?1 AND tag = ?2",
-                    rusqlite::params![path, tag],
-                )
-                .map_err(|e| e.to_string())?;
-            if removed == 0 {
-                conn.execute(
-                    "INSERT INTO tags (path, tag) VALUES (?1, ?2)",
-                    rusqlite::params![path, tag],
-                )
+            let mut conn = self.conn.lock().unwrap();
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            let mut tagged = 0usize;
+            for path in paths {
+                let has: i64 = tx
+                    .query_row(
+                        "SELECT COUNT(*) FROM tags WHERE path = ?1 AND tag = ?2",
+                        rusqlite::params![path, tag],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                tagged += has as usize;
+            }
+            let removing = !paths.is_empty() && tagged == paths.len();
+            for path in paths {
+                if removing {
+                    tx.execute(
+                        "DELETE FROM tags WHERE path = ?1 AND tag = ?2",
+                        rusqlite::params![path, tag],
+                    )
+                } else {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO tags (path, tag) VALUES (?1, ?2)",
+                        rusqlite::params![path, tag],
+                    )
+                }
                 .map_err(|e| e.to_string())?;
             }
+            tx.commit().map_err(|e| e.to_string())?;
         }
-        self.labels_for(path)
+        self.labels_of(paths)
     }
 
-    fn labels_for(&self, path: &str) -> Result<ImageLabels, String> {
-        let map = self.for_paths(&[path.to_string()])?;
-        Ok(map.into_values().next().unwrap_or_else(empty_labels))
+    /// Labels for exactly these paths — including the ones that now have
+    /// none, which `for_paths` leaves out. A write has to answer for every
+    /// path it was given, or the caller cannot tell "cleared" from "unchanged".
+    fn labels_of(&self, paths: &[String]) -> Result<HashMap<String, ImageLabels>, String> {
+        let mut map = self.for_paths(paths)?;
+        for path in paths {
+            map.entry(path.clone()).or_insert_with(empty_labels);
+        }
+        Ok(map)
     }
 }
 
@@ -145,30 +187,63 @@ mod tests {
         (dir, svc)
     }
 
+    /// One path, as the single-image paths in the app pass it.
+    fn one(path: &str) -> Vec<String> {
+        vec![path.to_string()]
+    }
+
     #[test]
     fn stars_set_update_clear() {
         let (_dir, svc) = service();
-        assert_eq!(svc.set_stars("/a.jpg", Some(3)).unwrap().stars, Some(3));
-        assert_eq!(svc.set_stars("/a.jpg", Some(5)).unwrap().stars, Some(5));
-        assert_eq!(svc.set_stars("/a.jpg", None).unwrap().stars, None);
+        assert_eq!(svc.set_stars(&one("/a.jpg"), Some(3)).unwrap()["/a.jpg"].stars, Some(3));
+        assert_eq!(svc.set_stars(&one("/a.jpg"), Some(5)).unwrap()["/a.jpg"].stars, Some(5));
+        assert_eq!(svc.set_stars(&one("/a.jpg"), None).unwrap()["/a.jpg"].stars, None);
         // Cleared and never tagged: the image has no labels at all anymore.
-        assert!(svc.for_paths(&["/a.jpg".into()]).unwrap().is_empty());
+        assert!(svc.for_paths(&one("/a.jpg")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_whole_selection_is_rated_at_once() {
+        let (_dir, svc) = service();
+        let three: Vec<String> = ["/a.jpg", "/b.jpg", "/c.jpg"].iter().map(|p| p.to_string()).collect();
+        let rated = svc.set_stars(&three, Some(4)).unwrap();
+        assert_eq!(rated.len(), 3);
+        assert!(rated.values().all(|l| l.stars == Some(4)));
+        // Clearing answers for every path it was given, including the ones
+        // that now have no labels at all — otherwise the caller cannot tell
+        // "cleared" from "left alone".
+        let cleared = svc.set_stars(&three, None).unwrap();
+        assert_eq!(cleared.len(), 3);
+        assert!(cleared.values().all(|l| l.stars.is_none()));
     }
 
     #[test]
     fn tags_toggle_on_and_off() {
         let (_dir, svc) = service();
-        assert_eq!(svc.toggle_tag("/a.jpg", "pair").unwrap().tags, vec!["pair"]);
-        let both = svc.toggle_tag("/a.jpg", "family").unwrap();
-        assert_eq!(both.tags, vec!["family", "pair"]); // sorted
-        assert_eq!(svc.toggle_tag("/a.jpg", "pair").unwrap().tags, vec!["family"]);
+        assert_eq!(svc.toggle_tag(&one("/a.jpg"), "pair").unwrap()["/a.jpg"].tags, vec!["pair"]);
+        let both = svc.toggle_tag(&one("/a.jpg"), "family").unwrap();
+        assert_eq!(both["/a.jpg"].tags, vec!["family", "pair"]); // sorted
+        assert_eq!(svc.toggle_tag(&one("/a.jpg"), "pair").unwrap()["/a.jpg"].tags, vec!["family"]);
+    }
+
+    #[test]
+    fn a_mixed_selection_gains_the_tag_rather_than_swapping_halves() {
+        let (_dir, svc) = service();
+        svc.toggle_tag(&one("/a.jpg"), "sea").unwrap();
+        let pair: Vec<String> = ["/a.jpg", "/b.jpg"].iter().map(|p| p.to_string()).collect();
+        // One of the two has it: tagging the pair means both end up tagged.
+        let tagged = svc.toggle_tag(&pair, "sea").unwrap();
+        assert!(tagged.values().all(|l| l.tags == vec!["sea"]));
+        // Now that they all have it, the same action takes it off both.
+        let untagged = svc.toggle_tag(&pair, "sea").unwrap();
+        assert!(untagged.values().all(|l| l.tags.is_empty()));
     }
 
     #[test]
     fn for_paths_returns_only_labeled() {
         let (_dir, svc) = service();
-        svc.set_stars("/a.jpg", Some(4)).unwrap();
-        svc.toggle_tag("/b.jpg", "sea").unwrap();
+        svc.set_stars(&one("/a.jpg"), Some(4)).unwrap();
+        svc.toggle_tag(&one("/b.jpg"), "sea").unwrap();
         let map = svc
             .for_paths(&["/a.jpg".into(), "/b.jpg".into(), "/c.jpg".into()])
             .unwrap();

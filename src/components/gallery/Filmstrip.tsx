@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { fileUrl, requestThumbnails } from "../../ipc";
 import { siblingsOf, stackCaption } from "../../state/stacks";
-import { useAppStore, useVisibleEntries } from "../../state/store";
+import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 
 /**
  * The darkroom's strip of the whole collection, running under the main image.
@@ -44,6 +44,7 @@ export function stripRange(
 export function Filmstrip({ height }: { height: number }) {
   const entries = useVisibleEntries();
   const selectedIndex = useAppStore((s) => s.selectedIndex);
+  const selection = useAppStore((s) => s.selection);
   const select = useAppStore((s) => s.select);
   const epoch = useAppStore((s) => s.epoch);
   const thumbs = useAppStore((s) => s.thumbs);
@@ -108,10 +109,23 @@ export function Filmstrip({ height }: { height: number }) {
         return (
           <button
             key={entry.path}
-            className={index === selectedIndex ? "filmstrip-cell selected" : "filmstrip-cell"}
+            className={[
+              "filmstrip-cell",
+              selection.includes(entry.path) ? "selected" : "",
+              index === selectedIndex ? "lead" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             style={{ width: height - 12, height: height - 12 }}
             title={stacking ? stackCaption(entry, siblingsOf(allEntries, entry)) : entry.name}
-            onClick={() => select(index)}
+            onClick={(e) => useAppStore.getState().selectAt(index, selectMode(e))}
+            // The same menu the grid has: culling happens here too, and the
+            // strip is the only list the darkroom shows.
+            onContextMenu={(e) => {
+              e.preventDefault();
+              useAppStore.getState().selectForMenu(index);
+              useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
+            }}
           >
             {/* The same mark the grid puts on a thumbnail. Culling happens
                 here as much as there, and a rating you cannot see while

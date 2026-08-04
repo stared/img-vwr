@@ -55,6 +55,8 @@ tauri-plugin-http = "2.5.9"
 # Watches the open folder: FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW
 # on Windows, behind one API.
 notify = "8"
+# Deleting a photograph means the platform's Trash, not unlink — see services::files.
+trash = "5"
 # Bundled: SQLite compiled from source, no system dependency.
 rusqlite = { version = "0.37", features = ["bundled"] }
 # Encoding developed previews (JPEG) and exports (JPEG/PNG).

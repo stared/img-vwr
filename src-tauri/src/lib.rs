@@ -33,6 +33,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::scan_folder,
             commands::list_subdirs,
             commands::get_metadata,
+            commands::delete_files,
             commands::new_epoch,
             commands::request_thumbnails,
             commands::request_dir_counts,

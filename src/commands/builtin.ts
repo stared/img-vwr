@@ -101,6 +101,17 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "selection.all",
+    title: "Select All",
+    keywords: ["every", "everything", "whole folder", "multiple"],
+    menus: [],
+    // Everything the query is showing — which is the point of it being the
+    // visible list: filter first, then select what the filter left.
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    run: ({ store }) => store.getState().selectAll(),
+  });
+
+  registerCommand({
     id: "selection.clear",
     title: "Clear Selection",
     keywords: ["deselect", "escape", "none"],

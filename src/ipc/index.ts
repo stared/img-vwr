@@ -20,6 +20,7 @@ import type {
   RegionArg,
   Result,
   SimilarityScore,
+  TrashOutcome,
   WhiteBalance,
 } from "./bindings";
 
@@ -42,6 +43,7 @@ export type {
   Preset,
   RegionArg,
   SimilarityScore,
+  TrashOutcome,
   WhiteBalance,
 };
 
@@ -60,6 +62,17 @@ export async function scanFolder(path: string, recursive: boolean, epoch: number
 
 export async function listSubdirs(path: string): Promise<DirEntry[]> {
   return unwrap(await commands.listSubdirs(path));
+}
+
+/**
+ * Move files to the platform Trash, reporting per file.
+ *
+ * The caller has already asked the user — this only carries the answer. What
+ * comes back says which paths actually went; only those may be dropped from
+ * the collection.
+ */
+export async function deleteFiles(paths: string[]): Promise<TrashOutcome> {
+  return unwrap(await commands.deleteFiles(paths));
 }
 
 export async function newEpoch(): Promise<number> {
@@ -111,21 +124,34 @@ export async function imageStats(path: string): Promise<ImageStats> {
 
 /** Stored labels for the given paths; unlabeled paths are absent. */
 export async function labelsForPaths(paths: string[]): Promise<Record<string, ImageLabels>> {
-  const map = unwrap(await commands.labelsForPaths(paths));
-  // specta types HashMap values as possibly-undefined; entries never are.
+  return defined(unwrap(await commands.labelsForPaths(paths)));
+}
+
+/* Writes take a list because rating and tagging apply to the selection, and
+ * answer for every path given — including ones left with no labels at all,
+ * which is how the caller tells "cleared" from "unchanged". */
+
+export async function labelsSetStars(
+  paths: string[],
+  stars: number | null,
+): Promise<Record<string, ImageLabels>> {
+  return defined(unwrap(await commands.labelsSetStars(paths, stars)));
+}
+
+export async function labelsToggleTag(
+  paths: string[],
+  tag: string,
+): Promise<Record<string, ImageLabels>> {
+  return defined(unwrap(await commands.labelsToggleTag(paths, tag)));
+}
+
+/** specta types HashMap values as possibly-undefined; entries never are. */
+function defined(map: Partial<Record<string, ImageLabels>>): Record<string, ImageLabels> {
   const out: Record<string, ImageLabels> = {};
   for (const [path, labels] of Object.entries(map)) {
     if (labels !== undefined) out[path] = labels;
   }
   return out;
-}
-
-export async function labelsSetStars(path: string, stars: number | null): Promise<ImageLabels> {
-  return unwrap(await commands.labelsSetStars(path, stars));
-}
-
-export async function labelsToggleTag(path: string, tag: string): Promise<ImageLabels> {
-  return unwrap(await commands.labelsToggleTag(path, tag));
 }
 
 /* Develop — opening an image for editing, rendering it, and getting pixels

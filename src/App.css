@@ -935,10 +935,20 @@ button.stats-row:hover .stats-label {
   gap: 4px;
   border-radius: 10px;
   padding: 4px;
+  /* ⇧-clicking through a run of cells must reach photographs, not drag a
+     text selection across their captions. */
+  user-select: none;
 }
 
+/* Two marks, because they say different things: the outline is everything an
+   action would reach, and the filled ground is the one photograph the panels
+   are describing. One photograph selected wears both. */
 .thumb-cell.selected {
   outline: 1px solid var(--accent);
+}
+
+.thumb-cell.lead {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .thumb-frame {
@@ -1336,7 +1346,10 @@ button.stats-row:hover .stats-label {
 
 .tl-item.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tl-item.lead {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .tl-item img {
@@ -1512,6 +1525,10 @@ button.stats-row:hover .stats-label {
 
 .filmstrip-cell.selected {
   border-color: var(--accent);
+}
+
+.filmstrip-cell.lead {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .filmstrip-cell img {

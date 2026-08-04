@@ -44,6 +44,22 @@ async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
 }
 },
 /**
+ * Move photographs to the platform Trash, reporting on each one.
+ * 
+ * The frontend has already asked the user, and asks every time — this end
+ * never prompts, never guesses which paths were meant, and never reports
+ * more as gone than actually went. Async + `spawn_blocking` like every other
+ * filesystem command: a slow volume must not freeze the window.
+ */
+async deleteFiles(paths: string[]) : Promise<Result<TrashOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_files", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Begin a new collection, invalidating everything in flight for the old one.
  * 
  * Also stops watching: every scope change goes through here, and a folder
@@ -126,17 +142,17 @@ async labelsForPaths(paths: string[]) : Promise<Result<Partial<{ [key in string]
     else return { status: "error", error: e  as any };
 }
 },
-async labelsSetStars(path: string, stars: number | null) : Promise<Result<ImageLabels, string>> {
+async labelsSetStars(paths: string[], stars: number | null) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("labels_set_stars", { path, stars }) };
+    return { status: "ok", data: await TAURI_INVOKE("labels_set_stars", { paths, stars }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async labelsToggleTag(path: string, tag: string) : Promise<Result<ImageLabels, string>> {
+async labelsToggleTag(paths: string[], tag: string) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("labels_toggle_tag", { path, tag }) };
+    return { status: "ok", data: await TAURI_INVOKE("labels_toggle_tag", { paths, tag }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -557,6 +573,15 @@ export type ThumbnailReady = { path: string;
  * matched and the webview should decode it natively).
  */
 cacheFile: string; epoch: number }
+export type TrashFailure = { path: string; error: string }
+/**
+ * What became of a batch: what actually went, and what did not, with why.
+ */
+export type TrashOutcome = { 
+/**
+ * Paths that reached the Trash — exactly what the collection may drop.
+ */
+removed: string[]; failed: TrashFailure[] }
 /**
  * Colour temperature in kelvin plus a green–magenta tint, the two numbers a
  * photographer actually reasons about. Higher `temperature` renders warmer;

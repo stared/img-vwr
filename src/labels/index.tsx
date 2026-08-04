@@ -17,26 +17,36 @@ import { useAppStore, visibleOf } from "../state/store";
  * grid cell and in the viewer, where rating auto-advances for culling.
  */
 
-/** The image the keys act on: the selected one in the query-applied view. */
-function selectedEntry(): FileEntry | null {
+/**
+ * What the keys act on: every selected photograph, in the query-applied view.
+ *
+ * A label is exactly the kind of thing there is no reason to apply one at a
+ * time — picking out the ten frames worth keeping and pressing 3 once is the
+ * point of being able to select ten frames.
+ */
+function selectedEntries(): FileEntry[] {
   const s = useAppStore.getState();
-  if (s.selectedIndex === null) return null;
-  return visibleOf(s, s.query)[s.selectedIndex] ?? null;
+  const picked = new Set(s.selection);
+  return visibleOf(s, s.query).filter((e) => picked.has(e.path));
 }
 
 async function rateSelected(stars: number | null): Promise<void> {
-  const entry = selectedEntry();
-  if (!entry) return;
-  const { viewMode, labelApplied, navigate } = useAppStore.getState();
-  labelApplied(entry.path, await labelsSetStars(entry.path, stars));
-  // Culling rhythm: rating in the viewer moves on to the next image.
-  if (viewMode === "viewer" && stars !== null) navigate(1);
+  const entries = selectedEntries();
+  if (entries.length === 0) return;
+  const { viewMode, labelsApplied, navigate } = useAppStore.getState();
+  labelsApplied(await labelsSetStars(entries.map((e) => e.path), stars));
+  // Culling rhythm: rating in the viewer moves on to the next image. Only
+  // when one frame was rated — a rating applied to a whole selection is not
+  // a step through a sequence, and moving would leave the user somewhere
+  // they did not ask to be.
+  if (viewMode === "viewer" && stars !== null && entries.length === 1) navigate(1);
 }
 
 async function tagSelected(tag: string): Promise<void> {
-  const entry = selectedEntry();
-  if (!entry) return;
-  useAppStore.getState().labelApplied(entry.path, await labelsToggleTag(entry.path, tag));
+  const entries = selectedEntries();
+  if (entries.length === 0) return;
+  const labels = await labelsToggleTag(entries.map((e) => e.path), tag);
+  useAppStore.getState().labelsApplied(labels);
 }
 
 function StarsMenu({ close }: { close: () => void }) {
@@ -102,10 +112,9 @@ export function registerLabels(): void {
     value: (_entry, ctx) => ctx.labels.stars,
   });
 
-  const hasSelection = (ctx: CommandContext) => {
-    const s = ctx.store.getState();
-    return s.entries.length > 0;
-  };
+  // Something to label. Offering "Rate ★★★" with nothing picked put a row in
+  // the palette that quietly did nothing when chosen.
+  const hasSelection = (ctx: CommandContext) => ctx.store.getState().selection.length > 0;
 
   for (let n = 0; n <= 5; n += 1) {
     registerCommand({

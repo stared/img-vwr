@@ -1,6 +1,6 @@
 import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
-import { useAppStore } from "../../state/store";
+import { selectMode, useAppStore } from "../../state/store";
 
 interface ThumbCellProps {
   entry: FileEntry;
@@ -11,19 +11,22 @@ interface ThumbCellProps {
 export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const cacheFile = useAppStore((s) => s.thumbs[entry.path]);
   const error = useAppStore((s) => s.thumbErrors[entry.path]);
-  const selected = useAppStore((s) => s.selectedIndex === index);
+  // Two marks, because they mean different things: every selected cell is
+  // what an action reaches, and the lead is the one the panels describe.
+  const selected = useAppStore((s) => s.selection.includes(entry.path));
+  const lead = useAppStore((s) => s.selectedIndex === index);
   const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
 
   return (
     <figure
-      className={`thumb-cell ${selected ? "selected" : ""}`}
+      className={`thumb-cell ${selected ? "selected" : ""} ${lead ? "lead" : ""}`}
       style={{ width: size }}
-      onClick={() => useAppStore.getState().select(index)}
+      onClick={(e) => useAppStore.getState().selectAt(index, selectMode(e))}
       onDoubleClick={() => openViewer(index)}
       onContextMenu={(e) => {
         e.preventDefault();
-        useAppStore.getState().select(index);
+        useAppStore.getState().selectForMenu(index);
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >

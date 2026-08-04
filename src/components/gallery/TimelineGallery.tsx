@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry } from "../../ipc";
 import { fileUrl, requestThumbnails } from "../../ipc";
 import { takenMs } from "../../state/derived";
-import { useAppStore, useVisibleEntries } from "../../state/store";
+import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
@@ -288,7 +288,8 @@ function TimelineThumb({
 }) {
   const cacheFile = useAppStore((s) => s.thumbs[item.entry.path]);
   const error = useAppStore((s) => s.thumbErrors[item.entry.path]);
-  const selected = useAppStore((s) => s.selectedIndex === item.index);
+  const selected = useAppStore((s) => s.selection.includes(item.entry.path));
+  const lead = useAppStore((s) => s.selectedIndex === item.index);
   const openViewer = useAppStore((s) => s.openViewer);
   const pos = vertical ? { top: main, left: cross } : { left: main, top: cross };
   const when = new Date(item.t).toLocaleString();
@@ -298,14 +299,14 @@ function TimelineThumb({
   const wantsFull = size * window.devicePixelRatio > THUMB_SOURCE_EDGE;
   return (
     <figure
-      className={`tl-item${selected ? " selected" : ""}`}
+      className={`tl-item${selected ? " selected" : ""}${lead ? " lead" : ""}`}
       style={{ ...pos, width: size, height: size }}
       title={`${item.entry.name} · ${when}${item.taken ? "" : " (modified)"}`}
-      onClick={() => useAppStore.getState().select(item.index)}
+      onClick={(e) => useAppStore.getState().selectAt(item.index, selectMode(e))}
       onDoubleClick={() => openViewer(item.index)}
       onContextMenu={(e) => {
         e.preventDefault();
-        useAppStore.getState().select(item.index);
+        useAppStore.getState().selectForMenu(item.index);
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >

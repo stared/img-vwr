@@ -5,6 +5,7 @@ import App from "./App";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerDevelopCommands } from "./commands/develop";
 import { registerSourceCommands } from "./commands/sources";
+import { registerTrashCommands } from "./commands/trash";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
@@ -35,6 +36,8 @@ registerSourceCommands();
 registerSimilarity();
 registerLabels();
 registerDevelopCommands();
+// Last, so the one destructive action sits at the bottom of the image menu.
+registerTrashCommands();
 registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
 for (const source of allSources()) {

@@ -7,6 +7,7 @@ export function StatusBar() {
   const viewMode = useAppStore((s) => s.viewMode);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const index = useAppStore((s) => s.selectedIndex);
+  const chosen = useAppStore((s) => s.selection.length);
   const view = useAppStore((s) => s.viewerView);
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
@@ -43,7 +44,11 @@ export function StatusBar() {
             the view built for working on one photograph — as the one place
             that never said which photograph. */}
         {entry && <span>{entry.name}</span>}
-        {entry && (
+        {/* Where you are in the sequence — or, once more than one photograph
+            is picked, how many an action would reach. The second is the more
+            urgent fact: it is what "delete" is about to mean. */}
+        {entry && chosen > 1 && <span>{chosen} selected</span>}
+        {entry && chosen <= 1 && (
           <span>
             {(index ?? 0) + 1} / {visible.length}
           </span>
