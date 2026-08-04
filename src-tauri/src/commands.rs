@@ -12,6 +12,7 @@ use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
+use crate::services::watcher::WatchService;
 use imgvwr_core::Region;
 use imgvwr_develop::{DevelopSettings, Overlay, Preset};
 
@@ -26,6 +27,7 @@ use imgvwr_develop::{DevelopSettings, Overlay, Preset};
 pub async fn scan_folder(
     app: AppHandle,
     service: State<'_, Arc<ThumbnailService>>,
+    watcher: State<'_, Arc<WatchService>>,
     path: PathBuf,
     recursive: bool,
     epoch: u64,
@@ -34,6 +36,9 @@ pub async fn scan_folder(
     app.asset_protocol_scope()
         .allow_directory(&path, recursive)
         .map_err(|e| format!("failed to extend asset scope: {e}"))?;
+    // Watch from the start of the walk, not the end: a card still copying is
+    // exactly when a folder changes under you, and the scan can take seconds.
+    watcher.watch(&app, path.clone(), recursive, epoch);
     let service = Arc::clone(&service);
     tauri::async_runtime::spawn_blocking(move || {
         use tauri_specta::Event as _;
@@ -152,9 +157,19 @@ pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
         .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
 }
 
+/// Begin a new collection, invalidating everything in flight for the old one.
+///
+/// Also stops watching: every scope change goes through here, and a folder
+/// nobody is looking at should not be reported on. A folder scope re-watches
+/// a moment later in `scan_folder`; a remote source has no folder to watch,
+/// which is exactly the case that would otherwise have leaked a watcher.
 #[tauri::command]
 #[specta::specta]
-pub fn new_epoch(service: State<'_, Arc<ThumbnailService>>) -> u64 {
+pub fn new_epoch(
+    service: State<'_, Arc<ThumbnailService>>,
+    watcher: State<'_, Arc<WatchService>>,
+) -> u64 {
+    watcher.stop();
     service.bump_epoch()
 }
 

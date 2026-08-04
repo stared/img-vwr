@@ -36,11 +36,15 @@ function App() {
 
   // Stream thumbnail, folder-count and metadata results from Rust into the store.
   useEffect(() => {
-    const { scanBatch, thumbReady, thumbFailed, dirCountReady, metaBatchReady } =
+    const { scanBatch, folderChanged, thumbReady, thumbFailed, dirCountReady, metaBatchReady } =
       useAppStore.getState();
     const unlisteners = [
       events.scanBatch.listen(({ payload }) =>
         scanBatch(payload.entries, payload.epoch, payload.done),
+      ),
+      // The open folder was re-read after something changed on disk.
+      events.folderChanged.listen(({ payload }) =>
+        folderChanged(payload.entries, payload.epoch),
       ),
       events.thumbnailReady.listen(({ payload }) =>
         thumbReady(payload.path, payload.cacheFile, payload.epoch),

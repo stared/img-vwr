@@ -4,6 +4,7 @@ import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
+import { folderRescanned } from "./collection";
 import {
   movedSelection,
   scanBatchArrived,
@@ -314,5 +315,70 @@ describe("a selection follows its photograph across a collapse", () => {
     const held = withSelectionHeld(darkroom, { galleryLayout: "grid" });
     // The raw file, which is where the JPEG beside it now sits at index 0.
     expect(held.selectedIndex).toBe(1);
+  });
+});
+
+describe("folderRescanned", () => {
+  const file = (name: string, size = 1, modifiedMs = 1) => ({
+    path: `/p/${name}`,
+    name,
+    size,
+    modifiedMs,
+    formatHint: name.split(".").pop() ?? "",
+  });
+  const state = (entries: ReturnType<typeof file>[], thumbs = {}, thumbErrors = {}) => ({
+    entries,
+    thumbs: thumbs as Record<string, string>,
+    thumbErrors: thumbErrors as Record<string, string>,
+  });
+
+  it("returns nothing at all when the folder is unchanged", () => {
+    // A watched folder must cost nothing while it is quiet — an empty patch
+    // means no consumer re-renders and no memo is thrown away.
+    const entries = [file("a.jpg"), file("b.jpg")];
+    expect(folderRescanned(state(entries), [file("a.jpg"), file("b.jpg")])).toEqual({});
+  });
+
+  it("appends what appeared, keeping the files already on screen identical", () => {
+    const a = file("a.jpg");
+    const patch = folderRescanned(state([a]), [file("a.jpg"), file("new.nef")]);
+    expect(patch.entries?.map((e) => e.name)).toEqual(["a.jpg", "new.nef"]);
+    // Identity, not just equality: the cell showing it must not re-render.
+    expect(patch.entries?.[0]).toBe(a);
+  });
+
+  it("appends rather than sorting in, so index-based readers stay valid", () => {
+    const patch = folderRescanned(state([file("z.jpg")]), [file("a.jpg"), file("z.jpg")]);
+    expect(patch.entries?.map((e) => e.name)).toEqual(["z.jpg", "a.jpg"]);
+  });
+
+  it("drops what vanished, along with its cached thumbnail", () => {
+    const patch = folderRescanned(
+      state([file("a.jpg"), file("gone.jpg")], { "/p/a.jpg": "ta", "/p/gone.jpg": "tg" }),
+      [file("a.jpg")],
+    );
+    expect(patch.entries?.map((e) => e.name)).toEqual(["a.jpg"]);
+    expect(patch.thumbs).toEqual({ "/p/a.jpg": "ta" });
+  });
+
+  it("re-fetches a file that changed on disk", () => {
+    // The case that matters: the previous scan caught this one mid-copy, so
+    // its thumbnail is a picture of a truncated file and its recorded error
+    // is about a file that no longer exists in that state.
+    const patch = folderRescanned(
+      state([file("half.nef", 1000)], { "/p/half.nef": "t" }, { "/p/half.nef": "decode failed" }),
+      [file("half.nef", 24_000_000, 99)],
+    );
+    expect(patch.entries?.[0]?.size).toBe(24_000_000);
+    expect(patch.thumbs).toEqual({});
+    expect(patch.thumbErrors).toEqual({});
+  });
+
+  it("leaves an untouched file's thumbnail alone", () => {
+    const patch = folderRescanned(
+      state([file("a.jpg")], { "/p/a.jpg": "ta" }),
+      [file("a.jpg"), file("b.jpg")],
+    );
+    expect(patch.thumbs).toEqual({ "/p/a.jpg": "ta" });
   });
 });

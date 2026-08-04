@@ -52,6 +52,9 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 rayon = "1.12.0"
 tauri-plugin-mcp-bridge = "0.12.0"
 tauri-plugin-http = "2.5.9"
+# Watches the open folder: FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW
+# on Windows, behind one API.
+notify = "8"
 # Bundled: SQLite compiled from source, no system dependency.
 rusqlite = { version = "0.37", features = ["bundled"] }
 # Encoding developed previews (JPEG) and exports (JPEG/PNG).

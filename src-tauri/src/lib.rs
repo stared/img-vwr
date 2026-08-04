@@ -12,6 +12,7 @@ use services::develop::DevelopService;
 use services::embeddings::EmbeddingService;
 use services::labels::LabelService;
 use services::thumbnails::ThumbnailService;
+use services::watcher::WatchService;
 
 /// The develop-capable formats, in probe order.
 ///
@@ -61,6 +62,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             events::ThumbnailFailed,
             events::DirCountReady,
             events::MetaBatchReady,
+            events::FolderChanged,
             events::EmbeddingStatus,
             events::EmbeddingProgress
         ])
@@ -137,6 +139,9 @@ pub fn run() {
                 Arc::clone(&scenes),
             )?));
             app.manage(Arc::new(EmbeddingService::new(cache_root)?));
+            // Watches whichever folder is open, so files that appear on disk
+            // appear in the gallery. Holds no data of its own.
+            app.manage(Arc::new(WatchService::new()));
             // Labels and edits are user data, not a cache — they live in app
             // data, and deliberately never beside the user's photos.
             let data_dir = app.path().app_data_dir()?;

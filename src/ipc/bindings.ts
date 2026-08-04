@@ -43,6 +43,14 @@ async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Begin a new collection, invalidating everything in flight for the old one.
+ * 
+ * Also stops watching: every scope change goes through here, and a folder
+ * nobody is looking at should not be reported on. A folder scope re-watches
+ * a moment later in `scan_folder`; a remote source has no folder to watch,
+ * which is exactly the case that would otherwise have leaked a watcher.
+ */
 async newEpoch() : Promise<number> {
     return await TAURI_INVOKE("new_epoch");
 },
@@ -251,6 +259,7 @@ export const events = __makeEvents__<{
 dirCountReady: DirCountReady,
 embeddingProgress: EmbeddingProgress,
 embeddingStatus: EmbeddingStatus,
+folderChanged: FolderChanged,
 metaBatchReady: MetaBatchReady,
 scanBatch: ScanBatch,
 thumbnailFailed: ThumbnailFailed,
@@ -259,6 +268,7 @@ thumbnailReady: ThumbnailReady
 dirCountReady: "dir-count-ready",
 embeddingProgress: "embedding-progress",
 embeddingStatus: "embedding-status",
+folderChanged: "folder-changed",
 metaBatchReady: "meta-batch-ready",
 scanBatch: "scan-batch",
 thumbnailFailed: "thumbnail-failed",
@@ -423,6 +433,16 @@ export type FileEntry = { path: string; name: string; size: number; modifiedMs: 
  * Lowercased extension, e.g. "png".
  */
 formatHint: string }
+/**
+ * The open folder, re-read after something changed on disk.
+ * 
+ * The whole list rather than a diff: the watcher reports what a scan found,
+ * and the frontend compares it with what it is showing. That one comparison
+ * covers files appearing, disappearing, being renamed, and being rewritten —
+ * all of which a diff computed from OS events would have to handle
+ * separately, and would get wrong whenever events were coalesced or dropped.
+ */
+export type FolderChanged = { entries: FileEntry[]; epoch: number }
 /**
  * 256-bin distributions of the *developed* image — what the user is actually
  * looking at, so clipping shown here is clipping they can see. (The info

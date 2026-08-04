@@ -132,22 +132,26 @@ export function registerLabels(): void {
     },
   });
 
-  // Load stored labels as a scope's entries land. Within one epoch entries
-  // only ever grow (streamed scan batches), so each pass queries just the
-  // new tail; labelsLoaded merges the slices (epoch-guarded).
+  // Load stored labels as a scope's entries land, asking only about files
+  // never asked about before; labelsLoaded merges the answers (epoch-guarded).
+  //
+  // Tracked by path rather than by a count of how far down the list we got.
+  // A streamed scan only appends, so a cursor sufficed — but a watched folder
+  // can also lose a file, and then every index after it means a different
+  // photograph and the tail is silently never fetched.
   let lastEntries: FileEntry[] | null = null;
   let lastEpoch = -1;
-  let fetched = 0;
+  let asked = new Set<string>();
   useAppStore.subscribe((state) => {
     if (state.entries === lastEntries) return;
     lastEntries = state.entries;
     if (state.epoch !== lastEpoch) {
       lastEpoch = state.epoch;
-      fetched = 0;
+      asked = new Set();
     }
-    const fresh = state.entries.slice(fetched);
-    fetched = state.entries.length;
+    const fresh = state.entries.filter((e) => !asked.has(e.path));
     if (fresh.length === 0) return;
+    for (const entry of fresh) asked.add(entry.path);
     const epoch = state.epoch;
     void labelsForPaths(fresh.map((e) => e.path)).then((labels) => {
       useAppStore.getState().labelsLoaded(labels, epoch);

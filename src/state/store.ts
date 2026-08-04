@@ -15,6 +15,7 @@ import { newEpoch, scanFolder } from "../ipc";
 import { getSource } from "../registry/sources";
 import {
   EPOCH_PENDING,
+  folderRescanned,
   scanBatchArrived,
   scopeFailed,
   scopeLoading,
@@ -156,6 +157,8 @@ interface AppActions {
   openSource: (sourceId: string, arg: string) => Promise<void>;
   /** A streamed slice of the running scan (epoch-guarded, like thumbs). */
   scanBatch: (entries: FileEntry[], epoch: number, done: boolean) => void;
+  /** The open folder, re-read after something changed on disk. */
+  folderChanged: (entries: FileEntry[], epoch: number) => void;
   thumbReady: (path: string, cacheFile: string, epoch: number) => void;
   thumbFailed: (path: string, error: string, epoch: number) => void;
   dirCountReady: (path: string, count: number) => void;
@@ -477,6 +480,24 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     } else if (scanFlushTimer === null) {
       scanFlushTimer = setTimeout(flush, SCAN_FLUSH_MS);
     }
+  },
+
+  /**
+   * The folder changed on disk and has been re-read.
+   *
+   * Held, because the list is about to grow or shrink under a selection that
+   * is an index into it: a card finishing its import while you are looking at
+   * frame 40 must not move you to a different photograph. A rescan that found
+   * nothing new returns an empty patch and never reaches here.
+   *
+   * Ignored while the first scan is still streaming — the two would fight
+   * over `entries`, and the scan is the more authoritative of them. The
+   * watcher will report again once the copying settles.
+   */
+  folderChanged: (entries, epoch) => {
+    if (epoch !== get().epoch || get().status === "loading") return;
+    const patch = folderRescanned(get(), entries);
+    if (patch.entries) set((s) => withSelectionHeld(s, patch));
   },
 
   openSource: async (sourceId, arg) => {

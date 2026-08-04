@@ -12,6 +12,20 @@ pub struct ScanBatch {
     pub done: bool,
 }
 
+/// The open folder, re-read after something changed on disk.
+///
+/// The whole list rather than a diff: the watcher reports what a scan found,
+/// and the frontend compares it with what it is showing. That one comparison
+/// covers files appearing, disappearing, being renamed, and being rewritten —
+/// all of which a diff computed from OS events would have to handle
+/// separately, and would get wrong whenever events were coalesced or dropped.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderChanged {
+    pub entries: Vec<FileEntry>,
+    pub epoch: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbnailReady {

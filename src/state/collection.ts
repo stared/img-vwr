@@ -53,6 +53,72 @@ export function scanBatchArrived(
   return done ? { ...grown, status: "loaded" as const } : grown;
 }
 
+/**
+ * Fold a re-read of the open folder into what is already on screen.
+ *
+ * Not a replacement. The gallery is showing these files right now — one may
+ * be selected, several may have thumbnails decoded — and swapping the whole
+ * list for a freshly scanned one would throw all of that away every time a
+ * file appeared. So entries that are still there keep their identity and
+ * their position, new ones are appended, and vanished ones are dropped.
+ *
+ * Appended rather than sorted in: `entries` is arrival order and the sort
+ * lives in the query, so a file landing in the middle of the alphabet still
+ * displays in the right place — and everything downstream that walks the
+ * list by index (the label loader's cursor, most obviously) stays valid.
+ *
+ * A file whose size or timestamp moved is a *different* file under the same
+ * name — the commonest cause being that the last scan caught it mid-copy.
+ * Its cached thumbnail is a picture of a truncated file, so it is dropped
+ * along with any error recorded against it, and it is fetched again.
+ */
+export function folderRescanned(
+  state: {
+    entries: FileEntry[];
+    thumbs: Record<string, string>;
+    thumbErrors: Record<string, string>;
+  },
+  scanned: FileEntry[],
+): Partial<CollectionTransition & Pick<typeof state, "thumbs" | "thumbErrors">> {
+  const found = new Map(scanned.map((e) => [e.path, e]));
+  const kept: FileEntry[] = [];
+  /** Paths whose cached pixels no longer describe the file on disk. */
+  const drop = new Set<string>();
+
+  for (const existing of state.entries) {
+    const now = found.get(existing.path);
+    if (!now) {
+      drop.add(existing.path);
+      continue;
+    }
+    found.delete(existing.path);
+    if (now.size === existing.size && now.modifiedMs === existing.modifiedMs) {
+      // Identity preserved on purpose: consumers memoize on it.
+      kept.push(existing);
+    } else {
+      drop.add(existing.path);
+      kept.push(now);
+    }
+  }
+  const added = [...found.values()];
+
+  // Nothing moved: return nothing at all, so no consumer re-renders and no
+  // memo is invalidated. A watched folder must cost nothing while it is
+  // quiet, and most reports are of a change the app made itself.
+  if (added.length === 0 && drop.size === 0) return {};
+
+  return {
+    entries: [...kept, ...added],
+    thumbs: without(state.thumbs, drop),
+    thumbErrors: without(state.thumbErrors, drop),
+  };
+}
+
+function without<T>(record: Record<string, T>, drop: Set<string>): Record<string, T> {
+  if (drop.size === 0) return record;
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !drop.has(key)));
+}
+
 /** Install a remote source whose thumbnails and metadata are already known. */
 export function sourceLoaded(items: SourceItem[]) {
   const thumbs: Record<string, string> = {};
