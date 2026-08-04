@@ -5,7 +5,7 @@ import { filterFieldsFor, getFilterField, type FilterField } from "../../registr
 import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
 import type { RangeOp, Sort } from "../../state/query";
-import { activeFormats, FORMAT_GROUPS, nameFilterText } from "../../state/query";
+import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
 import type { GalleryLayout, Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
 import { FormatMenuItems } from "./filterMenus";
@@ -446,9 +446,7 @@ export function FilterBar() {
 
   if (!scope) return null;
 
-  const formatLabels = formats
-    .map((id) => FORMAT_GROUPS.find((g) => g.id === id)?.label ?? id)
-    .join(", ");
+  const formatLabels = formats.map(formatGroupLabel).join(", ");
 
   return (
     <div className="filterbar">

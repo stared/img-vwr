@@ -2,7 +2,7 @@ import type { FileEntry } from "../ipc";
 import type { ImageMeta } from "../ipc/bindings";
 import type { Dims } from "./derived";
 import { aspectLabelOf } from "./derived";
-import { FORMAT_GROUPS } from "./query";
+import { formatChoices } from "./query";
 
 /**
  * Collection statistics — pure functions over the visible entries and the
@@ -20,22 +20,17 @@ export interface Bucket {
   to?: number;
 }
 
-/** Count per format group (jpg/jpeg fold into JPEG), most common first. */
+/**
+ * Count per format group (jpg/jpeg fold into JPEG), most common first.
+ *
+ * Only what is here: a bar chart of things there are none of is a chart of
+ * nothing. The *menu* keeps the empty rows, because that is a list of what
+ * you may ask for; this is a description of what you have.
+ */
 export function formatCounts(entries: readonly FileEntry[]): Bucket[] {
-  const counts = new Map<string, { label: string; count: number }>();
-  for (const entry of entries) {
-    const group = FORMAT_GROUPS.find((g) =>
-      (g.exts as readonly string[]).includes(entry.formatHint),
-    );
-    const id = group?.id ?? entry.formatHint;
-    const label = group?.label ?? entry.formatHint.toUpperCase();
-    const slot = counts.get(id) ?? { label, count: 0 };
-    slot.count += 1;
-    counts.set(id, slot);
-  }
-  return [...counts.entries()]
-    .map(([id, { label, count }]) => ({ label, count, value: id }))
-    .sort((a, b) => b.count - a.count);
+  return formatChoices(entries)
+    .filter((c) => c.count > 0)
+    .map((c) => ({ label: c.label, count: c.count, value: c.id }));
 }
 
 type TimeUnit = "day" | "month" | "year";

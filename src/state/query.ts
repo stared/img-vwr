@@ -55,7 +55,15 @@ export const EMPTY_QUERY_DATA: QueryData = { meta: {}, scores: {}, labels: {} };
 /** An image nobody labeled: genuinely zero stars-null tags-none, not unknown. */
 export const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
 
-/** Display groups: jpg/jpeg are one thing to a human. */
+/**
+ * Display groups: jpg/jpeg are one thing to a human.
+ *
+ * Deliberately not the list of formats the app can open. Anything else is
+ * its own group under its own extension — see `formatGroupOf` — so a folder
+ * of NEFs is filterable the day the raw plugin learns to read them, with
+ * nothing to add here. This list only says which extensions a *human* would
+ * be surprised to see listed apart.
+ */
 export const FORMAT_GROUPS = [
   { id: "png", label: "PNG", exts: ["png"] },
   { id: "jpeg", label: "JPEG", exts: ["jpg", "jpeg"] },
@@ -66,8 +74,23 @@ export const FORMAT_GROUPS = [
 
 export type FormatGroupId = (typeof FORMAT_GROUPS)[number]["id"];
 
-function formatGroupOf(ext: string): string | undefined {
-  return FORMAT_GROUPS.find((g) => (g.exts as readonly string[]).includes(ext))?.id;
+/**
+ * The group an extension filters under — its own name when no display group
+ * claims it.
+ *
+ * This used to answer "undefined" for anything unlisted, which meant a raw
+ * file belonged to no group and so matched no format filter: the statistics
+ * panel listed NEF, clicking it filtered, and the result was empty. An
+ * extension is a perfectly good group of one.
+ */
+export function formatGroupOf(ext: string): string {
+  const lower = ext.toLowerCase();
+  return FORMAT_GROUPS.find((g) => (g.exts as readonly string[]).includes(lower))?.id ?? lower;
+}
+
+/** How a group names itself: the display label, or the extension in capitals. */
+export function formatGroupLabel(id: string): string {
+  return FORMAT_GROUPS.find((g) => g.id === id)?.label ?? id.toUpperCase();
 }
 
 /**
@@ -79,10 +102,8 @@ function formatGroupOf(ext: string): string | undefined {
  */
 function matches(entry: FileEntry, filter: Filter, ctx: FieldCtx): boolean {
   switch (filter.kind) {
-    case "format": {
-      const group = formatGroupOf(entry.formatHint);
-      return group !== undefined && filter.formats.includes(group);
-    }
+    case "format":
+      return filter.formats.includes(formatGroupOf(entry.formatHint));
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
@@ -362,4 +383,39 @@ export function nameFilterText(query: Query): string {
 export function activeFormats(query: Query): string[] {
   const f = query.filters.find((f) => f.kind === "format");
   return f?.kind === "format" ? f.formats : [];
+}
+
+/** A format the collection could be filtered by, and how much of it there is. */
+export interface FormatChoice {
+  id: string;
+  label: string;
+  count: number;
+}
+
+/**
+ * The formats worth offering, present ones first.
+ *
+ * A menu of five fixed formats told you nothing about the folder in front of
+ * you — it offered GIF in a folder of raw files and omitted NEF, which was
+ * the only thing actually there. So the collection decides the order and
+ * says how many of each it holds.
+ *
+ * The absent ones stay, at zero. A filter is not only a question about this
+ * folder: it survives opening the next one, and a menu whose rows appeared
+ * and vanished as you moved between folders would be one you could not learn.
+ * Zero is also an answer — "no PNGs here" is worth being told.
+ *
+ * Sorted by count and then by name, so the order is stable while a scan
+ * streams in rather than shuffling with every batch.
+ */
+export function formatChoices(entries: readonly FileEntry[]): FormatChoice[] {
+  const counts = new Map<string, number>();
+  for (const group of FORMAT_GROUPS) counts.set(group.id, 0);
+  for (const entry of entries) {
+    const id = formatGroupOf(entry.formatHint);
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([id, count]) => ({ id, label: formatGroupLabel(id), count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }

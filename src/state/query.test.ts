@@ -15,6 +15,7 @@ import {
   rangeFromInput,
   usesLabels,
   usesMeta,
+  formatChoices,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
@@ -381,6 +382,22 @@ describe("query editing", () => {
     expect(none.filters).toEqual([]);
   });
 
+  it("filters formats nobody bothered to name a group for", () => {
+    // The bug this guards: an extension with no display group belonged to no
+    // group at all, so a folder of NEFs could not be filtered by format —
+    // while the statistics panel happily listed NEF and offered the click.
+    const shoot = [
+      entry("DSC_1.NEF", "nef", 1, 1),
+      entry("DSC_1.JPG", "jpg", 1, 1),
+      entry("DSC_2.NEF", "nef", 1, 1),
+    ];
+    const raw = withFormatToggled(defaultQuery, "nef");
+    expect(applyQuery(shoot, raw, data()).map((e) => e.name)).toEqual([
+      "DSC_1.NEF",
+      "DSC_2.NEF",
+    ]);
+  });
+
   it("withoutFormats drops only the format filter", () => {
     const q = withNameFilter(withFormatToggled(defaultQuery, "png"), "x");
     const stripped = withoutFormats(q);
@@ -476,5 +493,40 @@ describe("rangeFromInput", () => {
 
   it("dateInputValue round-trips a local day", () => {
     expect(dateInputValue(new Date(2024, 2, 5).getTime())).toBe("2024-03-05");
+  });
+});
+
+describe("formatChoices", () => {
+  it("puts what the folder holds first, with counts", () => {
+    const choices = formatChoices(ENTRIES);
+    expect(choices.slice(0, 3)).toEqual([
+      { id: "jpeg", label: "JPEG", count: 2 },
+      { id: "png", label: "PNG", count: 1 },
+      { id: "webp", label: "WebP", count: 1 },
+    ]);
+  });
+
+  it("keeps the formats that are absent, at zero", () => {
+    // A filter outlives the folder it was set in, so the menu is a list of
+    // what you may ask for — not only of what happens to be here.
+    const choices = formatChoices(ENTRIES);
+    expect(choices.filter((c) => c.count === 0).map((c) => c.id).sort()).toEqual([
+      "avif",
+      "gif",
+    ]);
+  });
+
+  it("offers a format the fixed list never heard of", () => {
+    const choices = formatChoices([entry("DSC_1.NEF", "nef", 1, 1)]);
+    expect(choices[0]).toEqual({ id: "nef", label: "NEF", count: 1 });
+  });
+
+  it("orders stably while a scan streams in", () => {
+    // Ties break by name rather than by arrival, so rows do not shuffle
+    // under the cursor as batches land.
+    const a = formatChoices([entry("z.webp", "webp", 1, 1), entry("a.png", "png", 1, 1)]);
+    const b = formatChoices([entry("a.png", "png", 1, 1), entry("z.webp", "webp", 1, 1)]);
+    expect(a.map((c) => c.id)).toEqual(b.map((c) => c.id));
+    expect(a[0]?.id).toBe("png");
   });
 });

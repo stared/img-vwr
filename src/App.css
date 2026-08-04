@@ -894,6 +894,13 @@ button.stats-row:hover .stats-label {
   min-width: 12px;
 }
 
+/* A format this folder has none of: still offered, since a filter outlives
+   the folder, but visibly not part of what is here. Still clickable — asking
+   for it is how you find out nothing matches. */
+.filter-menu button.menu-absent {
+  color: var(--text-dim);
+}
+
 .filter-menu button:hover .menu-check {
   color: rgba(255, 255, 255, 0.8);
 }

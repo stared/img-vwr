@@ -5,7 +5,7 @@ import { getFilterField } from "../../registry/filters";
 import type { Dims } from "../../state/derived";
 import { effectiveDims } from "../../state/derived";
 import type { RangeOp } from "../../state/query";
-import { activeFormats, FORMAT_GROUPS } from "../../state/query";
+import { activeFormats, formatChoices } from "../../state/query";
 import { aspectBuckets, cameraCounts } from "../../state/stats";
 import { useAppStore } from "../../state/store";
 
@@ -15,17 +15,31 @@ import { useAppStore } from "../../state/store";
  * collection; range fields take an operator (≤ = ≥) and a typed value.
  */
 
-/** Multi-toggle format rows; stays open so several groups can be picked. */
+/**
+ * Multi-toggle format rows; stays open so several groups can be picked.
+ *
+ * What the folder actually holds comes first, with counts. Formats it has
+ * none of stay on the list at zero — the filter outlives this folder, and a
+ * menu that rearranged itself every time you opened another one would be a
+ * menu nobody could learn.
+ */
 export function FormatMenuItems() {
   const query = useAppStore((s) => s.query);
+  const entries = useAppStore((s) => s.entries);
   const toggleFormatFilter = useAppStore((s) => s.toggleFormatFilter);
   const formats = activeFormats(query);
+  const choices = useMemo(() => formatChoices(entries), [entries]);
   return (
     <>
-      {FORMAT_GROUPS.map((g) => (
-        <button key={g.id} onClick={() => toggleFormatFilter(g.id)}>
-          {g.label}
-          <span className="menu-check">{formats.includes(g.id) ? "✓" : ""}</span>
+      {choices.map((c) => (
+        <button
+          key={c.id}
+          className={c.count === 0 ? "menu-absent" : undefined}
+          onClick={() => toggleFormatFilter(c.id)}
+        >
+          {c.label}
+          <span className="menu-hint">{c.count === 0 ? "none here" : c.count}</span>
+          <span className="menu-check">{formats.includes(c.id) ? "✓" : ""}</span>
         </button>
       ))}
     </>
