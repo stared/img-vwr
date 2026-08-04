@@ -45,10 +45,26 @@ async function rankAnchor(anchor: Similarity["anchor"]): Promise<Record<string, 
 /** Monotonic guard: a slow rank response must never overwrite a newer one. */
 let rankSeq = 0;
 
-/** Re-rank the current anchor and install the scores if still current. */
+/**
+ * Re-rank the current anchor and install the scores if still current.
+ *
+ * A failed rank keeps the order that is already on screen rather than
+ * throwing. This runs on every batch of new vectors, from an event listener
+ * that cannot catch anything, and the ways it fails are ordinary: switching
+ * models unloads the old one mid-flight, and a rank arriving in that gap is
+ * answered with "no embedding model loaded". The next batch re-ranks anyway,
+ * so one lost answer costs nothing — and an unhandled rejection per batch
+ * would bury whatever real error came later.
+ */
 async function refreshScores(anchor: Similarity["anchor"]): Promise<void> {
   const seq = ++rankSeq;
-  const scores = await rankAnchor(anchor);
+  let scores: Record<string, number>;
+  try {
+    scores = await rankAnchor(anchor);
+  } catch (error) {
+    console.warn("ranking failed; keeping the current order", error);
+    return;
+  }
   const current = useAppStore.getState().similarity;
   if (seq === rankSeq && current !== null && current.anchor === anchor) {
     useAppStore.getState().setSimilarity({ ...current, scores });

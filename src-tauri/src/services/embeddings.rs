@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
@@ -11,6 +11,30 @@ use tauri_specta::Event as _;
 use crate::events::{EmbeddingProgress, EmbeddingStatus};
 use crate::services::thumbnails::ThumbnailService;
 
+/// A cache of normalized vectors, keyed by model id and by whatever the
+/// vector describes — an image path, or a query phrase.
+///
+/// The model id is part of the key rather than of the map, so two models'
+/// vectors can sit side by side: switching back is then instant, and an
+/// older indexing pass can never contaminate the space the active model
+/// measures in.
+type VectorCache = Mutex<HashMap<(String, String), Arc<Vec<f32>>>>;
+
+/// Marks an indexing pass as running for as long as it lives.
+///
+/// A guard rather than a flag set and cleared by hand, so every way out of
+/// the pass — the early return when no model is loaded, the epoch check, a
+/// panic — clears it. A flag left true would mean nothing is ever indexed
+/// again for the rest of the session, and the symptom (a permanently empty
+/// ranked view) would look nothing like the cause.
+struct IndexingPass<'a>(&'a AtomicBool);
+
+impl Drop for IndexingPass<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Owns the loaded embedding model and the per-image vectors. The model is
 /// picked by the user in the Similarity panel; vectors are cached on disk
 /// keyed by the thumbnail cache key + model id, so re-indexing a folder is
@@ -18,13 +42,28 @@ use crate::services::thumbnails::ThumbnailService;
 pub struct EmbeddingService {
     /// The active model; long-running work locks per image, not per run.
     embedder: Mutex<Option<Arc<Embedder>>>,
-    /// (model id, path) → normalized vector for everything indexed this
-    /// session. Keeping models side by side makes switching back instant and
-    /// prevents an older indexing pass from contaminating the active model.
-    vectors: Mutex<HashMap<(String, String), Arc<Vec<f32>>>>,
+    /// (model id, path) → vector, for everything indexed this session.
+    vectors: VectorCache,
+    /// (model id, phrase) → the phrase's vector.
+    ///
+    /// A phrase's embedding is a pure function of the model and the words, so
+    /// computing it twice is waste — and it was being computed on *every*
+    /// progress batch, because a folder re-ranks as its vectors land. Forty
+    /// forward passes for one unchanged phrase, each now queued behind the
+    /// indexing that triggered it. Cached, a re-rank is dot products only and
+    /// touches the GPU not at all.
+    queries: VectorCache,
     /// Monotonic model-selection request id. Model loading cannot be cancelled,
     /// but only the latest request is allowed to become active or emit status.
     selection_generation: AtomicU64,
+    /// Whether an indexing pass is already running.
+    ///
+    /// Every "closest to" sets the anchor *and* asks for indexing, so editing
+    /// the phrase over a folder that is still indexing used to start a second
+    /// pass over the same files. Both would miss the cache on the same image
+    /// at the same moment and compute it twice — double the slowest work in
+    /// the app, for one identical answer.
+    indexing: AtomicBool,
     /// Hugging Face download cache (app-owned, no global installs).
     models_dir: PathBuf,
     /// Per-image vector files: {thumb_key}-{model_id}.vec (f32 LE).
@@ -46,7 +85,9 @@ impl EmbeddingService {
         Ok(Self {
             embedder: Mutex::new(None),
             vectors: Mutex::new(HashMap::new()),
+            queries: Mutex::new(HashMap::new()),
             selection_generation: AtomicU64::new(0),
+            indexing: AtomicBool::new(false),
             models_dir,
             vectors_dir,
             thumbs_dir,
@@ -130,10 +171,19 @@ impl EmbeddingService {
         paths: Vec<String>,
         epoch: u64,
     ) {
+        // One pass at a time. A second request while one is running is asking
+        // for work that is already being done.
+        if self.indexing.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let service = Arc::clone(self);
         let thumbs = Arc::clone(thumbs);
         let app = app.clone();
         std::thread::spawn(move || {
+            // Released however this pass ends — early return, or a panic in
+            // one image taking the thread down. A flag stuck at true would
+            // mean no folder is ever indexed again this session.
+            let _pass = IndexingPass(&service.indexing);
             let Some(embedder) = service.embedder.lock().unwrap().clone() else {
                 return;
             };
@@ -169,7 +219,15 @@ impl EmbeddingService {
     /// Rank `paths` by similarity to a text phrase.
     pub fn rank_text(&self, query: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
-        let query_vec = embedder.embed_text(query).map_err(|e| e.to_string())?;
+        let key = (embedder.model_id.to_string(), query.to_string());
+        if let Some(cached) = self.queries.lock().unwrap().get(&key) {
+            return Ok(self.rank(embedder.model_id, cached, paths));
+        }
+        let query_vec = Arc::new(embedder.embed_text(query).map_err(|e| e.to_string())?);
+        self.queries
+            .lock()
+            .unwrap()
+            .insert(key, Arc::clone(&query_vec));
         Ok(self.rank(embedder.model_id, &query_vec, paths))
     }
 
@@ -320,6 +378,68 @@ mod tests {
             service.rank("model-b", &[1.0, 0.0], &[path.clone()]),
             vec![(path, 0.0)]
         );
+    }
+
+    #[test]
+    fn a_second_indexing_request_does_not_start_a_second_pass() {
+        // Editing the phrase while a folder is still indexing asks for
+        // indexing again. Doing it twice means computing the same vectors
+        // twice — the slowest work in the app, for one identical answer.
+        let tmp = tempfile::tempdir().unwrap();
+        let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
+
+        // What `index` does on the calling thread, before it spawns.
+        let claim = || service.indexing.swap(true, Ordering::SeqCst);
+
+        assert!(!claim(), "the first request finds nothing running and proceeds");
+        let running = IndexingPass(&service.indexing);
+        assert!(claim(), "a second, while it runs, is turned away");
+
+        drop(running);
+        assert!(!claim(), "and once the pass ends the next one may start");
+    }
+
+    #[test]
+    fn the_indexing_flag_clears_however_the_pass_ends() {
+        // Including by panic: a flag stuck at true would mean nothing is ever
+        // indexed again this session, and an empty ranked view looks nothing
+        // like its cause.
+        let tmp = tempfile::tempdir().unwrap();
+        let service = Arc::new(EmbeddingService::new(tmp.path().to_path_buf()).unwrap());
+        service.indexing.store(true, Ordering::SeqCst);
+
+        let inside = Arc::clone(&service);
+        let died = std::thread::spawn(move || {
+            let _pass = IndexingPass(&inside.indexing);
+            panic!("one image blew up");
+        })
+        .join();
+
+        assert!(died.is_err(), "the pass really did panic");
+        assert!(!service.indexing.load(Ordering::SeqCst), "and still cleared the flag");
+    }
+
+    #[test]
+    fn a_phrase_is_embedded_once_per_model() {
+        // A folder re-ranks on every batch of new vectors, so this cache is
+        // what keeps forty re-ranks from being forty forward passes.
+        let tmp = tempfile::tempdir().unwrap();
+        let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
+        let key = ("siglip2-base".to_string(), "people dancing".to_string());
+        service
+            .queries
+            .lock()
+            .unwrap()
+            .insert(key.clone(), Arc::new(vec![1.0, 0.0]));
+
+        assert!(service.queries.lock().unwrap().contains_key(&key));
+        // Same words, different model: a different space, so a different
+        // vector — the cache must not answer for the wrong one.
+        assert!(!service
+            .queries
+            .lock()
+            .unwrap()
+            .contains_key(&("siglip2-so400m".to_string(), "people dancing".to_string())));
     }
 
     #[test]

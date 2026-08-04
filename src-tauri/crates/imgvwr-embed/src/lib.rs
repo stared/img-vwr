@@ -3,6 +3,8 @@
 //! L2-normalized embeddings. Models are downloaded on demand from Hugging
 //! Face into the app cache — never installed globally.
 
+use std::sync::Mutex;
+
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::siglip;
@@ -108,6 +110,8 @@ pub struct Embedder {
     image_size: usize,
     /// SigLIP pads text to a fixed length; (length, pad token id).
     text_pad: (usize, u32),
+    /// Held for the length of every forward pass — see [`Embedder::busy`].
+    gpu: Mutex<()>,
     pub model_id: &'static str,
     pub dim: usize,
 }
@@ -127,6 +131,30 @@ fn best_device() -> Device {
 }
 
 impl Embedder {
+    /// Claim the model for one forward pass.
+    ///
+    /// A `&self` method that computes on the GPU looks like it can be called
+    /// from anywhere, and it cannot: candle's Metal device keeps a mutable
+    /// residency set that Metal itself does not guard, so two threads
+    /// building tensors on one device corrupt it and the process dies inside
+    /// libmalloc with "pointer being freed was not allocated". That is not a
+    /// hypothetical — it took the app down while a folder was indexing in the
+    /// background and a phrase was ranked in the foreground, which is simply
+    /// what using this feature looks like.
+    ///
+    /// So inference is serialised, here rather than at each call site. A
+    /// caller cannot forget a lock it never has to take, and this is the only
+    /// place that knows the device is not shareable.
+    ///
+    /// A plain mutex, not a try-lock: a queued forward pass is a wait, and a
+    /// dropped one would be a wrong answer. Poisoning is ignored — a panic in
+    /// one pass says nothing about the next, and refusing to embed for the
+    /// rest of the session would be a worse failure than the one that caused
+    /// it.
+    fn busy(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.gpu.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Downloads (or reuses) the weights, then loads the model. Slow — run on
     /// a background thread. `cache_dir` is the app-owned model cache.
     pub fn load(spec: &'static ModelSpec, cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
@@ -161,6 +189,7 @@ impl Embedder {
                 config.text_config.max_position_embeddings,
                 config.text_config.pad_token_id,
             ),
+            gpu: Mutex::new(()),
             model_id: spec.id,
             dim: spec.dim as usize,
         })
@@ -179,6 +208,9 @@ impl Embedder {
             .resize_to_fill(size as u32, size as u32, image::imageops::FilterType::Triangle)
             .to_rgb8()
             .into_raw();
+        // Everything above is CPU work on this thread's own data. From here
+        // the device is touched, so the pass takes its turn.
+        let _turn = self.busy();
         let tensor = Tensor::from_vec(img, (size, size, 3), &Device::Cpu)
             .and_then(|t| t.permute((2, 0, 1)))
             .and_then(|t| t.to_dtype(DType::F32))
@@ -212,6 +244,8 @@ impl Embedder {
         let (max_len, pad_id) = self.text_pad;
         ids.truncate(max_len);
         ids.resize(max_len, pad_id);
+        // Tokenizing is CPU work; building the tensor is not.
+        let _turn = self.busy();
         let input = Tensor::new(vec![ids], &self.device).map_err(|e| EmbedError::Text(e.to_string()))?;
         let features = self
             .net
@@ -244,6 +278,49 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The crash this guards, in miniature.
+    ///
+    /// candle's Metal device keeps a residency set it mutates on every tensor
+    /// allocation, and Metal does not guard it: two threads embedding at once
+    /// corrupted it and the process died in libmalloc. A real regression test
+    /// would need a loaded model and a GPU, which no test has — so what is
+    /// pinned here is the property that made it possible, that `busy` admits
+    /// exactly one caller at a time.
+    #[test]
+    fn inference_admits_one_caller_at_a_time() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        // The guard, standing in for the Embedder that owns it.
+        let gpu = Arc::new(Mutex::new(()));
+        let inside = Arc::new(AtomicUsize::new(0));
+        let ever_overlapped = Arc::new(AtomicUsize::new(0));
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let (gpu, inside, seen) =
+                    (Arc::clone(&gpu), Arc::clone(&inside), Arc::clone(&ever_overlapped));
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        let _turn = gpu.lock().unwrap_or_else(|e| e.into_inner());
+                        let n = inside.fetch_add(1, Ordering::SeqCst) + 1;
+                        seen.fetch_max(n, Ordering::SeqCst);
+                        std::hint::spin_loop();
+                        inside.fetch_sub(1, Ordering::SeqCst);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(
+            ever_overlapped.load(Ordering::SeqCst),
+            1,
+            "two forward passes were in flight together"
+        );
+    }
 
     #[test]
     fn l2_normalize_gives_unit_length() {
