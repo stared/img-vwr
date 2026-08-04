@@ -36,6 +36,21 @@ function meta(overrides: Partial<ImageMeta>): ImageMeta {
   };
 }
 
+/* Every field, because ExifSubset is a total contract — a photograph either
+ * carries a fact or explicitly does not, and there is no third state. */
+const NO_EXIF = {
+  orientation: 1,
+  dateTime: null,
+  camera: null,
+  lens: null,
+  exposureTime: null,
+  fNumber: null,
+  iso: null,
+  focalLength: null,
+  gpsLat: null,
+  gpsLon: null,
+};
+
 describe("parseExifDate", () => {
   it("parses the EXIF colon format", () => {
     const expected = new Date(2023, 4, 12, 14, 33, 21).getTime();
@@ -63,7 +78,7 @@ describe("effectiveDims", () => {
     const rotated = meta({
       width: 300,
       height: 200,
-      exif: { orientation: 6, dateTime: null, camera: null, gpsLat: null, gpsLon: null },
+      exif: { ...NO_EXIF, orientation: 6 },
     });
     expect(effectiveDims(rotated)).toEqual({ width: 200, height: 300 });
   });
@@ -75,7 +90,7 @@ describe("effectiveDims", () => {
 
 describe("gpsOf", () => {
   const withGps = (gpsLat: number | null, gpsLon: number | null) =>
-    meta({ exif: { orientation: 1, dateTime: null, camera: null, gpsLat, gpsLon } });
+    meta({ exif: { ...NO_EXIF, gpsLat, gpsLon } });
 
   it("returns coordinates only when both are present", () => {
     expect(gpsOf(withGps(50.06, 19.94))).toEqual({ lat: 50.06, lon: 19.94 });
@@ -150,8 +165,7 @@ describe("timeBuckets", () => {
 });
 
 describe("cameraCounts", () => {
-  const withCamera = (camera: string | null) =>
-    meta({ exif: { orientation: 1, dateTime: null, camera, gpsLat: null, gpsLon: null } });
+  const withCamera = (camera: string | null) => meta({ exif: { ...NO_EXIF, camera } });
 
   it("counts tagged cameras, skipping untagged", () => {
     const metas = [withCamera("iPhone 15 Pro"), withCamera("iPhone 15 Pro"), withCamera(null)];

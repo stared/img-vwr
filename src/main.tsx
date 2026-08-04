@@ -15,6 +15,7 @@ import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
 import { allPanels, registerPanel } from "./registry/panels";
 import { allSources, registerSource } from "./registry/sources";
+import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
 import { registerLabels } from "./labels";
 import { registerSimilarity } from "./similarity";
@@ -25,6 +26,7 @@ import { registerBuiltinSorts } from "./sorts/builtin";
 registerBuiltinCommands();
 registerBuiltinSorts();
 registerBuiltinFilterFields();
+registerBuiltinFacts();
 // Sources bring their own scope-specific sorts, so they register first;
 // the sort commands then cover built-ins and source sorts alike.
 registerSource(redditSource);

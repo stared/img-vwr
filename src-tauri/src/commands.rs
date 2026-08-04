@@ -368,6 +368,21 @@ pub async fn develop_auto_exposure(
         .map_err(|e| e.to_string())?
 }
 
+/// Where this frame is sharpest — what the loupe points at before the user
+/// has pointed it anywhere themselves.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_focus_point(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+) -> Result<[f32; 2], String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.focus_point(&path, &settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Render a preview at `max_edge` under `settings`. The pixels are fetched
 /// separately over the `develop:` protocol using the returned token; the
 /// histogram of those same pixels comes back here.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ImageStats } from "../../ipc";
+import { formatAperture, formatShutter } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
 import { formatBytes } from "../../state/stats";
 import { useAppStore, useSelectedEntry } from "../../state/store";
@@ -176,6 +177,13 @@ export function InfoPanel() {
   const stars = labels?.stars ?? null;
   const tags = labels?.tags ?? [];
   const current = stats !== null && stats.path === path ? stats.data : null;
+  // Shutter, aperture, ISO — whichever the file carries, worded by the same
+  // formatters the caption over the image uses, so the two never disagree.
+  const exposure = [
+    exif?.exposureTime != null ? formatShutter(exif.exposureTime) : "",
+    exif?.fNumber != null ? formatAperture(exif.fNumber) : "",
+    exif?.iso != null ? `ISO ${exif.iso}` : "",
+  ].filter(Boolean);
 
   return (
     <div className="info-panel">
@@ -189,6 +197,13 @@ export function InfoPanel() {
       {exif && (
         <Section title="EXIF">
           {exif.camera !== null && <Fact label="camera" value={exif.camera} />}
+          {exif.lens !== null && <Fact label="lens" value={exif.lens} />}
+          {/* The exposure on one line, the way a photographer states it —
+              three separate rows would make you assemble it yourself. */}
+          {exposure.length > 0 && <Fact label="exposure" value={exposure.join("   ")} />}
+          {exif.focalLength !== null && (
+            <Fact label="focal length" value={`${Math.round(exif.focalLength)} mm`} />
+          )}
           {exif.dateTime !== null && <Fact label="taken" value={exif.dateTime} />}
           {exif.gpsLat !== null && exif.gpsLon !== null && (
             <Fact label="location" value={`${exif.gpsLat.toFixed(5)}, ${exif.gpsLon.toFixed(5)}`} />

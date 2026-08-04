@@ -14,6 +14,33 @@ import { useAppStore, useVisibleEntries } from "../../state/store";
 
 const REQUEST_DEBOUNCE_MS = 50;
 
+/** Cells fetched beyond each edge, so a flick of the strip is already filled. */
+const OVERSCAN = 6;
+
+/**
+ * Which cells are on screen, given where the strip is scrolled to.
+ *
+ * `pitch` and `origin` are measured off the laid-out cells rather than
+ * recomputed from the height. They used to be recomputed, wrongly — the
+ * assumed pitch was 12 px larger than the CSS produces, which by frame 100
+ * pointed nine cells away from what was on screen. The strip you had just
+ * scrolled to stayed blank while thumbnails were fetched for images nobody
+ * could see, and the further in you were the worse it got.
+ */
+export function stripRange(
+  view: { scrollLeft: number; clientWidth: number },
+  layout: { origin: number; pitch: number },
+  count: number,
+  overscan = OVERSCAN,
+): { first: number; last: number } {
+  if (layout.pitch <= 0 || count === 0) return { first: 0, last: 0 };
+  const at = (x: number) => (x - layout.origin) / layout.pitch;
+  return {
+    first: Math.max(0, Math.floor(at(view.scrollLeft)) - overscan),
+    last: Math.min(count, Math.ceil(at(view.scrollLeft + view.clientWidth)) + overscan),
+  };
+}
+
 export function Filmstrip({ height }: { height: number }) {
   const entries = useVisibleEntries();
   const selectedIndex = useAppStore((s) => s.selectedIndex);
@@ -41,10 +68,16 @@ export function Filmstrip({ height }: { height: number }) {
     if (!strip) return;
     const request = () => {
       const { thumbs: have, thumbErrors } = useAppStore.getState();
-      const { scrollLeft, clientWidth } = strip;
-      const cellWidth = height + 6;
-      const first = Math.max(0, Math.floor(scrollLeft / cellWidth) - 4);
-      const last = Math.min(entries.length, Math.ceil((scrollLeft + clientWidth) / cellWidth) + 4);
+      // Measured off the laid-out cells; see `stripRange`.
+      const [a, b] = [strip.children[0], strip.children[1]] as (HTMLElement | undefined)[];
+      const { first, last } = stripRange(
+        strip,
+        {
+          origin: a?.offsetLeft ?? 0,
+          pitch: a && b ? b.offsetLeft - a.offsetLeft : (a?.offsetWidth ?? 0),
+        },
+        entries.length,
+      );
       const wanted = entries
         .slice(first, last)
         .map((e) => e.path)

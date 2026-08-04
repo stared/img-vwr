@@ -94,9 +94,23 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
         format,
         fileSize: info.size,
         modifiedMs,
+        // Every field, because ExifSubset is a total contract: a remote
+        // photograph that carries no exposure data says so, rather than
+        // leaving the question open.
         exif:
           dateTime !== null || gpsLat !== null
-            ? { orientation: 1, dateTime, camera: null, gpsLat, gpsLon }
+            ? {
+                orientation: 1,
+                dateTime,
+                camera: null,
+                lens: null,
+                exposureTime: null,
+                fNumber: null,
+                iso: null,
+                focalLength: null,
+                gpsLat,
+                gpsLon,
+              }
             : null,
       },
     });

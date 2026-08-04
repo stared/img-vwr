@@ -13,6 +13,7 @@ import {
   visibleRegion,
 } from "../../state/develop";
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
+import { ImageCaption } from "./ImageCaption";
 
 /**
  * The zoomable image surface: one photograph, panned and zoomed, showing the
@@ -24,6 +25,21 @@ import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/st
  */
 
 const ZOOM_WHEEL_SENSITIVITY = 0.0022;
+
+/**
+ * The loupe's side in CSS pixels, for a canvas of this size.
+ *
+ * A share of the canvas rather than a fixed box, because the canvas is not a
+ * fixed size: with both sidebars open the darkroom's is barely 280 px across,
+ * and a 220 px loupe there covers most of the photograph it is meant to be
+ * helping you judge. The bounds keep it useful at both extremes — below the
+ * floor there is not enough of it to see an eyelash, above the ceiling it
+ * stops being an inset.
+ */
+export function loupeEdge(canvas: { width: number; height: number }): number {
+  const shorter = Math.min(canvas.width, canvas.height);
+  return Math.round(Math.min(240, Math.max(96, shorter * 0.34)));
+}
 
 interface Point2 {
   x: number;
@@ -48,6 +64,11 @@ export function ImageCanvas() {
   const canvas = useAppStore((s) => s.viewerWin);
   const img = useAppStore((s) => s.viewerImg);
   const gridlines = useDevelopStore((s) => s.gridlines);
+
+  const loupe = useDevelopStore((s) => s.loupe);
+  const aimLoupe = useDevelopStore((s) => s.aimLoupe);
+  const requestLoupe = useDevelopStore((s) => s.requestLoupe);
+  const loupeFrame = session?.loupeFrame ?? null;
 
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
@@ -81,12 +102,24 @@ export function ImageCanvas() {
     }
   }, [entries, index]);
 
-  // And develop them ahead, which is the expensive half. Only once this
-  // image's own frame has arrived: the user is waiting on that one, and a
-  // speculative render must never be what they are waiting behind. Next
-  // before previous — forward is the way a shoot is usually walked.
-  // Asked after every frame rather than once per image: the warm cache is
-  // dropped whenever the viewport resizes, and this is what fills it again.
+  // The loupe's own render: a small region at true 1:1. Asked for whenever it
+  // has nothing to show — on opening it, on arriving at a new photograph, and
+  // after an edit invalidated the pixels it was showing.
+  const needsLoupe = loupe && session !== null && loupeFrame === null;
+  const loupeAimed = useDevelopStore((s) => s.loupeAt);
+  const aimedByUser = useDevelopStore((s) => s.loupeAimedByUser);
+  const loupeSide = loupeEdge(canvas);
+  useEffect(() => {
+    if (!needsLoupe) return;
+    requestLoupe(Math.round(loupeSide * devicePixelRatio));
+  }, [needsLoupe, loupeAimed, loupeSide, requestLoupe]);
+
+  // And develop the neighbours ahead, which is the expensive half. Only once
+  // this image's own frame has arrived: the user is waiting on that one, and
+  // a speculative render must never be what they are waiting behind. Next
+  // before previous — forward is the way a shoot is usually walked. Asked
+  // after every frame rather than once per image, because the warm cache is
+  // dropped whenever the viewport resizes and this is what fills it again;
   // `prefetch` itself decides when there is room to do any of it.
   const prefetch = useDevelopStore((s) => s.prefetch);
   const settled = session?.path === entry?.path ? (session?.frame?.token ?? null) : null;
@@ -134,9 +167,17 @@ export function ImageCanvas() {
     }
   };
 
-  /** While the eyedropper is armed, a click says "this is grey". */
+  /**
+   * A click on the photograph, when one is being asked for: the eyedropper's
+   * neutral point, or where the loupe should look.
+   *
+   * The eyedropper wins while it is armed — it is a deliberate single action
+   * the user just started — and aiming the loupe is what a click means the
+   * rest of the time it is open.
+   */
   const handleClick = (e: React.MouseEvent) => {
-    if (!session?.picking || !view) return;
+    const wants = session?.picking === true || loupe;
+    if (!wants || !session || !view) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const size = displayedSize(session.info, session.settings.crop);
     const spanX = view.scale * size.width;
@@ -146,7 +187,8 @@ export function ImageCanvas() {
     const y = (e.clientY - rect.top - view.ty) / spanY;
     if (x < 0 || x > 1 || y < 0 || y > 1) return;
     e.preventDefault();
-    void pickWhiteBalanceAt(x, y);
+    if (session.picking) void pickWhiteBalanceAt(x, y);
+    else aimLoupe({ x, y });
   };
 
   /**
@@ -320,6 +362,22 @@ export function ImageCanvas() {
           <span className="across" style={{ top: "66.667%" }} />
         </div>
       )}
+      {/* True 100% pixels of one small region, beside the fitted photograph
+          rather than instead of it — so "is this sharp" and "is this a good
+          picture" are one glance apart instead of a mode change apart. */}
+      {loupe && (
+        <div className="viewer-loupe" style={{ width: loupeSide, height: loupeSide }}>
+          {loupeFrame ? (
+            <img src={developFrameUrl(loupeFrame.token)} alt="" draggable={false} />
+          ) : (
+            <span className="viewer-loupe-waiting" />
+          )}
+          {/* Says where it is looking, not just that it is at 1:1 — which
+              of the two is the interesting fact while stepping through. */}
+          <span className="viewer-loupe-note">{aimedByUser ? "1:1" : "sharpest"}</span>
+        </div>
+      )}
+      <ImageCaption entry={entry} />
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.
           Drawn on top rather than instead of, so panning never blanks. */}
       {developed && detail !== null && view !== null && (

@@ -4,8 +4,11 @@ import { groupStacks, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
+  CAPTION_LABELS,
+  CAPTION_NOTES,
   FULL_CROP,
   isCropped,
+  nextCaption,
   nextOverlay,
   OVERLAY_LABELS,
   OVERLAY_NOTES,
@@ -27,6 +30,20 @@ import { DevelopHistogram } from "./DevelopHistogram";
  * Every control states its current value in words beside its name, so the
  * panel reads as a description of the edit rather than a wall of handles.
  */
+
+/**
+ * The magnification, as the user would say it.
+ *
+ * "fit" and "100%" are names, not numbers — a photographer asks for the whole
+ * frame or for actual pixels, and the percentage that happens to correspond
+ * to "the whole frame" in this window is not information. Anything else was
+ * arrived at by pinching, and there the number is the only honest answer.
+ */
+export function zoomLabel(view: { scale: number } | null, fitted: boolean): string {
+  if (fitted || !view) return "fit";
+  const percent = Math.round(view.scale * 100);
+  return percent === 100 ? "100%" : `${percent}%`;
+}
 
 /** Where along the track a value sits, as a percentage. */
 function positionOf(value: number, min: number, max: number): number {
@@ -118,6 +135,17 @@ export function DevelopPanel() {
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
   const toggleStacking = useAppStore((s) => s.toggleStacking);
+  const loupe = useDevelopStore((s) => s.loupe);
+  const toggleLoupe = useDevelopStore((s) => s.toggleLoupe);
+  const caption = useDevelopStore((s) => s.caption);
+  const setCaption = useDevelopStore((s) => s.setCaption);
+  const view = useAppStore((s) => s.viewerView);
+  const fitted = useAppStore((s) => s.viewerFitted);
+  const zoomFit = useAppStore((s) => s.viewerZoomFit);
+  const zoomActual = useAppStore((s) => s.viewerZoomActual);
+  // Fit and 100% are the two magnifications worth a control; the button
+  // swings between them, and reports anything else you pinched your way to.
+  const toggleZoom = () => (fitted ? zoomActual() : zoomFit());
 
   // Whether stacking has anything to do in this collection at all. A switch
   // for something that never happens is noise, so a folder of single files
@@ -313,6 +341,36 @@ export function DevelopPanel() {
             back to the whole frame
           </button>
         )}
+      </section>
+
+      <section className="develop-group">
+        <h4>View</h4>
+        {/* The magnification, in words, on a button that changes it — the
+            same shape as every other state control here. Fit and 100% are the
+            two a photographer actually asks for; anything in between you got
+            to by pinching, and the button says so rather than pretending. */}
+        <button className="develop-toggle" onClick={toggleZoom}>
+          zoom: {zoomLabel(view, fitted)}
+        </button>
+        <button
+          className={loupe ? "develop-toggle armed" : "develop-toggle"}
+          onClick={toggleLoupe}
+        >
+          {loupe ? "loupe: on, click to aim it" : "loupe: off"}
+        </button>
+        {loupe && (
+          <p className="develop-note">
+            True 100% pixels of one region, so focus can be judged without
+            leaving the fitted view. Points at the sharpest part of each frame
+            until you click somewhere else.
+          </p>
+        )}
+        {/* Facts over the photograph. Three states, so the useful middle one
+            — say it on arrival, then get out of the way — is reachable. */}
+        <button className="develop-toggle" onClick={() => setCaption(nextCaption(caption))}>
+          caption: {CAPTION_LABELS[caption]}
+        </button>
+        <p className="develop-note">{CAPTION_NOTES[caption]}</p>
       </section>
 
       <section className="develop-group">

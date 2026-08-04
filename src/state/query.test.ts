@@ -171,6 +171,21 @@ function entry(name: string, ext: string, size: number, modifiedMs: number): Fil
   return { path: `/p/${name}`, name, formatHint: ext, size, modifiedMs };
 }
 
+/* Every field: ExifSubset is a total contract, so a fixture must say what
+ * the photograph does not carry as well as what it does. */
+const NO_EXIF = {
+  orientation: 1,
+  dateTime: null,
+  camera: null,
+  lens: null,
+  exposureTime: null,
+  fNumber: null,
+  iso: null,
+  focalLength: null,
+  gpsLat: null,
+  gpsLon: null,
+};
+
 function imageMeta(overrides: Partial<ImageMeta>): ImageMeta {
   return {
     width: 4000,
@@ -264,7 +279,7 @@ describe("applyQuery", () => {
   it("camera filter matches only images whose metadata is known", () => {
     const meta = {
       "/p/beach2.jpg": imageMeta({
-        exif: { orientation: 1, dateTime: null, camera: "iPhone SE", gpsLat: null, gpsLon: null },
+        exif: { ...NO_EXIF, orientation: 1, dateTime: null, camera: "iPhone SE", gpsLat: null, gpsLon: null },
       }),
     };
     const query = withSelectToggled(defaultQuery, "camera", "iPhone SE");
@@ -279,7 +294,7 @@ describe("applyQuery", () => {
       "/p/Alps.png": imageMeta({
         width: 4000,
         height: 3000,
-        exif: { orientation: 6, dateTime: null, camera: null, gpsLat: null, gpsLon: null }, // rotated, still 4:3
+        exif: { ...NO_EXIF, orientation: 6 }, // rotated, still 4:3
       }),
       "/p/zoo.webp": imageMeta({ width: 3000, height: 2000 }), // 3:2
     };

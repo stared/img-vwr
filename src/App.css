@@ -1573,6 +1573,100 @@ button.stats-row:hover .stats-label {
 /* Thirds guides. A hairline in both black and white so the line reads over a
    bright sky and a dark shadow alike, without either being loud enough to
    compete with the photograph. */
+/* ---- Loupe: 1:1 pixels beside the fitted photograph ---- */
+
+.viewer-loupe {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  /* Lifted off the photograph rather than drawn onto it. */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.viewer-loupe img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Never smoothed: the whole point is to show the pixels as they are. */
+  image-rendering: pixelated;
+}
+
+.viewer-loupe-waiting {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Says what it is pointing at, in the words the panel uses. */
+.viewer-loupe-note {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* ---- Caption: what you are looking at, over the photograph ---- */
+
+.image-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: 14px 18px 34px;
+  /* A gradient, not a box: a box would be a second rectangle competing with
+     the photograph's own edge. This darkens only what the text needs. */
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+
+.image-caption.showing {
+  opacity: 1;
+  /* Appears at once, leaves slowly — arriving late would be useless, and
+     leaving abruptly would pull the eye back to it. */
+  transition: opacity 120ms ease;
+}
+
+.image-caption p {
+  line-height: 1.35;
+}
+
+.caption-identity {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.caption-camera {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* The exposure triplet, spaced apart and in a figure font so the numbers
+   line up the way they do on a camera's top plate. */
+.caption-exposure {
+  margin-top: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.caption-file {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
 .viewer-guides {
   position: absolute;
   pointer-events: none;

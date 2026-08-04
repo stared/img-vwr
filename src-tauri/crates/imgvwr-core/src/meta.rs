@@ -10,6 +10,16 @@ pub struct ExifSubset {
     pub orientation: u32,
     pub date_time: Option<String>,
     pub camera: Option<String>,
+    pub lens: Option<String>,
+    /// The exposure, as a photographer states it. Kept as numbers rather than
+    /// as the camera's own strings so they can be compared, filtered and
+    /// sorted — formatting for display is the frontend's business, and "1/200"
+    /// is a rendering of 0.005, not a fact about the photograph.
+    pub exposure_time: Option<f64>,
+    pub f_number: Option<f64>,
+    pub iso: Option<u32>,
+    /// Millimetres, as marked on the lens.
+    pub focal_length: Option<f64>,
     /// Decimal degrees; positive = north/east.
     pub gps_lat: Option<f64>,
     pub gps_lon: Option<f64>,
@@ -71,6 +81,16 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
             .map(|f| f.display_value().to_string().trim_matches('"').to_owned())
     };
 
+    let rational = |tag: exif::Tag| {
+        data.get_field(tag, exif::In::PRIMARY)
+            .and_then(|f| match &f.value {
+                exif::Value::Rational(parts) => parts.first().map(|r| r.to_f64()),
+                exif::Value::SRational(parts) => parts.first().map(|r| r.to_f64()),
+                _ => None,
+            })
+            .filter(|v| v.is_finite() && *v > 0.0)
+    };
+
     Some(ExifSubset {
         orientation: data
             .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
@@ -78,9 +98,31 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
             .unwrap_or(1),
         date_time: field_string(exif::Tag::DateTimeOriginal).or_else(|| field_string(exif::Tag::DateTime)),
         camera: field_string(exif::Tag::Model),
+        lens: field_string(exif::Tag::LensModel).and_then(|s| clean_lens(&s)),
+        exposure_time: rational(exif::Tag::ExposureTime),
+        f_number: rational(exif::Tag::FNumber),
+        // The modern tag, falling back to the one film-era cameras wrote.
+        iso: data
+            .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
+            .or_else(|| data.get_field(exif::Tag::ISOSpeed, exif::In::PRIMARY))
+            .and_then(|f| f.value.get_uint(0)),
+        focal_length: rational(exif::Tag::FocalLength),
         gps_lat: gps_coord(&data, exif::Tag::GPSLatitude, exif::Tag::GPSLatitudeRef, 90.0),
         gps_lon: gps_coord(&data, exif::Tag::GPSLongitude, exif::Tag::GPSLongitudeRef, 180.0),
     })
+}
+
+/// The lens name, without the padding the camera wrote after it.
+///
+/// Nikon writes LensModel as a fixed-width array, so `display_value` renders
+/// `"NIKKOR Z 50mm f/1.8 S", "", "", ""` — forty-odd empty strings after the
+/// name. Printed verbatim that fills a panel with quotes and commas.
+fn clean_lens(raw: &str) -> Option<String> {
+    let name = raw
+        .split(',')
+        .map(|part| part.trim().trim_matches('"').trim())
+        .find(|part| !part.is_empty())?;
+    Some(name.to_owned())
 }
 
 /// One GPS coordinate as decimal degrees, negative for S/W. None when the
@@ -129,6 +171,17 @@ mod tests {
         assert_eq!((meta.width, meta.height), (Some(320), Some(200)));
         assert_eq!(meta.format, "png");
         assert!(meta.file_size > 0);
+    }
+
+    #[test]
+    fn a_padded_lens_name_loses_its_padding() {
+        // Nikon writes LensModel as a fixed-width array, so the display value
+        // is the name followed by forty-odd empty strings.
+        let padded = r#""NIKKOR Z 50mm f/1.8 S", "", "", "", """#;
+        assert_eq!(clean_lens(padded).as_deref(), Some("NIKKOR Z 50mm f/1.8 S"));
+        assert_eq!(clean_lens(r#""50mm""#).as_deref(), Some("50mm"));
+        assert_eq!(clean_lens(r#""", """#), None, "nothing but padding is no lens");
+        assert_eq!(clean_lens(""), None);
     }
 
     #[test]

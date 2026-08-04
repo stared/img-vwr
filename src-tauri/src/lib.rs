@@ -49,6 +49,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::develop_state,
             commands::develop_presets,
             commands::develop_auto_exposure,
+            commands::develop_focus_point,
             commands::develop_render,
             commands::develop_save,
             commands::develop_reset,

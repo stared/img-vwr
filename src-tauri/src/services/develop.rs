@@ -209,6 +209,34 @@ impl DevelopService {
         Ok(imgvwr_develop::auto_exposure(&linear))
     }
 
+    /// Where this frame is sharpest, in the coordinates of the cropped image.
+    ///
+    /// Measured small, like `auto_exposure`: the question is which *region*
+    /// resolves detail, and a few hundred pixels answer it as well as twenty
+    /// million. Deliberately measured on the crop rather than the sensor, so
+    /// the answer is a point in the picture the user is looking at.
+    pub fn focus_point(&self, path: &str, settings: &DevelopSettings) -> Result<[f32; 2], String> {
+        const MEASURE_EDGE: u32 = 500;
+        let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+        let settings = settings.clamped();
+        let native = entry.scene.native_size();
+        let aspect = if native.1 == 0 {
+            1.0
+        } else {
+            native.0 as f32 / native.1 as f32
+        };
+        let linear = entry
+            .scene
+            .render(imgvwr_core::RenderRequest {
+                max_edge: MEASURE_EDGE,
+                white_balance: settings.white_balance,
+                region: settings.crop.source_region(aspect),
+            })
+            .map_err(|e| e.to_string())?;
+        let (x, y) = imgvwr_develop::focus_point(&linear);
+        Ok([x, y])
+    }
+
     /// Render one preview frame and keep its encoded bytes addressable.
     pub fn render(
         &self,

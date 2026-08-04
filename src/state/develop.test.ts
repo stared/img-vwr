@@ -8,6 +8,8 @@ import {
   FULL_CROP,
   isCropped,
   isNeutral,
+  loupeRegion,
+  nextCaption,
   pastedSettings,
   needsDetail,
   needsDevelopedFrame,
@@ -57,6 +59,8 @@ function session(over: Partial<Session> = {}, info: Partial<DevelopState> = {}):
     frame: null,
     detail: null,
     detailing: false,
+    loupeFrame: null,
+    louping: false,
     picking: false,
     overlay: "none",
     rendering: false,
@@ -353,5 +357,45 @@ describe("isCropped", () => {
     // Straightening alone is a crop: the frame is turned even if nothing was
     // trimmed, and the button that puts it back has to appear.
     expect(isCropped({ ...FULL_CROP, angle: 2 })).toBe(true);
+  });
+});
+
+describe("loupeRegion", () => {
+  const frame = { width: 6048, height: 4032 };
+
+  it("covers exactly as much of the image as fits at 1:1", () => {
+    // 440 device pixels of a 6048 px frame is a small square of it — that is
+    // what "one image pixel per device pixel" means.
+    const region = loupeRegion({ x: 0.5, y: 0.5 }, frame, 440);
+    expect(region.width).toBeCloseTo(440 / 6048, 6);
+    expect(region.height).toBeCloseTo(440 / 4032, 6);
+  });
+
+  it("centres on the point it is aimed at", () => {
+    const region = loupeRegion({ x: 0.5, y: 0.5 }, frame, 440);
+    expect(region.x + region.width / 2).toBeCloseTo(0.5, 6);
+    expect(region.y + region.height / 2).toBeCloseTo(0.5, 6);
+  });
+
+  it("shows the corner rather than half a box of nothing", () => {
+    const corner = loupeRegion({ x: 0, y: 0 }, frame, 440);
+    expect(corner.x).toBe(0);
+    expect(corner.y).toBe(0);
+    const far = loupeRegion({ x: 1, y: 1 }, frame, 440);
+    expect(far.x + far.width).toBeCloseTo(1, 6);
+    expect(far.y + far.height).toBeCloseTo(1, 6);
+  });
+
+  it("shows the whole of an image smaller than the loupe", () => {
+    const tiny = loupeRegion({ x: 0.5, y: 0.5 }, { width: 100, height: 80 }, 440);
+    expect(tiny).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  });
+});
+
+describe("nextCaption", () => {
+  it("reaches every state and comes back", () => {
+    expect(nextCaption("briefly")).toBe("always");
+    expect(nextCaption("always")).toBe("off");
+    expect(nextCaption("off")).toBe("briefly");
   });
 });

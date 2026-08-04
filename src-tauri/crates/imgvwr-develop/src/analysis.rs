@@ -4,7 +4,7 @@ use imgvwr_core::{DecodedImage, LinearImage};
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::pipeline::luma;
+use crate::pipeline::{luma, MID_GREY};
 
 /// 256-bin distributions of the *developed* image — what the user is actually
 /// looking at, so clipping shown here is clipping they can see. (The info
@@ -177,6 +177,125 @@ fn high_percentile(values: &[f32], quantile: f32) -> f32 {
         }
     }
     max
+}
+
+/// How much a region's detail should be believed, from how much light it got.
+///
+/// [`sharpness_map`] measures contrast in *log* luminance, which is what makes
+/// it work across a frame's whole brightness range — a face in shadow scores
+/// like a face in sun. The cost is that the same division makes deep shadow
+/// enormously sensitive: at ISO 4000, sensor noise a thousandth of mid-grey
+/// is a large relative modulation, and a black floor comes out looking like
+/// the most finely resolved thing in the picture. Which it is, technically,
+/// and uselessly — that is grain, not the subject.
+///
+/// So the score is weighted by light. The ramp is deliberately gentle and
+/// reaches full weight well below mid-grey: a face lit at a fraction of a
+/// stop under is still a face, and only genuinely dark regions — where the
+/// signal really is mostly noise — are discounted.
+fn lit_enough(src: &LinearImage) -> Vec<f32> {
+    /// Full confidence at and above this, ramping from zero at black.
+    const ENOUGH: f32 = MID_GREY / 3.0;
+
+    let w = src.width as usize;
+    let h = src.height as usize;
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
+    let luma: Vec<f32> = src
+        .rgb
+        .par_chunks(3)
+        .map(|px| luma(px[0], px[1], px[2]).max(0.0))
+        .collect();
+    // Regionally averaged, on the same scale the detail score uses, so the
+    // two describe the same neighbourhood.
+    let radius = (w.max(h) / 200).clamp(2, 12);
+    box_blur(&luma, w, h, radius)
+        .into_par_iter()
+        .map(|y| (y / ENOUGH).clamp(0.0, 1.0))
+        .collect()
+}
+
+/// A gentle preference for the middle of the frame.
+///
+/// "Sharpest" and "the subject" are not the same thing, and where they differ
+/// this is the tie-breaker. A hard shadow edge across a floor is genuinely as
+/// resolved as a face — more so, often, since a face is soft — so detail
+/// alone will happily point at the floor. What the floor is not is where a
+/// photographer put the subject.
+///
+/// Deliberately shallow, and deliberately not a circle. It falls to a little
+/// over half weight in the corners, which is enough to settle a close contest
+/// and nowhere near enough to override a clear winner off-centre — a subject
+/// on a thirds line keeps almost all of its score. This is the same
+/// assumption every camera's centre-weighted metering makes, for the same
+/// reason: it is usually right and cheap to be wrong about.
+fn near_the_middle(w: usize, h: usize) -> Vec<f32> {
+    /// Weight at the very corners.
+    const CORNER: f32 = 0.55;
+
+    let mut out = vec![0f32; w * h];
+    for y in 0..h {
+        // Normalised distance from the centre along each axis, 0 at the
+        // middle and 1 at the edge.
+        let dy = if h <= 1 { 0.0 } else { (y as f32 / (h - 1) as f32 - 0.5).abs() * 2.0 };
+        for x in 0..w {
+            let dx = if w <= 1 { 0.0 } else { (x as f32 / (w - 1) as f32 - 0.5).abs() * 2.0 };
+            // Squared distance, so the falloff is flat across the middle
+            // and only bites near the edges.
+            let d = (dx * dx + dy * dy) / 2.0;
+            out[y * w + x] = 1.0 - (1.0 - CORNER) * d;
+        }
+    }
+    out
+}
+
+/// Where in the frame the photograph is sharpest, in normalised coordinates.
+///
+/// What a photographer checks first: whether the thing that was meant to be
+/// in focus is. On a portrait that is the eyes, on a landscape the near
+/// texture — in both cases the place resolving the most fine detail, which is
+/// exactly what [`sharpness_map`] scores.
+///
+/// The peak of a *blurred* score rather than of a single pixel: the map is
+/// already regionally averaged, so its maximum names an area worth looking
+/// at, not a lucky noise spike. A frame with no detail anywhere (a blank wall,
+/// a sky) scores below the map's floor everywhere and gets the centre, which
+/// is the honest answer to "where is the detail" when there is none.
+pub fn focus_point(src: &LinearImage) -> (f32, f32) {
+    const CENTRE: (f32, f32) = (0.5, 0.5);
+    /// Below this the map is reporting noise, not resolved detail.
+    const WORTH_POINTING_AT: f32 = 0.35;
+
+    let (w, h) = (src.width as usize, src.height as usize);
+    if w == 0 || h == 0 {
+        return CENTRE;
+    }
+    // Detail, discounted where there is not enough light for detail to be
+    // what it looks like (`lit_enough`), and again towards the edges of the
+    // frame (`near_the_middle`).
+    let bias = near_the_middle(w, h);
+    let scored: Vec<f32> = sharpness_map(src)
+        .into_iter()
+        .zip(lit_enough(src))
+        .zip(bias)
+        .map(|((detail, lit), central)| detail * lit * central)
+        .collect();
+    let Some((at, &best)) = scored
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    else {
+        return CENTRE;
+    };
+    if best < WORTH_POINTING_AT {
+        return CENTRE;
+    }
+    // Pixel centres, so the point is inside the pixel it names.
+    (
+        (at % w) as f32 / w as f32 + 0.5 / w as f32,
+        (at / w) as f32 / h as f32 + 0.5 / h as f32,
+    )
 }
 
 /// Composite the focus map over developed pixels, in place.
@@ -354,6 +473,114 @@ mod tests {
             auto_exposure(&LinearImage { width: 0, height: 0, rgb: Vec::new() }),
             0.0
         );
+    }
+
+    #[test]
+    fn the_focus_point_lands_on_the_detailed_part_of_the_frame() {
+        // Detail confined to a patch on the left; the rest a flat field. The
+        // point that matters is in the patch, not in the middle of the frame.
+        let (w, h) = (64usize, 64usize);
+        let mut rgb = vec![0.35f32; w * h * 3];
+        for y in 20..44 {
+            for x in 8..28 {
+                let v = if (x + y) % 2 == 0 { 0.6 } else { 0.1 };
+                let o = (y * w + x) * 3;
+                rgb[o] = v;
+                rgb[o + 1] = v;
+                rgb[o + 2] = v;
+            }
+        }
+        let (x, y) = focus_point(&LinearImage { width: w as u32, height: h as u32, rgb });
+        assert!((0.1..0.45).contains(&x), "x={x}");
+        assert!((0.28..0.70).contains(&y), "y={y}");
+    }
+
+    #[test]
+    fn shadow_noise_does_not_beat_the_lit_subject() {
+        // The real failure, from a portrait at ISO 4000: the sharpness score
+        // is a ratio, so grain in a near-black floor is an enormous relative
+        // modulation and outscored the face. The loupe pointed at a dark
+        // rectangle of nothing.
+        // A dark, grainy room with one lit textured subject in the left third.
+        // No hard division down the middle: the boundary of any patch is a
+        // genuine edge and would score highly on its own merits, which would
+        // test the frame's construction rather than the rule.
+        let (w, h) = (96usize, 96usize);
+        let mut rgb = vec![0f32; w * h * 3];
+        let lit = |x: usize, y: usize| (16..40).contains(&x) && (36..60).contains(&y);
+        for y in 0..h {
+            for x in 0..w {
+                let v = if lit(x, y) {
+                    if (x + y) % 2 == 0 { 0.22 } else { 0.16 }
+                } else if (x + y) % 2 == 0 {
+                    // Grain at a fifth of its own level: a far larger relative
+                    // modulation than the subject's texture.
+                    0.0030
+                } else {
+                    0.0008
+                };
+                let o = (y * w + x) * 3;
+                rgb[o] = v;
+                rgb[o + 1] = v;
+                rgb[o + 2] = v;
+            }
+        }
+        let src = LinearImage { width: w as u32, height: h as u32, rgb };
+
+        // The premise, measured rather than assumed: away from every edge,
+        // the unweighted score really does rate grain above the subject.
+        let raw = sharpness_map(&src);
+        let subject = raw[48 * w + 28];
+        let grain = raw[12 * w + 80];
+        assert!(grain >= subject, "premise: grain {grain} scores at least {subject}");
+
+        let (x, y) = focus_point(&src);
+        assert!(
+            (0.10..0.48).contains(&x) && (0.30..0.68).contains(&y),
+            "points at the lit subject, not the grain: ({x}, {y})"
+        );
+    }
+
+    #[test]
+    fn the_centre_bias_settles_ties_without_overruling_a_clear_winner() {
+        let w = near_the_middle(101, 101);
+        let at = |x: usize, y: usize| w[y * 101 + x];
+        assert!((at(50, 50) - 1.0).abs() < 1e-6, "full weight in the middle");
+        assert!(at(0, 0) < at(50, 50), "less at a corner");
+        // Shallow across the middle: a subject on a thirds line keeps nearly
+        // all of its score, which is what stops this overriding real detail.
+        assert!(at(33, 50) > 0.94, "thirds line barely touched: {}", at(33, 50));
+        // And it is a preference, not a veto.
+        assert!(at(0, 0) > 0.5, "a corner is still in the running");
+    }
+
+    #[test]
+    fn a_detailed_subject_off_centre_still_wins() {
+        // The centre bias must not drag the answer to the middle of a frame
+        // whose subject is plainly not there.
+        let (w, h) = (96usize, 96usize);
+        let mut rgb = vec![0.30f32; w * h * 3];
+        for y in 8..28 {
+            for x in 8..28 {
+                let v = if (x + y) % 2 == 0 { 0.42 } else { 0.14 };
+                let o = (y * w + x) * 3;
+                rgb[o] = v;
+                rgb[o + 1] = v;
+                rgb[o + 2] = v;
+            }
+        }
+        let (x, y) = focus_point(&LinearImage { width: w as u32, height: h as u32, rgb });
+        assert!(x < 0.4 && y < 0.4, "stays on the corner subject: ({x}, {y})");
+    }
+
+    #[test]
+    fn a_frame_with_no_detail_anywhere_gets_the_centre() {
+        // A blank wall resolves nothing, and pointing confidently at one
+        // corner of it would be inventing an answer.
+        let flat = LinearImage { width: 32, height: 32, rgb: vec![0.4; 32 * 32 * 3] };
+        assert_eq!(focus_point(&flat), (0.5, 0.5));
+        let empty = LinearImage { width: 0, height: 0, rgb: Vec::new() };
+        assert_eq!(focus_point(&empty), (0.5, 0.5));
     }
 
     #[test]

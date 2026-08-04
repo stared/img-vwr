@@ -184,6 +184,18 @@ async developAutoExposure(path: string, settings: DevelopSettings) : Promise<Res
 }
 },
 /**
+ * Where this frame is sharpest — what the loupe points at before the user
+ * has pointed it anywhere themselves.
+ */
+async developFocusPoint(path: string, settings: DevelopSettings) : Promise<Result<[number, number], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_focus_point", { path, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Render a preview at `max_edge` under `settings`. The pixels are fetched
  * separately over the `develop:` protocol using the returned token; the
  * histogram of those same pixels comes back here.
@@ -423,7 +435,18 @@ export type EmbeddingProgress = { done: number; total: number; epoch: number }
  * "downloading" → "loading" → "ready", or "error".
  */
 export type EmbeddingStatus = { modelId: string; phase: string; error: string | null }
-export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; 
+export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; lens: string | null; 
+/**
+ * The exposure, as a photographer states it. Kept as numbers rather than
+ * as the camera's own strings so they can be compared, filtered and
+ * sorted — formatting for display is the frontend's business, and "1/200"
+ * is a rendering of 0.005, not a fact about the photograph.
+ */
+exposureTime: number | null; fNumber: number | null; iso: number | null; 
+/**
+ * Millimetres, as marked on the lens.
+ */
+focalLength: number | null; 
 /**
  * Decimal degrees; positive = north/east.
  */

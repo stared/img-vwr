@@ -149,6 +149,14 @@ export async function developAutoExposure(
   return unwrap(await commands.developAutoExposure(path, settings));
 }
 
+/** Where this frame is sharpest, in the cropped image's coordinates. */
+export async function developFocusPoint(
+  path: string,
+  settings: DevelopSettings,
+): Promise<[number, number]> {
+  return unwrap(await commands.developFocusPoint(path, settings));
+}
+
 /** Render a preview; the pixels are then loaded from `developFrameUrl`. */
 export async function developRender(
   path: string,

@@ -12,6 +12,7 @@ import type {
 } from "../ipc";
 import {
   developAutoExposure,
+  developFocusPoint,
   developPickWhiteBalance,
   developPresets,
   developRender,
@@ -105,6 +106,43 @@ export function nextOverlay(current: Overlay): Overlay {
   return OVERLAY_CYCLE[(at + 1) % OVERLAY_CYCLE.length] ?? "none";
 }
 
+/**
+ * How the facts about a photograph sit over it.
+ *
+ * Three states, because two would be wrong in both directions. Left on
+ * permanently, a caption over a photograph stops being information and
+ * becomes part of the picture you are trying to judge. Turned off, you have
+ * to go looking for what you are looking at every time you step to the next
+ * frame. "Briefly" is what every viewer that has thought about this settles
+ * on — Lightroom's Info overlay has a Show Briefly mode, macOS Quick Look
+ * captions on open and fades, and video players show the title on a seek.
+ * The rule is the same everywhere: say it when something changed, then get
+ * out of the way.
+ */
+export const CAPTION_CYCLE = ["briefly", "always", "off"] as const;
+export type CaptionMode = (typeof CAPTION_CYCLE)[number];
+
+export const CAPTION_LABELS: Record<CaptionMode, string> = {
+  briefly: "on change",
+  always: "always",
+  off: "off",
+};
+
+export const CAPTION_NOTES: Record<CaptionMode, string> = {
+  briefly: "Says which photograph this is when you arrive at it, then fades.",
+  always: "Stays over the photograph.",
+  off: "Nothing over the photograph; the panels still say everything.",
+};
+
+/** How long "briefly" lasts. Long enough to read a filename and an exposure
+ * without hurrying, short enough not to sit over the frame while you judge it. */
+export const CAPTION_LINGER_MS = 3500;
+
+export function nextCaption(current: CaptionMode): CaptionMode {
+  const at = CAPTION_CYCLE.indexOf(current);
+  return CAPTION_CYCLE[(at + 1) % CAPTION_CYCLE.length] ?? "briefly";
+}
+
 export const TEMPERATURE_RANGE = { min: 2000, max: 12000, step: 10 };
 export const TINT_RANGE = { min: -150, max: 150, step: 1 };
 
@@ -129,6 +167,16 @@ export interface Session {
   detail: DevelopFrame | null;
   /** True while a detail crop is being developed. */
   detailing: boolean;
+  /**
+   * The loupe's pixels, and the point they are centred on.
+   *
+   * A third render slot rather than a reuse of `detail`, because the two ask
+   * different questions of the same image at the same time: the detail crop
+   * replaces what the main view is magnifying, and the loupe sits beside a
+   * view that has not been magnified at all.
+   */
+  loupeFrame: DevelopFrame | null;
+  louping: boolean;
   /** The eyedropper is armed: the next click on the image sets the balance. */
   picking: boolean;
   overlay: Overlay;
@@ -168,6 +216,42 @@ export interface DevelopStore {
    */
   gridlines: boolean;
   toggleGridlines: () => void;
+  /**
+   * The loupe: true 100% pixels of one small region, shown beside the fitted
+   * photograph rather than instead of it.
+   *
+   * The question it answers is "did this frame come out sharp", and answering
+   * it by zooming means leaving the view you were judging the picture in,
+   * checking, and coming back — for every frame of a shoot. Both at once
+   * costs a corner of the canvas and no mode changes at all.
+   */
+  loupe: boolean;
+  toggleLoupe: () => void;
+  /**
+   * Where the loupe is pointed, in the cropped image's coordinates, or null
+   * to mean "wherever this frame is sharpest".
+   *
+   * Null rather than a remembered point, because the useful default moves
+   * with the photograph: the eyes are not in the same place in the next take,
+   * and a loupe pinned to absolute coordinates would be showing a cheek.
+   * Cleared on navigation for exactly that reason.
+   */
+  loupeAt: { x: number; y: number } | null;
+  aimLoupe: (at: { x: number; y: number } | null) => void;
+  /**
+   * Whether the user aimed it, as opposed to the measurement having.
+   *
+   * Both end up in `loupeAt` — the point is a point either way, and the
+   * measured one is cached there so the next render need not measure again —
+   * but the loupe says which it is showing, and "1:1" over a spot nobody
+   * chose would be claiming a decision the user never made.
+   */
+  loupeAimedByUser: boolean;
+
+  /** How the facts about this photograph sit over it. */
+  caption: CaptionMode;
+  setCaption: (mode: CaptionMode) => void;
+
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -199,6 +283,8 @@ export interface DevelopStore {
   requestDetail: (region: RegionArg, maxEdge: number) => void;
   /** Drop the detail crop — zoomed back out, or it went stale. */
   clearDetail: () => void;
+  /** Develop the loupe's region at 1:1, `edge` device pixels across. */
+  requestLoupe: (edge: number) => void;
   /** Arm or disarm the eyedropper. */
   setPicking: (picking: boolean) => void;
   /** Set the white balance from a point in the image (normalised coords). */
@@ -300,6 +386,25 @@ export function cropFromDrag(
 
 /** Largest detail crop we will develop, in pixels of the longest edge. */
 const DETAIL_MAX_EDGE = 4000;
+
+/**
+ * The region the loupe should develop to fill `edge` device pixels at 1:1.
+ *
+ * "1:1" means one image pixel per device pixel, so the region is however
+ * much of the image that many pixels covers — a small square of a 24 MP
+ * frame, a large one of a small JPEG. Clamped to the frame so a point near an
+ * edge shows the corner rather than half a box of nothing.
+ */
+export function loupeRegion(
+  at: { x: number; y: number },
+  image: { width: number; height: number },
+  edge: number,
+): RegionArg {
+  const width = Math.min(1, edge / Math.max(1, image.width));
+  const height = Math.min(1, edge / Math.max(1, image.height));
+  const inside = (v: number, span: number) => Math.min(1 - span, Math.max(0, v - span / 2));
+  return { x: inside(at.x, width), y: inside(at.y, height), width, height };
+}
 
 /** How much two regions must differ before the crop is worth re-developing. */
 const REGION_EPSILON = 0.01;
@@ -482,6 +587,8 @@ function sessionFor(path: string, info: DevelopState, frame: DevelopFrame | null
     frame,
     detail: null,
     detailing: false,
+    loupeFrame: null,
+    louping: false,
     picking: false,
     overlay: "none",
     rendering: false,
@@ -526,7 +633,16 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // The detail crop was developed from the previous settings, so it is
       // now a lie about the image; drop it and let the canvas ask again.
       set({
-        session: { ...now, frame: result.frame, detail: null, rendering: false, error: null },
+        session: {
+          ...now,
+          frame: result.frame,
+          // Both crops were developed from the previous settings, so both are
+          // now lies about the image; the canvas asks for them again.
+          detail: null,
+          loupeFrame: null,
+          rendering: false,
+          error: null,
+        },
       });
     } else {
       set({ session: { ...now, rendering: false, error: result.error } });
@@ -626,6 +742,10 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // Crop is about one photograph, and arriving at the next one already in
       // crop mode would mean a drag across it meant something unexpected.
       if (get().cropping) set({ cropping: false });
+      // And where the sharpest place is moves with the photograph — the eyes
+      // are not where they were in the previous take. Back to "wherever this
+      // frame is sharpest" until the user aims it themselves.
+      if (get().loupeAt !== null) set({ loupeAt: null, loupeAimedByUser: false });
 
       // Already developed while the user was looking at its neighbour: show
       // it now, with no round trip at all. Taken out of the cache on the way
@@ -813,6 +933,69 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const session = get().session;
       if (!session || session.detail === null) return;
       set({ session: { ...session, detail: null } });
+    },
+
+    loupe: false,
+    loupeAt: null,
+    loupeAimedByUser: false,
+
+    toggleLoupe: () => set((s) => ({ loupe: !s.loupe })),
+
+    // Aiming clears the frame rather than keeping the old one: a loupe that
+    // goes on showing the eyes for a moment after you clicked the hand is
+    // saying something false about where you are looking.
+    aimLoupe: (at) => {
+      set({ loupeAt: at, loupeAimedByUser: at !== null });
+      const session = get().session;
+      if (session) set({ session: { ...session, loupeFrame: null } });
+    },
+
+    caption: "briefly",
+    setCaption: (caption) => set({ caption }),
+
+    requestLoupe: (edge) => {
+      const session = get().session;
+      if (!session || session.louping || !get().loupe) return;
+      const { path, settings, overlay } = session;
+      const image = displayedSize(session.info, settings.crop);
+      set({ session: { ...session, louping: true } });
+
+      // Where to point, when nobody has pointed it: the sharpest region,
+      // measured for this frame. Asked once per aim rather than per render,
+      // because it is a fact about the photograph, not about the settings.
+      const aim =
+        get().loupeAt !== null
+          ? Promise.resolve(get().loupeAt as { x: number; y: number })
+          : developFocusPoint(path, settings).then(
+              ([x, y]) => ({ x, y }),
+              () => ({ x: 0.5, y: 0.5 }),
+            );
+
+      void aim
+        .then(async (at) => {
+          const region = loupeRegion(at, image, edge);
+          const frame = await developRender(path, settings, edge, overlay, region);
+          return { at, frame };
+        })
+        .then(
+          ({ at, frame }) => {
+            const now = get().session;
+            // Only install it if it still describes the image on screen under
+            // the settings that produced it.
+            if (!now || now.path !== path || now.settings !== settings) {
+              if (now) set({ session: { ...now, louping: false } });
+              return;
+            }
+            // Remember where the focus point put it, so the next render at
+            // the same aim does not measure the frame again.
+            if (get().loupeAt === null) set({ loupeAt: at });
+            set({ session: { ...now, loupeFrame: frame, louping: false } });
+          },
+          () => {
+            const now = get().session;
+            if (now) set({ session: { ...now, louping: false } });
+          },
+        );
     },
 
     requestRender: (maxEdge) => {
