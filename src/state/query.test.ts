@@ -133,11 +133,11 @@ beforeAll(() => {
     appliesTo: () => true,
     reads: "labels",
     Menu: NoMenu,
-    spec: numberRangeSpec((_entry, { labels }) => labels.stars, {
+    spec: numberRangeSpec((_entry, { labels }) => labels.stars ?? 0, {
       unit: "★",
       scale: 1,
       integer: true,
-      ops: ["<=", "=", ">="],
+      ops: [">="],
     }),
   });
   registerFilterField({
@@ -330,17 +330,23 @@ describe("applyQuery", () => {
     expect(usesMeta(withSelectToggled(defaultQuery, "aspect", "4:3"))).toBe(true);
   });
 
-  it("stars range filter reads labels; unrated images never match", () => {
+  it("stars range filter reads labels; unrated counts as zero stars", () => {
     const labels = {
       "/p/beach2.jpg": { stars: 4, tags: [] },
       "/p/Alps.png": { stars: 2, tags: [] },
     };
-    const atLeast3 = withRangeToggled(defaultQuery, "stars", 3, Infinity, "≥ 3 ★");
+    const atLeast3 = withRangeToggled(defaultQuery, "stars", 3, Infinity, "★★★ and up");
     expect(applyQuery(ENTRIES, atLeast3, data({ labels })).map((e) => e.name)).toEqual([
       "beach2.jpg",
     ]);
     // Nothing rated → nothing matches.
     expect(applyQuery(ENTRIES, atLeast3, data())).toEqual([]);
+    // "unrated" is the range [0, 1): everything not rated, nothing rated.
+    const unrated = withRangeToggled(defaultQuery, "stars", 0, 1, "unrated");
+    expect(applyQuery(ENTRIES, unrated, data({ labels })).map((e) => e.name)).toEqual([
+      "beach10.jpg",
+      "zoo.webp",
+    ]);
   });
 
   it("a tag clause (select on a flags field) matches on membership", () => {

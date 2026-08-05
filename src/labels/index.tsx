@@ -1,4 +1,4 @@
-import { RangeMenuForm, SelectMenuItems } from "../components/shell/filterMenus";
+import { SelectMenuItems } from "../components/shell/filterMenus";
 import type { FileEntry } from "../ipc";
 import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
@@ -49,8 +49,43 @@ async function tagSelected(tag: string): Promise<void> {
   useAppStore.getState().labelsApplied(labels);
 }
 
-function StarsMenu({ close }: { close: () => void }) {
-  return <RangeMenuForm field="stars" close={close} />;
+/**
+ * Ratings are six values, so every question worth asking fits in one menu —
+ * a click is the whole filter, not an operator and then a typed number.
+ */
+const STAR_ROWS: { label: string; from: number; to: number }[] = [
+  { label: "★ and up", from: 1, to: Infinity },
+  { label: "★★ and up", from: 2, to: Infinity },
+  { label: "★★★ and up", from: 3, to: Infinity },
+  { label: "★★★★ and up", from: 4, to: Infinity },
+  { label: "★★★★★", from: 5, to: Infinity },
+  { label: "unrated", from: 0, to: 1 },
+];
+
+function StarsMenuItems({ close }: { close: () => void }) {
+  const query = useAppStore((s) => s.query);
+  const setRangeFilter = useAppStore((s) => s.setRangeFilter);
+  const active = query.filters.find((f) => f.kind === "range" && f.field === "stars");
+  return (
+    <>
+      {STAR_ROWS.map((row) => (
+        <button
+          key={row.label}
+          onClick={() => {
+            setRangeFilter("stars", row.from, row.to, row.label);
+            close();
+          }}
+        >
+          {row.label}
+          <span className="menu-check">
+            {active?.kind === "range" && active.from === row.from && active.to === row.to
+              ? "✓"
+              : ""}
+          </span>
+        </button>
+      ))}
+    </>
+  );
 }
 
 /** Tags present in the current collection, most used first. */
@@ -80,12 +115,14 @@ export function registerLabels(): void {
     label: "stars",
     appliesTo: () => true,
     reads: "labels",
-    Menu: StarsMenu,
-    spec: numberRangeSpec((_entry, { labels }) => labels.stars, {
+    Menu: StarsMenuItems,
+    // Unrated is zero stars: "unrated" is the range [0, 1) and "★ and up"
+    // genuinely means rated at all.
+    spec: numberRangeSpec((_entry, { labels }) => labels.stars ?? 0, {
       unit: "★",
       scale: 1,
       integer: true,
-      ops: ["<=", "=", ">="],
+      ops: [">="],
     }),
   });
 

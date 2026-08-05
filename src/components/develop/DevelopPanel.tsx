@@ -218,16 +218,9 @@ export function DevelopPanel() {
           here rather than over the grid because it is a darkroom rule: the
           grid always lists every file the camera wrote. */}
       {hasStacks && (
-        <>
-          <button className="develop-toggle" onClick={toggleStacking}>
-            raw + JPG: {stacking ? "one photograph" : "two files"}
-          </button>
-          <p className="develop-note">
-            {stacking
-              ? "Stepping through the strip moves a shot at a time."
-              : "Every file the camera wrote, in the strip separately."}
-          </p>
-        </>
+        <button className="develop-toggle" onClick={toggleStacking}>
+          raw + JPG: {stacking ? "one photograph" : "two files"}
+        </button>
       )}
 
       <section className="develop-group">
@@ -273,22 +266,16 @@ export function DevelopPanel() {
             next. Every preset is only a set of slider positions, so the
             sliders below always show exactly what it did. */}
         {presets.length > 0 && (
-          <>
-            <button
-              className="develop-toggle"
-              onClick={() => {
-                const following = nextPreset(active, baseline, presets);
-                if (following) applyPreset(following.id);
-              }}
-            >
-              preset: {active ? active.label : `${baseline?.label ?? "flat"}, edited`}
-            </button>
-            <p className="develop-note">
-              {active
-                ? active.note
-                : `Click to put every slider back to ${baseline?.label ?? "flat"}.`}
-            </p>
-          </>
+          <button
+            className="develop-toggle"
+            title={active ? active.note : `put every slider back to ${baseline?.label ?? "flat"}`}
+            onClick={() => {
+              const following = nextPreset(active, baseline, presets);
+              if (following) applyPreset(following.id);
+            }}
+          >
+            preset: {active ? active.label : `${baseline?.label ?? "flat"}, edited`}
+          </button>
         )}
         {PARAM_SPECS.map((spec: ParamSpec) => {
           const value = settings.params[spec.key];
@@ -354,24 +341,20 @@ export function DevelopPanel() {
         </button>
         <button
           className={loupe ? "develop-toggle armed" : "develop-toggle"}
+          title="actual pixels of the marked region — drag the photograph to move it"
           onClick={toggleLoupe}
         >
-          {loupe ? "loupe: on, drag to move it" : "loupe: off"}
+          loupe: {loupe ? "on" : "off"}
         </button>
-        {loupe && (
-          <p className="develop-note">
-            True 100% pixels of one region, so focus can be judged without
-            leaving the fitted view. The rectangle on the photograph is where
-            it is looking; drag anywhere on the image to move it. Each frame
-            starts on its sharpest part, measured at full size.
-          </p>
-        )}
         {/* Facts over the photograph. Three states, so the useful middle one
             — say it on arrival, then get out of the way — is reachable. */}
-        <button className="develop-toggle" onClick={() => setCaption(nextCaption(caption))}>
+        <button
+          className="develop-toggle"
+          title={CAPTION_NOTES[caption]}
+          onClick={() => setCaption(nextCaption(caption))}
+        >
           caption: {CAPTION_LABELS[caption]}
         </button>
-        <p className="develop-note">{CAPTION_NOTES[caption]}</p>
       </section>
 
       <section className="develop-group">
@@ -380,10 +363,13 @@ export function DevelopPanel() {
             next. These replace what the photograph looks like, so only one can
             be on — which is why they share a control rather than having one
             switch each. */}
-        <button className="develop-toggle" onClick={() => setOverlay(nextOverlay(overlay))}>
+        <button
+          className="develop-toggle"
+          title={OVERLAY_NOTES[overlay]}
+          onClick={() => setOverlay(nextOverlay(overlay))}
+        >
           overlay: {OVERLAY_LABELS[overlay]}
         </button>
-        <p className="develop-note">{OVERLAY_NOTES[overlay]}</p>
         {/* Guides are geometry, not pixels: independent of the above, and free
             to leave on while you work. */}
         <button className="develop-toggle" onClick={toggleGridlines}>
