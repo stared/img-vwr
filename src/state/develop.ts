@@ -168,14 +168,20 @@ export interface Session {
   /** True while a detail crop is being developed. */
   detailing: boolean;
   /**
-   * The loupe's pixels, and the point they are centred on.
+   * The loupe's pixels, and the region of the image they cover.
    *
    * A third render slot rather than a reuse of `detail`, because the two ask
    * different questions of the same image at the same time: the detail crop
    * replaces what the main view is magnifying, and the loupe sits beside a
    * view that has not been magnified at all.
+   *
+   * The region travels with the pixels because the loupe moves faster than it
+   * can be rendered. Knowing where these pixels *are* is what lets the window
+   * slide across them while the next render is still coming — and what keeps
+   * that honest, since the pixels under the crosshair are then always the
+   * pixels of the place the crosshair is on.
    */
-  loupeFrame: DevelopFrame | null;
+  loupeFrame: { frame: DevelopFrame; region: RegionArg } | null;
   louping: boolean;
   /** The eyedropper is armed: the next click on the image sets the balance. */
   picking: boolean;
@@ -285,6 +291,16 @@ export interface DevelopStore {
   clearDetail: () => void;
   /** Develop the loupe's region at 1:1, `edge` device pixels across. */
   requestLoupe: (edge: number) => void;
+  /**
+   * The pixels behind a frame we were showing are gone; develop it again.
+   *
+   * Frames live in a bounded cache in Rust, so a token can in principle be
+   * evicted while its `<img>` is still on screen. That shows as a load
+   * failure and a black canvas that nothing would ever repair — the app
+   * believes it has a frame, and it does, just not one anybody can fetch. One
+   * render is a far better answer than a photograph that never comes back.
+   */
+  frameLost: () => void;
   /** Arm or disarm the eyedropper. */
   setPicking: (picking: boolean) => void;
   /** Set the white balance from a point in the image (normalised coords). */
@@ -404,6 +420,33 @@ export function loupeRegion(
   const height = Math.min(1, edge / Math.max(1, image.height));
   const inside = (v: number, span: number) => Math.min(1 - span, Math.max(0, v - span / 2));
   return { x: inside(at.x, width), y: inside(at.y, height), width, height };
+}
+
+/**
+ * How much wider than the window the loupe's pixels are developed.
+ *
+ * Dragging the loupe is a continuous gesture and a render is a round trip, so
+ * rendering exactly what fits the window would mean the pixels never catching
+ * up with the pointer. A margin turns most of that movement into no work at
+ * all: the window slides across pixels already in hand, at once, and a new
+ * render is only owed when it reaches the edge of them.
+ *
+ * The cost is quadratic and paid on every loupe render, so it is a margin and
+ * not a canvas — enough to swallow the small adjustments that make up most of
+ * aiming, not enough to make each render noticeably slower.
+ */
+export const LOUPE_MARGIN = 1.8;
+
+/** Whether pixels covering `have` can still fill a window over `want`. */
+export function loupeCovers(have: RegionArg, want: RegionArg): boolean {
+  // A pixel of slack: the regions are computed in floats from different sizes.
+  const EPS = 1e-6;
+  return (
+    want.x >= have.x - EPS &&
+    want.y >= have.y - EPS &&
+    want.x + want.width <= have.x + have.width + EPS &&
+    want.y + want.height <= have.y + have.height + EPS
+  );
 }
 
 /** How much two regions must differ before the crop is worth re-developing. */
@@ -651,6 +694,10 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (get().session?.dirty) void pump();
   }
 
+  /* The image whose frame has already been developed a second time after its
+   * pixels went missing; see `frameLost`. */
+  let refetched: string | null = null;
+
   /* Neighbours to develop ahead, nearest first, and whether the loop that
    * does it is running. Module state: it is a scheduling detail, and nothing
    * in the UI describes it. */
@@ -746,6 +793,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // are not where they were in the previous take. Back to "wherever this
       // frame is sharpest" until the user aims it themselves.
       if (get().loupeAt !== null) set({ loupeAt: null, loupeAimedByUser: false });
+      refetched = null;
 
       // Already developed while the user was looking at its neighbour: show
       // it now, with no round trip at all. Taken out of the cache on the way
@@ -941,14 +989,13 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
     toggleLoupe: () => set((s) => ({ loupe: !s.loupe })),
 
-    // Aiming clears the frame rather than keeping the old one: a loupe that
-    // goes on showing the eyes for a moment after you clicked the hand is
-    // saying something false about where you are looking.
-    aimLoupe: (at) => {
-      set({ loupeAt: at, loupeAimedByUser: at !== null });
-      const session = get().session;
-      if (session) set({ session: { ...session, loupeFrame: null } });
-    },
+    // The pixels are kept, not dropped. They came with the region they cover,
+    // so the window can be re-centred over them for nothing — which is what
+    // makes dragging the loupe continuous instead of a series of blanks. It
+    // stays honest because the pixels are placed by where they are, so what
+    // is under the crosshair is always that place; when the aim leaves them
+    // entirely the canvas asks for more.
+    aimLoupe: (at) => set({ loupeAt: at, loupeAimedByUser: at !== null }),
 
     caption: "briefly",
     setCaption: (caption) => set({ caption }),
@@ -973,12 +1020,14 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
       void aim
         .then(async (at) => {
-          const region = loupeRegion(at, image, edge);
-          const frame = await developRender(path, settings, edge, overlay, region);
-          return { at, frame };
+          // Wider than the window, so the next small movement costs nothing.
+          const wide = Math.round(edge * LOUPE_MARGIN);
+          const region = loupeRegion(at, image, wide);
+          const frame = await developRender(path, settings, wide, overlay, region);
+          return { at, frame, region };
         })
         .then(
-          ({ at, frame }) => {
+          ({ at, frame, region }) => {
             const now = get().session;
             // Only install it if it still describes the image on screen under
             // the settings that produced it.
@@ -989,13 +1038,24 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
             // Remember where the focus point put it, so the next render at
             // the same aim does not measure the frame again.
             if (get().loupeAt === null) set({ loupeAt: at });
-            set({ session: { ...now, loupeFrame: frame, louping: false } });
+            set({ session: { ...now, loupeFrame: { frame, region }, louping: false } });
           },
           () => {
             const now = get().session;
             if (now) set({ session: { ...now, louping: false } });
           },
         );
+    },
+
+    // Once per photograph, and no more. A second failure is not a lost frame,
+    // it is a broken pipeline, and re-rendering forever would turn a blank
+    // canvas into a blank canvas with the fans on.
+    frameLost: () => {
+      const session = get().session;
+      if (!session || session.frame === null || refetched === session.path) return;
+      refetched = session.path;
+      set({ session: { ...session, frame: null, dirty: true } });
+      void pump();
     },
 
     requestRender: (maxEdge) => {

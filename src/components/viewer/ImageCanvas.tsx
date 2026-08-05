@@ -5,6 +5,8 @@ import {
   cropFromDrag,
   displayedSize,
   FULL_CROP,
+  loupeCovers,
+  loupeRegion,
   needsDetail,
   needsDevelopedFrame,
   previewEdge,
@@ -61,6 +63,7 @@ export function ImageCanvas() {
   const requestDetail = useDevelopStore((s) => s.requestDetail);
   const clearDetail = useDevelopStore((s) => s.clearDetail);
   const pickWhiteBalanceAt = useDevelopStore((s) => s.pickWhiteBalanceAt);
+  const frameLost = useDevelopStore((s) => s.frameLost);
   const canvas = useAppStore((s) => s.viewerWin);
   const img = useAppStore((s) => s.viewerImg);
   const gridlines = useDevelopStore((s) => s.gridlines);
@@ -102,13 +105,29 @@ export function ImageCanvas() {
     }
   }, [entries, index]);
 
-  // The loupe's own render: a small region at true 1:1. Asked for whenever it
-  // has nothing to show — on opening it, on arriving at a new photograph, and
-  // after an edit invalidated the pixels it was showing.
-  const needsLoupe = loupe && session !== null && loupeFrame === null;
+  // The loupe's own render: a small region at true 1:1, developed wider than
+  // the window so the window can slide across it. Asked for when it has
+  // nothing to show — on opening it, on a new photograph, after an edit — and
+  // when the aim has been dragged past the edge of the pixels in hand.
+  //
+  // The effect re-runs when the pixels land, which is also what retries a
+  // request that arrived while one was already in flight: the loupe can be
+  // dragged far faster than it renders, and every intermediate position it
+  // passed through is work nobody wants done.
   const loupeAimed = useDevelopStore((s) => s.loupeAt);
   const aimedByUser = useDevelopStore((s) => s.loupeAimedByUser);
   const loupeSide = loupeEdge(canvas);
+  const loupeShown = session ? displayedSize(session.info, session.settings.crop) : null;
+  const loupeWindow =
+    loupeAimed && loupeShown
+      ? loupeRegion(loupeAimed, loupeShown, Math.round(loupeSide * devicePixelRatio))
+      : null;
+  const needsLoupe =
+    loupe &&
+    session !== null &&
+    (loupeFrame === null ||
+      loupeWindow === null ||
+      !loupeCovers(loupeFrame.region, loupeWindow));
   useEffect(() => {
     if (!needsLoupe) return;
     requestLoupe(Math.round(loupeSide * devicePixelRatio));
@@ -167,28 +186,28 @@ export function ImageCanvas() {
     }
   };
 
-  /**
-   * A click on the photograph, when one is being asked for: the eyedropper's
-   * neutral point, or where the loupe should look.
-   *
-   * The eyedropper wins while it is armed — it is a deliberate single action
-   * the user just started — and aiming the loupe is what a click means the
-   * rest of the time it is open.
-   */
-  const handleClick = (e: React.MouseEvent) => {
-    const wants = session?.picking === true || loupe;
-    if (!wants || !session || !view) return;
+  /** Where a pointer is, in the coordinates of the picture on screen (the
+   *  crop), or null when it is off the photograph. */
+  const shownPointOf = (e: { clientX: number; clientY: number; currentTarget: Element }) => {
+    if (!session || !view) return null;
     const rect = e.currentTarget.getBoundingClientRect();
     const size = displayedSize(session.info, session.settings.crop);
     const spanX = view.scale * size.width;
     const spanY = view.scale * size.height;
-    if (spanX <= 0 || spanY <= 0) return;
+    if (spanX <= 0 || spanY <= 0) return null;
     const x = (e.clientX - rect.left - view.tx) / spanX;
     const y = (e.clientY - rect.top - view.ty) / spanY;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  };
+
+  /** The eyedropper's neutral point: one deliberate click, one sample. */
+  const handleClick = (e: React.MouseEvent) => {
+    if (session?.picking !== true) return;
+    const at = shownPointOf(e);
+    if (!at) return;
     e.preventDefault();
-    if (session.picking) void pickWhiteBalanceAt(x, y);
-    else aimLoupe({ x, y });
+    void pickWhiteBalanceAt(at.x, at.y);
   };
 
   /**
@@ -207,24 +226,82 @@ export function ImageCanvas() {
     };
   };
 
+  /**
+   * Aiming the loupe: press to put it somewhere, drag to move it there.
+   *
+   * A drag rather than a click per look, because aiming a loupe is a search —
+   * you push it around until the thing you wanted to check is under it — and
+   * a click at a time makes that a guessing game with a round trip between
+   * each guess. Held pixels and a margin (see `LOUPE_MARGIN`) are what let
+   * the movement itself be immediate.
+   */
+  /* The drag itself lives in a ref and only its appearance in state. A
+   * handler has to know whether a drag is running *now*, and React state is
+   * whatever the last render saw — pointer events that arrive in one batch
+   * (a synthetic sequence, or moves the browser coalesced) would all read the
+   * value from before the drag began, and the release would be missed. */
+  const aimingRef = useRef(false);
+  const [aiming, setAiming] = useState(false);
+  const setAimingNow = (on: boolean) => {
+    aimingRef.current = on;
+    setAiming(on);
+  };
+  const aimsLoupe = loupe && !cropping && session?.picking !== true;
+
+  /* Pointer capture is what keeps a drag alive once it wanders off the canvas,
+   * and it is deliberately never load-bearing: the state is set first and
+   * released only if it was granted, so a drag still works where capture is
+   * refused rather than stranding the loupe following an unpressed pointer. */
+  const capture = (e: React.PointerEvent) => e.currentTarget.setPointerCapture(e.pointerId);
+  const release = (e: React.PointerEvent) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (aimsLoupe) {
+      const at = shownPointOf(e);
+      if (!at) return;
+      e.preventDefault();
+      setAimingNow(true);
+      aimLoupe(at);
+      capture(e);
+      return;
+    }
     if (!cropping) return;
     const at = pointOf(e);
     if (!at) return;
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
     setDrag({ from: at, to: at });
+    capture(e);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (aimingRef.current) {
+      // Only while the button is really down. Without this, a capture that was
+      // never granted leaves the loupe chasing the pointer for good.
+      if ((e.buttons & 1) === 0) {
+        setAimingNow(false);
+        return;
+      }
+      const at = shownPointOf(e);
+      if (at) aimLoupe(at);
+      return;
+    }
     if (!cropping || !drag) return;
     const at = pointOf(e);
     if (at) setDrag({ ...drag, to: at });
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (aimingRef.current) {
+      setAimingNow(false);
+      release(e);
+      return;
+    }
     if (!cropping || !drag) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    release(e);
     const moved = Math.abs(drag.to.x - drag.from.x) + Math.abs(drag.to.y - drag.from.y);
     // A click that went nowhere leaves crop mode instead of cropping to a
     // speck — the commonest way to say "never mind".
@@ -315,6 +392,11 @@ export function ImageCanvas() {
             height: shown ? shown.height : e.currentTarget.naturalHeight,
           })
         }
+        // A developed frame whose token has been evicted; ask for it again
+        // rather than leaving a black canvas nothing would ever repair.
+        onError={() => {
+          if (frame !== null) frameLost();
+        }}
         draggable={false}
         style={{
           transform: view
@@ -366,9 +448,30 @@ export function ImageCanvas() {
           rather than instead of it — so "is this sharp" and "is this a good
           picture" are one glance apart instead of a mode change apart. */}
       {loupe && (
-        <div className="viewer-loupe" style={{ width: loupeSide, height: loupeSide }}>
-          {loupeFrame ? (
-            <img src={developFrameUrl(loupeFrame.token)} alt="" draggable={false} />
+        <div
+          className={aiming ? "viewer-loupe aiming" : "viewer-loupe"}
+          style={{ width: loupeSide, height: loupeSide }}
+        >
+          {loupeFrame && loupeAimed && loupeShown ? (
+            /* Placed by where its pixels are rather than centred blindly: the
+               window slides across a patch wider than itself, so the point
+               under the crosshair is the point being aimed at even when the
+               render for this exact position is still coming. */
+            <img
+              src={developFrameUrl(loupeFrame.frame.token)}
+              alt=""
+              draggable={false}
+              style={{
+                width: (loupeFrame.region.width * loupeShown.width) / devicePixelRatio,
+                height: (loupeFrame.region.height * loupeShown.height) / devicePixelRatio,
+                left:
+                  loupeSide / 2 -
+                  ((loupeAimed.x - loupeFrame.region.x) * loupeShown.width) / devicePixelRatio,
+                top:
+                  loupeSide / 2 -
+                  ((loupeAimed.y - loupeFrame.region.y) * loupeShown.height) / devicePixelRatio,
+              }}
+            />
           ) : (
             <span className="viewer-loupe-waiting" />
           )}
@@ -376,6 +479,21 @@ export function ImageCanvas() {
               of the two is the interesting fact while stepping through. */}
           <span className="viewer-loupe-note">{aimedByUser ? "1:1" : "sharpest"}</span>
         </div>
+      )}
+      {/* And where on the photograph that is. Without it the inset is detail
+          from nowhere in particular: you can see that something is sharp
+          without being able to see what. It marks the window, not the wider
+          patch developed around it — the window is what you are looking at. */}
+      {loupe && loupeWindow !== null && loupeShown !== null && view !== null && (
+        <div
+          className={aiming ? "viewer-loupe-mark aiming" : "viewer-loupe-mark"}
+          style={{
+            left: view.tx + loupeWindow.x * loupeShown.width * view.scale,
+            top: view.ty + loupeWindow.y * loupeShown.height * view.scale,
+            width: loupeWindow.width * loupeShown.width * view.scale,
+            height: loupeWindow.height * loupeShown.height * view.scale,
+          }}
+        />
       )}
       <ImageCaption entry={entry} />
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.

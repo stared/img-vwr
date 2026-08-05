@@ -263,39 +263,132 @@ fn near_the_middle(w: usize, h: usize) -> Vec<f32> {
 /// a sky) scores below the map's floor everywhere and gets the centre, which
 /// is the honest answer to "where is the detail" when there is none.
 pub fn focus_point(src: &LinearImage) -> (f32, f32) {
-    const CENTRE: (f32, f32) = (0.5, 0.5);
-    /// Below this the map is reporting noise, not resolved detail.
-    const WORTH_POINTING_AT: f32 = 0.35;
+    focus_candidates(src, 1).first().copied().unwrap_or((0.5, 0.5))
+}
+
+/// Below this the map is reporting noise, not resolved detail.
+const WORTH_POINTING_AT: f32 = 0.35;
+
+/// The places in this frame worth *looking* at, best first.
+///
+/// A downscaled frame cannot answer "is this in focus". Defocus that spans
+/// thirty pixels on a 6000-pixel sensor spans two by the time the frame is
+/// 500 across, and two pixels of softness is what a downscale produces
+/// anyway — so at preview size an out-of-focus cable and an in-focus eyelash
+/// score the same, and lit grass beats both because grass is all edges. That
+/// is how the loupe ended up pointed at blurred foreground in a frame whose
+/// subject was perfectly sharp.
+///
+/// So this stops claiming to know. It nominates: a handful of places that
+/// have enough detail, enough light, and are not all the same place — and
+/// something that can see actual pixels decides between them. Held apart by
+/// [`APART`] because five candidates on one bright blob is one candidate.
+pub fn focus_candidates(src: &LinearImage, want: usize) -> Vec<(f32, f32)> {
+    /// How far apart candidates must be, as a share of the longer edge.
+    const APART: f32 = 0.18;
+    /// A candidate this much worse than the best is not a contender.
+    const RELATIVE_FLOOR: f32 = 0.4;
 
     let (w, h) = (src.width as usize, src.height as usize);
-    if w == 0 || h == 0 {
-        return CENTRE;
+    if w == 0 || h == 0 || want == 0 {
+        return Vec::new();
     }
     // Detail, discounted where there is not enough light for detail to be
     // what it looks like (`lit_enough`), and again towards the edges of the
     // frame (`near_the_middle`).
     let bias = near_the_middle(w, h);
-    let scored: Vec<f32> = sharpness_map(src)
+    let mut scored: Vec<f32> = sharpness_map(src)
         .into_iter()
         .zip(lit_enough(src))
         .zip(bias)
         .map(|((detail, lit), central)| detail * lit * central)
         .collect();
-    let Some((at, &best)) = scored
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-    else {
-        return CENTRE;
-    };
-    if best < WORTH_POINTING_AT {
-        return CENTRE;
+
+    let reach = ((w.max(h) as f32 * APART) as usize).max(1);
+    let mut out = Vec::with_capacity(want);
+    let mut best_score = 0.0f32;
+    while out.len() < want {
+        let Some((at, &score)) = scored
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        else {
+            break;
+        };
+        if score < WORTH_POINTING_AT || score < best_score * RELATIVE_FLOOR {
+            break;
+        }
+        best_score = best_score.max(score);
+        let (cx, cy) = (at % w, at / w);
+        // Pixel centres, so the point is inside the pixel it names.
+        out.push((
+            cx as f32 / w as f32 + 0.5 / w as f32,
+            cy as f32 / h as f32 + 0.5 / h as f32,
+        ));
+        // Take this whole neighbourhood out of the running, so the next
+        // candidate is somewhere else rather than the pixel next door.
+        for y in cy.saturating_sub(reach)..(cy + reach + 1).min(h) {
+            for x in cx.saturating_sub(reach)..(cx + reach + 1).min(w) {
+                scored[y * w + x] = 0.0;
+            }
+        }
     }
-    // Pixel centres, so the point is inside the pixel it names.
-    (
-        (at % w) as f32 / w as f32 + 0.5 / w as f32,
-        (at / w) as f32 / h as f32 + 0.5 / h as f32,
-    )
+    out
+}
+
+/// How much detail this patch of pixels actually resolves, on a scale that
+/// means the same thing from one patch to the next.
+///
+/// The companion to [`focus_candidates`], and deliberately not the same
+/// measurement. [`sharpness_map`] normalises against the frame's own best, so
+/// it can say "here rather than there" within one image and nothing at all
+/// about "this crop against that crop" — which is the only question that
+/// matters once the candidates have been rendered at their true size. This
+/// one is absolute: no normalising, no frame-relative anything.
+///
+/// The pre-blur is what makes it about focus rather than about grain. At 1:1
+/// on a high-ISO frame, sensor noise is the finest detail present by a wide
+/// margin, and it is uncorrelated between neighbouring pixels — three pixels
+/// of averaging cuts it by about three, while a real edge, which is a
+/// consistent step several pixels long, comes through nearly intact.
+pub fn resolved_detail(src: &LinearImage) -> f32 {
+    let w = src.width as usize;
+    let h = src.height as usize;
+    if w < 5 || h < 5 {
+        return 0.0;
+    }
+    let log_luma: Vec<f32> = src
+        .rgb
+        .par_chunks(3)
+        .map(|px| (luma(px[0], px[1], px[2]).max(0.0) + 1e-4).ln())
+        .collect();
+    let smooth = box_blur(&log_luma, w, h, 1);
+
+    let mut energy = vec![0f32; w * h];
+    energy.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+        if y < 2 || y + 2 >= h {
+            return;
+        }
+        for x in 2..w - 2 {
+            let c = smooth[y * w + x];
+            let lap = 4.0 * c
+                - smooth[y * w + x - 1]
+                - smooth[y * w + x + 1]
+                - smooth[(y - 1) * w + x]
+                - smooth[(y + 1) * w + x];
+            row[x] = lap.abs();
+        }
+    });
+
+    // Weighted by light for the same reason the map is: log luminance makes
+    // deep shadow enormously sensitive, and a black patch of grain is not a
+    // subject however finely it is resolved.
+    let lit = lit_enough(src);
+    let weighted: Vec<f32> = energy.into_iter().zip(lit).map(|(e, l)| e * l).collect();
+    // A high percentile rather than the mean: a sharp subject on a plain
+    // ground is mostly plain ground, and averaging would let a uniformly
+    // mediocre patch beat it.
+    high_percentile(&weighted, 0.98)
 }
 
 /// Composite the focus map over developed pixels, in place.
@@ -571,6 +664,129 @@ mod tests {
         }
         let (x, y) = focus_point(&LinearImage { width: w as u32, height: h as u32, rgb });
         assert!(x < 0.4 && y < 0.4, "stays on the corner subject: ({x}, {y})");
+    }
+
+    /// A patch of textured pixels, optionally softened, optionally grainy.
+    ///
+    /// `period` is the texture's scale in pixels: 2 is per-pixel, which is
+    /// what both a perfectly focused edge and sensor noise look like, and
+    /// what makes them so easy to confuse.
+    fn patch(edge: usize, level: f32, amplitude: f32, period: usize, blur: bool) -> LinearImage {
+        let mut rgb = vec![0f32; edge * edge * 3];
+        for y in 0..edge {
+            for x in 0..edge {
+                let step = (period / 2).max(1);
+                let on = (x / step + y / step).is_multiple_of(2);
+                let mut v = if on { level + amplitude } else { level - amplitude };
+                if blur {
+                    // Defocus: the neighbours bleed in, so the modulation
+                    // survives at a fraction of its amplitude.
+                    v = level + (v - level) * 0.15;
+                }
+                let o = (y * edge + x) * 3;
+                rgb[o] = v.max(0.0);
+                rgb[o + 1] = v.max(0.0);
+                rgb[o + 2] = v.max(0.0);
+            }
+        }
+        LinearImage { width: edge as u32, height: edge as u32, rgb }
+    }
+
+    #[test]
+    fn resolved_detail_tells_a_focused_patch_from_a_soft_one() {
+        let sharp = resolved_detail(&patch(64, 0.3, 0.12, 2, false));
+        let soft = resolved_detail(&patch(64, 0.3, 0.12, 2, true));
+        assert!(sharp > soft * 2.0, "sharp {sharp} against soft {soft}");
+    }
+
+    #[test]
+    fn resolved_detail_is_comparable_between_patches_rather_than_self_relative() {
+        // This is the whole reason it exists beside `sharpness_map`. That one
+        // normalises against the frame's own best, so a soft patch measured
+        // alone scores as highly as a sharp one measured alone — useless for
+        // choosing between candidates that were rendered separately.
+        let sharp = patch(64, 0.3, 0.12, 2, false);
+        let soft = patch(64, 0.3, 0.12, 2, true);
+        let peak = |m: Vec<f32>| m.into_iter().fold(0f32, f32::max);
+        assert!(
+            (peak(sharpness_map(&sharp)) - peak(sharpness_map(&soft))).abs() < 0.01,
+            "the normalised map cannot tell these apart, which is the point"
+        );
+        assert!(resolved_detail(&sharp) > resolved_detail(&soft));
+    }
+
+    #[test]
+    fn grain_does_not_read_as_focus() {
+        // At 1:1 on a high-ISO frame, noise is the finest thing in the picture.
+        // A real edge is a consistent step several pixels long; grain flips
+        // every pixel, so a little averaging separates them.
+        let mut grainy = patch(64, 0.3, 0.10, 2, false);
+        // Break the checkerboard's coherence into something noise-like: every
+        // pixel independent of the last.
+        let mut seed = 12345u32;
+        for px in grainy.rgb.chunks_mut(3) {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let v = 0.3 + if seed >> 31 == 1 { 0.10 } else { -0.10 };
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
+        }
+        // A subject with structure: broad bars, the same amplitude.
+        let structured = patch(64, 0.3, 0.10, 8, false);
+        assert!(
+            resolved_detail(&structured) > resolved_detail(&grainy),
+            "structure {} should beat grain {}",
+            resolved_detail(&structured),
+            resolved_detail(&grainy)
+        );
+    }
+
+    #[test]
+    fn candidates_are_different_places_in_the_frame() {
+        // Two detailed patches, far apart. Nominating the second-best pixel of
+        // the first patch would waste the second look entirely.
+        let (w, h) = (128usize, 128usize);
+        let mut rgb = vec![0.3f32; w * h * 3];
+        let mut textured = |x0: usize, y0: usize| {
+            for y in y0..y0 + 20 {
+                for x in x0..x0 + 20 {
+                    let v = if (x + y) % 2 == 0 { 0.5 } else { 0.12 };
+                    let o = (y * w + x) * 3;
+                    rgb[o] = v;
+                    rgb[o + 1] = v;
+                    rgb[o + 2] = v;
+                }
+            }
+        };
+        textured(14, 14);
+        textured(90, 90);
+        let found = focus_candidates(&LinearImage { width: w as u32, height: h as u32, rgb }, 4);
+        assert!(found.len() >= 2, "found {found:?}");
+        for (i, a) in found.iter().enumerate() {
+            for b in found.iter().skip(i + 1) {
+                let apart = (a.0 - b.0).abs().max((a.1 - b.1).abs());
+                assert!(apart > 0.15, "{a:?} and {b:?} are the same place");
+            }
+        }
+    }
+
+    #[test]
+    fn a_frame_with_one_subject_nominates_one_candidate() {
+        // Nothing else in the frame has a claim, so there is nothing to
+        // compare against and no second render worth paying for.
+        let (w, h) = (96usize, 96usize);
+        let mut rgb = vec![0.3f32; w * h * 3];
+        for y in 40..60 {
+            for x in 40..60 {
+                let v = if (x + y) % 2 == 0 { 0.55 } else { 0.1 };
+                let o = (y * w + x) * 3;
+                rgb[o] = v;
+                rgb[o + 1] = v;
+                rgb[o + 2] = v;
+            }
+        }
+        let found = focus_candidates(&LinearImage { width: w as u32, height: h as u32, rgb }, 5);
+        assert_eq!(found.len(), 1, "found {found:?}");
     }
 
     #[test]

@@ -12,8 +12,8 @@ pub mod pipeline;
 pub mod presets;
 
 pub use analysis::{
-    auto_exposure, composite_clipping, composite_sharpness, focus_point, histogram,
-    sharpness_map, Histogram,
+    auto_exposure, composite_clipping, composite_sharpness, focus_candidates, focus_point,
+    histogram, resolved_detail, sharpness_map, Histogram,
 };
 pub use crop::Crop;
 pub use params::{DevelopParams, DevelopSettings, Overlay};
@@ -28,11 +28,6 @@ pub struct Developed {
     pub histogram: Histogram,
 }
 
-/// Render an opened image end to end: plugin render → develop → overlay →
-/// histogram. This is the single call the app makes per interaction.
-///
-/// The histogram is measured *before* an overlay is composited, so it keeps
-/// describing the photograph rather than the annotation drawn over it.
 /// How big a patch to ask for, so that the crop taken out of it lands at
 /// `max_edge`.
 ///
@@ -49,14 +44,18 @@ fn patch_edge(crop: &crop::Crop, source: Region, max_edge: u32) -> u32 {
     scaled.ceil().clamp(1.0, u32::MAX as f32) as u32
 }
 
-pub fn render(
+/// Scene-linear pixels for a region of the image the user is looking at.
+///
+/// Split out from [`render`] because measuring and displaying want the same
+/// pixels but not the same treatment: anything that judges a photograph —
+/// the exposure it wants, where it is sharp — has to read the light that was
+/// recorded, not the eight-bit rendering of it that a tone curve produced.
+pub fn render_linear(
     scene: &dyn SceneImage,
     settings: &DevelopSettings,
     max_edge: u32,
-    overlay: Overlay,
     region: Region,
-) -> Result<Developed, SceneError> {
-    let settings = settings.clamped();
+) -> Result<imgvwr_core::LinearImage, SceneError> {
     let native = scene.native_size();
     let aspect = if native.1 == 0 {
         1.0
@@ -69,35 +68,49 @@ pub fn render(
     // compose into one smaller crop, rather than rendering the whole crop and
     // throwing most of it away.
     let crop = settings.crop.narrowed(region, aspect);
-    let linear = if crop.is_full() {
-        scene.render(RenderRequest {
+    if crop.is_full() {
+        return scene.render(RenderRequest {
             max_edge,
             white_balance: settings.white_balance,
             region,
-        })?
-    } else {
-        let source = crop.source_region(aspect);
-        let patch = scene.render(RenderRequest {
-            // A rotated crop needs a patch bigger than itself, so the patch is
-            // asked for at whatever resolution leaves the *crop* at max_edge.
-            max_edge: patch_edge(&crop, source, max_edge),
-            white_balance: settings.white_balance,
-            region: source,
-        })?;
-        if crop.is_axis_aligned() {
-            // Nothing to turn: the plugin already rendered exactly the
-            // rectangle, and resampling it would only soften it.
-            patch
-        } else {
-            crop::resample(
-                &patch,
-                source,
-                &crop,
-                aspect,
-                crop.output_size(native, max_edge),
-            )
-        }
-    };
+        });
+    }
+    let source = crop.source_region(aspect);
+    let patch = scene.render(RenderRequest {
+        // A rotated crop needs a patch bigger than itself, so the patch is
+        // asked for at whatever resolution leaves the *crop* at max_edge.
+        max_edge: patch_edge(&crop, source, max_edge),
+        white_balance: settings.white_balance,
+        region: source,
+    })?;
+    if crop.is_axis_aligned() {
+        // Nothing to turn: the plugin already rendered exactly the rectangle,
+        // and resampling it would only soften it.
+        return Ok(patch);
+    }
+    Ok(crop::resample(
+        &patch,
+        source,
+        &crop,
+        aspect,
+        crop.output_size(native, max_edge),
+    ))
+}
+
+/// Render an opened image end to end: plugin render → develop → overlay →
+/// histogram. This is the single call the app makes per interaction.
+///
+/// The histogram is measured *before* an overlay is composited, so it keeps
+/// describing the photograph rather than the annotation drawn over it.
+pub fn render(
+    scene: &dyn SceneImage,
+    settings: &DevelopSettings,
+    max_edge: u32,
+    overlay: Overlay,
+    region: Region,
+) -> Result<Developed, SceneError> {
+    let settings = settings.clamped();
+    let linear = render_linear(scene, &settings, max_edge, region)?;
 
     let mut image = develop(&linear, &settings.params);
     let hist = histogram(&image);

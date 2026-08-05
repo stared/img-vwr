@@ -356,13 +356,14 @@ export function DevelopPanel() {
           className={loupe ? "develop-toggle armed" : "develop-toggle"}
           onClick={toggleLoupe}
         >
-          {loupe ? "loupe: on, click to aim it" : "loupe: off"}
+          {loupe ? "loupe: on, drag to move it" : "loupe: off"}
         </button>
         {loupe && (
           <p className="develop-note">
             True 100% pixels of one region, so focus can be judged without
-            leaving the fitted view. Points at the sharpest part of each frame
-            until you click somewhere else.
+            leaving the fitted view. The rectangle on the photograph is where
+            it is looking; drag anywhere on the image to move it. Each frame
+            starts on its sharpest part, measured at full size.
           </p>
         )}
         {/* Facts over the photograph. Three states, so the useful middle one

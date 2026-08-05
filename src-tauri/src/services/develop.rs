@@ -21,14 +21,21 @@ use serde::Serialize;
 /// hundreds of megabytes of decoded sensor data.
 const OPEN_SCENES: usize = 3;
 
-/// How many encoded previews to keep addressable by token.
+/// How much encoded preview to keep addressable by token.
 ///
-/// Each is one in-flight `<img src>`, a few hundred kilobytes of JPEG. Most
-/// are the tail of a slider drag, but the neighbours the viewer develops ahead
-/// are in here too — and those have to outlive a drag on the *current* image,
-/// or stepping to the next frame would find its token already evicted and
-/// develop it again from scratch, which is the delay they exist to remove.
-const CACHED_FRAMES: usize = 16;
+/// Budgeted in bytes rather than in slots, because the frames differ in size
+/// by two orders of magnitude and a slot count silently means different things
+/// to each. Dragging the loupe produces a stream of twenty-kilobyte squares;
+/// under a sixteen-slot rule that stream evicted the multi-hundred-kilobyte
+/// preview the canvas was *currently showing*, and the photograph went black
+/// behind a working loupe. Memory is the thing actually being rationed, so it
+/// is the thing to count: a burst of small frames now costs small frames'
+/// worth of room.
+const FRAME_BUDGET: usize = 32 * 1024 * 1024;
+
+/// Kept regardless of the budget, so one enormous frame cannot leave the ring
+/// empty and every neighbour needing to be developed again.
+const FRAMES_KEPT: usize = 4;
 
 /// Preview JPEG quality. High enough that the user is judging their photo
 /// rather than the codec, low enough to encode in a few milliseconds.
@@ -211,30 +218,76 @@ impl DevelopService {
 
     /// Where this frame is sharpest, in the coordinates of the cropped image.
     ///
-    /// Measured small, like `auto_exposure`: the question is which *region*
-    /// resolves detail, and a few hundred pixels answer it as well as twenty
-    /// million. Deliberately measured on the crop rather than the sensor, so
-    /// the answer is a point in the picture the user is looking at.
+    /// In two passes, because one cannot work. A downscaled frame is where the
+    /// candidates are (which parts have detail, light, and a plausible claim
+    /// to being the subject) and it is emphatically not where the answer is:
+    /// at 500 pixels across, a cable thirty pixels out of focus looks exactly
+    /// as resolved as an eyelash, because a downscale softens everything by
+    /// about that much anyway. So each candidate is then rendered at its true
+    /// size — a small patch, the size of the loupe itself — and the pixels are
+    /// asked directly. Defocus at 1:1 is unmistakable.
+    ///
+    /// The second pass costs a handful of small region renders on an image
+    /// that is already open and decoded, against the alternative of pointing
+    /// the loupe confidently at blurred foreground.
     pub fn focus_point(&self, path: &str, settings: &DevelopSettings) -> Result<[f32; 2], String> {
+        /// Wide enough to nominate regions; see above for why not to trust it.
         const MEASURE_EDGE: u32 = 500;
+        /// Native pixels across each probe — the loupe's own order of size, so
+        /// what is measured is what the user will be shown.
+        const PROBE_EDGE: u32 = 224;
+        /// How many places are worth the second look.
+        const CANDIDATES: usize = 5;
+
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
         let settings = settings.clamped();
-        let native = entry.scene.native_size();
-        let aspect = if native.1 == 0 {
-            1.0
-        } else {
-            native.0 as f32 / native.1 as f32
+        let coarse = imgvwr_develop::render_linear(
+            entry.scene.as_ref(),
+            &settings,
+            MEASURE_EDGE,
+            Region::FULL,
+        )
+        .map_err(|e| e.to_string())?;
+        let candidates = imgvwr_develop::focus_candidates(&coarse, CANDIDATES);
+        let Some(&first) = candidates.first() else {
+            return Ok([0.5, 0.5]);
         };
-        let linear = entry
-            .scene
-            .render(imgvwr_core::RenderRequest {
-                max_edge: MEASURE_EDGE,
-                white_balance: settings.white_balance,
-                region: settings.crop.source_region(aspect),
+
+        // Nothing to look closer at: the coarse pass already saw this image at
+        // very nearly its own size, so a probe would render the same pixels.
+        let displayed = settings.crop.output_size(entry.scene.native_size(), u32::MAX);
+        let longest = displayed.0.max(displayed.1);
+        if longest <= MEASURE_EDGE * 2 || candidates.len() == 1 {
+            return Ok([first.0, first.1]);
+        }
+
+        let best = candidates
+            .iter()
+            .map(|&(x, y)| {
+                let span_x = (PROBE_EDGE as f32 / displayed.0.max(1) as f32).min(1.0);
+                let span_y = (PROBE_EDGE as f32 / displayed.1.max(1) as f32).min(1.0);
+                let region = Region {
+                    x: (x - span_x / 2.0).clamp(0.0, 1.0 - span_x),
+                    y: (y - span_y / 2.0).clamp(0.0, 1.0 - span_y),
+                    width: span_x,
+                    height: span_y,
+                };
+                let detail = imgvwr_develop::render_linear(
+                    entry.scene.as_ref(),
+                    &settings,
+                    PROBE_EDGE,
+                    region,
+                )
+                .map(|patch| imgvwr_develop::resolved_detail(&patch))
+                // A probe that would not render says nothing rather than
+                // disqualifying a candidate the coarse pass liked.
+                .unwrap_or(f32::NEG_INFINITY);
+                ((x, y), detail)
             })
-            .map_err(|e| e.to_string())?;
-        let (x, y) = imgvwr_develop::focus_point(&linear);
-        Ok([x, y])
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(at, _)| at)
+            .unwrap_or(first);
+        Ok([best.0, best.1])
     }
 
     /// Render one preview frame and keep its encoded bytes addressable.
@@ -256,9 +309,7 @@ impl DevelopService {
         {
             let mut frames = self.frames.lock().unwrap();
             frames.push_back((token, jpeg));
-            while frames.len() > CACHED_FRAMES {
-                frames.pop_front();
-            }
+            evict_past(&mut frames, FRAME_BUDGET);
         }
 
         let region = region.clamped();
@@ -507,6 +558,22 @@ pub fn thumbnail_via_develop(
         .encode_simple(false, imgvwr_core::thumbs::THUMB_WEBP_QUALITY)
         .map(|mem| mem.to_vec())
         .map_err(|e| format!("webp encode failed: {e:?}"))
+}
+
+/// Drop the oldest frames until what is held fits `budget`, never going below
+/// [`FRAMES_KEPT`].
+///
+/// Oldest-first because a token's usefulness really is its age: the webview
+/// fetches a frame once, right after being handed the token, and everything
+/// still on screen was handed out recently.
+fn evict_past(frames: &mut VecDeque<(u64, Vec<u8>)>, budget: usize) {
+    let mut held: usize = frames.iter().map(|(_, bytes)| bytes.len()).sum();
+    while held > budget && frames.len() > FRAMES_KEPT {
+        match frames.pop_front() {
+            Some((_, dropped)) => held -= dropped.len(),
+            None => break,
+        }
+    }
 }
 
 fn encode_jpeg(img: &imgvwr_core::DecodedImage, quality: u8) -> Result<Vec<u8>, String> {
@@ -870,29 +937,68 @@ mod tests {
         let path = sample(dir.path(), "f.png");
         let path = path.to_str().unwrap();
 
+        // Small frames, of which a great many fit in the budget: a drag must
+        // not cost the caller the frame it is showing.
         let mut tokens = Vec::new();
-        for i in 0..CACHED_FRAMES + 3 {
-            let frame = svc
-                .render(
-                    path,
-                    &DevelopSettings {
-                        white_balance: WhiteBalance::D65,
-                        params: DevelopParams {
-                            exposure: i as f32 * 0.1,
-                            ..Default::default()
-                        },
-                        basis: imgvwr_develop::presets::NONE.to_owned(),
-                        crop: imgvwr_develop::Crop::FULL,
-                    },
-                    30,
-                    Overlay::None,
-                    Region::FULL,
-                )
-                .unwrap();
-            tokens.push(frame.token);
+        for i in 0..200 {
+            tokens.push(render_at(&svc, path, i, 30).token);
         }
-        assert!(svc.frame(tokens[0]).is_none(), "oldest evicted");
+        assert!(svc.frame(tokens[0]).is_some(), "a drag's worth all still here");
         assert!(svc.frame(*tokens.last().unwrap()).is_some(), "newest kept");
+    }
+
+    #[test]
+    fn a_stream_of_small_frames_does_not_evict_the_one_on_screen() {
+        // The loupe, dragged. It renders a small square per movement, and the
+        // photograph behind it is one large frame that must survive all of
+        // them — counting slots rather than bytes is what broke this, and the
+        // canvas went black under a working loupe.
+        let (dir, svc) = service();
+        let path = sample(dir.path(), "f.png");
+        let path = path.to_str().unwrap();
+
+        let showing = render_at(&svc, path, 0, 400).token;
+        for i in 1..200 {
+            render_at(&svc, path, i, 24);
+        }
+        assert!(svc.frame(showing).is_some(), "the frame on screen survived the drag");
+    }
+
+    #[test]
+    fn the_budget_bounds_what_is_held_and_the_floor_bounds_the_budget() {
+        let mut frames: VecDeque<(u64, Vec<u8>)> =
+            (0..20).map(|i| (i, vec![0u8; 100])).collect();
+        evict_past(&mut frames, 550);
+        let held: usize = frames.iter().map(|(_, b)| b.len()).sum();
+        assert!(held <= 550, "held {held}");
+        assert_eq!(frames.back().map(|(t, _)| *t), Some(19), "newest kept");
+
+        // One frame larger than the whole budget must not empty the ring: an
+        // empty ring means every warmed neighbour developed again from scratch.
+        let mut huge: VecDeque<(u64, Vec<u8>)> =
+            (0..6).map(|i| (i, vec![0u8; 10_000])).collect();
+        evict_past(&mut huge, 1);
+        assert_eq!(huge.len(), FRAMES_KEPT);
+    }
+
+    /// One render, distinguishable from the last by its exposure.
+    fn render_at(svc: &DevelopService, path: &str, nth: usize, max_edge: u32) -> DevelopFrame {
+        svc.render(
+            path,
+            &DevelopSettings {
+                white_balance: WhiteBalance::D65,
+                params: DevelopParams {
+                    exposure: nth as f32 * 0.01,
+                    ..Default::default()
+                },
+                basis: imgvwr_develop::presets::NONE.to_owned(),
+                crop: imgvwr_develop::Crop::FULL,
+            },
+            max_edge,
+            Overlay::None,
+            Region::FULL,
+        )
+        .unwrap()
     }
 
     #[test]

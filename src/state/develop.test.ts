@@ -8,6 +8,8 @@ import {
   FULL_CROP,
   isCropped,
   isNeutral,
+  loupeCovers,
+  LOUPE_MARGIN,
   loupeRegion,
   nextCaption,
   pastedSettings,
@@ -389,6 +391,40 @@ describe("loupeRegion", () => {
   it("shows the whole of an image smaller than the loupe", () => {
     const tiny = loupeRegion({ x: 0.5, y: 0.5 }, { width: 100, height: 80 }, 440);
     expect(tiny).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  });
+});
+
+describe("the loupe's margin is what makes moving it smooth", () => {
+  const frame = { width: 6048, height: 4032 };
+  const WINDOW = 440;
+  /** What is developed when the loupe is aimed at `at`. */
+  const developed = (at: { x: number; y: number }) =>
+    loupeRegion(at, frame, Math.round(WINDOW * LOUPE_MARGIN));
+  /** What the window needs to fill itself, aimed at `at`. */
+  const wanted = (at: { x: number; y: number }) => loupeRegion(at, frame, WINDOW);
+
+  it("develops more than the window shows", () => {
+    expect(developed({ x: 0.5, y: 0.5 }).width).toBeGreaterThan(wanted({ x: 0.5, y: 0.5 }).width);
+  });
+
+  it("covers the small movements that aiming is mostly made of", () => {
+    const have = developed({ x: 0.5, y: 0.5 });
+    // A nudge of a third of the window: no render, the window just slides.
+    const nudge = wanted({ x: 0.5 + WINDOW / 3 / frame.width, y: 0.5 });
+    expect(loupeCovers(have, nudge)).toBe(true);
+  });
+
+  it("asks for more once the aim has left the pixels in hand", () => {
+    const have = developed({ x: 0.5, y: 0.5 });
+    expect(loupeCovers(have, wanted({ x: 0.75, y: 0.5 }))).toBe(false);
+    expect(loupeCovers(have, wanted({ x: 0.5, y: 0.9 }))).toBe(false);
+  });
+
+  it("counts a window at the frame's edge as covered", () => {
+    // Both regions clamp to the same corner, so the pixels really are there —
+    // and an off-by-a-float here would re-render on every drag in the corner.
+    expect(loupeCovers(developed({ x: 0, y: 0 }), wanted({ x: 0, y: 0 }))).toBe(true);
+    expect(loupeCovers(developed({ x: 1, y: 1 }), wanted({ x: 1, y: 1 }))).toBe(true);
   });
 });
 
