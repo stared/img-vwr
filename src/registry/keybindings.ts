@@ -53,6 +53,9 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["f", "filter.find"],
   ["mod+f", "filter.find"],
   ["mod+a", "selection.all"],
+  // Copy means the files themselves; with text selected in the window the
+  // command declines and the chord falls through to the ordinary text copy.
+  ["mod+c", "image.copy"],
   // As in the Finder: deleting takes a modifier, and never a bare key — the
   // gallery's bare keys rate photographs, and one slip away from a rating
   // should not be a file in the Trash.

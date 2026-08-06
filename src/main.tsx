@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 
 import App from "./App";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
+import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
@@ -37,6 +38,9 @@ registerSimilarity();
 registerLabels();
 registerDevelopCommands();
 // Last, so the one destructive action sits at the bottom of the image menu.
+// Copy before Trash: the menu lists them in registration order, and the
+// destructive one belongs at the end.
+registerCopyCommands();
 registerTrashCommands();
 registerSortCommands();
 registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });

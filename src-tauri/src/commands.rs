@@ -172,6 +172,16 @@ pub async fn delete_files(paths: Vec<String>) -> Result<TrashOutcome, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Put the selected photographs on the system clipboard as file references,
+/// so a paste elsewhere — the Finder, a chat — receives the files themselves.
+#[tauri::command]
+#[specta::specta]
+pub async fn copy_files(paths: Vec<String>) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::services::files::to_clipboard(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Begin a new collection, invalidating everything in flight for the old one.
 ///
 /// Also stops watching: every scope change goes through here, and a folder

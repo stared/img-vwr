@@ -1,6 +1,6 @@
-//! Removing files — the app's only destructive path over the user's photos.
-//!
-//! Two decisions shape it.
+//! The user's files, handed to the platform: to the Trash, or onto the
+//! clipboard. Deleting is the app's only destructive path over the photos,
+//! and two decisions shape it.
 //!
 //! **The Trash, never `unlink`.** Everything else the app writes is app-local
 //! and reversible: edits and labels live in its own database and the original
@@ -84,6 +84,48 @@ fn trash_context() -> trash::TrashContext {
         context.set_delete_method(DeleteMethod::NsFileManager);
     }
     context
+}
+
+/// Put files on the system clipboard, as the files themselves.
+///
+/// File URLs on the general pasteboard are what "copied files" means to the
+/// rest of the desktop: pasting in the Finder copies them, pasting into a
+/// chat attaches them. Text paths would paste as a string; this pastes as
+/// the photographs.
+///
+/// All or nothing — a pasteboard holds one thing, so there is no per-file
+/// verdict to report the way the Trash has. Missing files are refused before
+/// anything is written, because a paste that silently dropped half the
+/// photographs would be worse than a copy that said no.
+#[cfg(target_os = "macos")]
+pub fn to_clipboard(paths: &[String]) -> Result<u32, String> {
+    use objc2::runtime::ProtocolObject;
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSArray, NSString, NSURL};
+
+    if paths.is_empty() {
+        return Err("nothing to copy".to_string());
+    }
+    if let Some(gone) = paths.iter().find(|p| !Path::new(p).is_file()) {
+        return Err(format!("not a file: {gone}"));
+    }
+    let urls: Vec<_> = paths
+        .iter()
+        .map(|p| ProtocolObject::from_retained(NSURL::fileURLWithPath(&NSString::from_str(p))))
+        .collect();
+    let objects = NSArray::from_retained_slice(&urls);
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
+    if pasteboard.writeObjects(&objects) {
+        Ok(paths.len() as u32)
+    } else {
+        Err("the pasteboard did not take the files".to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn to_clipboard(_paths: &[String]) -> Result<u32, String> {
+    Err("copying files is not implemented for this platform yet".to_string())
 }
 
 #[cfg(test)]

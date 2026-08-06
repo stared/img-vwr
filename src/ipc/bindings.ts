@@ -60,6 +60,18 @@ async deleteFiles(paths: string[]) : Promise<Result<TrashOutcome, string>> {
 }
 },
 /**
+ * Put the selected photographs on the system clipboard as file references,
+ * so a paste elsewhere — the Finder, a chat — receives the files themselves.
+ */
+async copyFiles(paths: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_files", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Begin a new collection, invalidating everything in flight for the old one.
  * 
  * Also stops watching: every scope change goes through here, and a folder

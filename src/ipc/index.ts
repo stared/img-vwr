@@ -75,6 +75,12 @@ export async function deleteFiles(paths: string[]): Promise<TrashOutcome> {
   return unwrap(await commands.deleteFiles(paths));
 }
 
+/** Put files on the system clipboard as file references — what a paste in
+ * the Finder or a chat receives as the files themselves. */
+export async function copyFiles(paths: string[]): Promise<number> {
+  return unwrap(await commands.copyFiles(paths));
+}
+
 export async function newEpoch(): Promise<number> {
   return commands.newEpoch();
 }
