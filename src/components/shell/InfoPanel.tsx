@@ -4,7 +4,7 @@ import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
 import { formatBytes } from "../../state/stats";
-import { useAppStore, useSelectedEntry } from "../../state/store";
+import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
 /**
  * Per-image inspector: file facts, EXIF, labels, then pixel statistics —
@@ -40,9 +40,13 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  */
 function Rating({ path, stars }: { path: string; stars: number | null }) {
   // This one photograph, not the selection: the panel is describing a single
-  // image, and its controls should change what it is describing.
+  // image, and its controls should change what it is describing. But one
+  // photograph can be two files — a collapsed raw+JPEG pair is rated whole.
   const rate = async (next: number | null) => {
-    useAppStore.getState().labelsApplied(await labelsSetStars([path], next));
+    const s = useAppStore.getState();
+    const entry = s.entries.find((e) => e.path === path);
+    const files = entry ? filesBehind(s, [entry]).map((f) => f.path) : [path];
+    s.labelsApplied(await labelsSetStars(files, next));
   };
   return (
     <div className="info-fact">

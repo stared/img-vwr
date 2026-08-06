@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../ipc";
-import { initialState } from "../state/store";
-import { filesBehind, trashPrompt } from "./trash";
+import { filesBehind, initialState } from "../state/store";
+import { trashPrompt } from "./trash";
 
 const file = (name: string): FileEntry => ({
   path: `/p/${name}`,

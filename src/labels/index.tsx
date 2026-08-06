@@ -5,7 +5,7 @@ import { registerCommand, type CommandContext } from "../registry/commands";
 import { registerFilterField } from "../registry/filters";
 import { registerSort } from "../registry/sorts";
 import { numberRangeSpec } from "../state/query";
-import { useAppStore, visibleOf } from "../state/store";
+import { chosenEntries, filesBehind, useAppStore } from "../state/store";
 
 /**
  * Labels module — the first WRITE path: user-assigned stars and tags,
@@ -18,34 +18,37 @@ import { useAppStore, visibleOf } from "../state/store";
  */
 
 /**
- * What the keys act on: every selected photograph, in the query-applied view.
+ * What the keys act on: every selected photograph, in the query-applied view,
+ * down to the files behind it — a stacked raw+JPEG pair is one photograph,
+ * and its rating belongs to both files, not to whichever one the stack
+ * happened to be showing.
  *
  * A label is exactly the kind of thing there is no reason to apply one at a
  * time — picking out the ten frames worth keeping and pressing 3 once is the
  * point of being able to select ten frames.
  */
-function selectedEntries(): FileEntry[] {
+function labelTargets(): { photographs: FileEntry[]; files: FileEntry[] } {
   const s = useAppStore.getState();
-  const picked = new Set(s.selection);
-  return visibleOf(s, s.query).filter((e) => picked.has(e.path));
+  const photographs = chosenEntries(s);
+  return { photographs, files: filesBehind(s, photographs) };
 }
 
 async function rateSelected(stars: number | null): Promise<void> {
-  const entries = selectedEntries();
-  if (entries.length === 0) return;
+  const { photographs, files } = labelTargets();
+  if (photographs.length === 0) return;
   const { viewMode, labelsApplied, navigate } = useAppStore.getState();
-  labelsApplied(await labelsSetStars(entries.map((e) => e.path), stars));
+  labelsApplied(await labelsSetStars(files.map((e) => e.path), stars));
   // Culling rhythm: rating in the viewer moves on to the next image. Only
   // when one frame was rated — a rating applied to a whole selection is not
   // a step through a sequence, and moving would leave the user somewhere
   // they did not ask to be.
-  if (viewMode === "viewer" && stars !== null && entries.length === 1) navigate(1);
+  if (viewMode === "viewer" && stars !== null && photographs.length === 1) navigate(1);
 }
 
 async function tagSelected(tag: string): Promise<void> {
-  const entries = selectedEntries();
-  if (entries.length === 0) return;
-  const labels = await labelsToggleTag(entries.map((e) => e.path), tag);
+  const { photographs, files } = labelTargets();
+  if (photographs.length === 0) return;
+  const labels = await labelsToggleTag(files.map((e) => e.path), tag);
   useAppStore.getState().labelsApplied(labels);
 }
 

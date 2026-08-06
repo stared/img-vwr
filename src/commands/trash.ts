@@ -2,8 +2,7 @@ import { confirm, message } from "@tauri-apps/plugin-dialog";
 
 import { deleteFiles, type FileEntry } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
-import { siblingsOf } from "../state/stacks";
-import { stacksCollapse, useAppStore, visibleOf, type AppState } from "../state/store";
+import { chosenEntries, filesBehind, useAppStore } from "../state/store";
 
 /**
  * Deleting — the only thing the app does that reaches the user's photographs.
@@ -23,31 +22,6 @@ import { stacksCollapse, useAppStore, visibleOf, type AppState } from "../state/
 
 /** Up to this many names in the confirmation; past it, a count. */
 const NAMED = 8;
-
-/** The photographs the action applies to, in the order they are on screen. */
-export function chosenEntries(state: AppState): FileEntry[] {
-  const picked = new Set(state.selection);
-  return visibleOf(state, state.query).filter((e) => picked.has(e.path));
-}
-
-/**
- * The files behind those photographs.
- *
- * Where a raw file and its JPEG are collapsed into one photograph, deleting
- * "it" means both: the user is looking at a single frame, and leaving half of
- * it on the card would be deleting something other than what they picked.
- * Where the pair is listed as two files — the grid, the timeline — the file
- * they picked is the file that goes.
- */
-export function filesBehind(state: AppState, entries: FileEntry[]): FileEntry[] {
-  if (!stacksCollapse(state)) return entries;
-  const files = new Map<string, FileEntry>();
-  for (const entry of entries) {
-    files.set(entry.path, entry);
-    for (const sibling of siblingsOf(state.entries, entry)) files.set(sibling.path, sibling);
-  }
-  return [...files.values()];
-}
 
 /** What the confirmation says it is about to do. */
 export function trashPrompt(photographs: FileEntry[], files: FileEntry[]): string {

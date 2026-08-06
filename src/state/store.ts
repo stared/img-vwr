@@ -26,7 +26,7 @@ import {
   type Scope,
 } from "./collection";
 import type { Query, Sort } from "./query";
-import { collapseStacks, stackKeyOf, stackKeyOfPath } from "./stacks";
+import { collapseStacks, siblingsOf, stackKeyOf, stackKeyOfPath } from "./stacks";
 import {
   applyQuery,
   defaultQuery,
@@ -429,6 +429,32 @@ export function stacksCollapse(
   state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
 ): boolean {
   return state.stacking && (state.viewMode === "viewer" || state.galleryLayout === "darkroom");
+}
+
+/** The photographs the selection means, in the order they are on screen. */
+export function chosenEntries(state: AppState): FileEntry[] {
+  const picked = new Set(state.selection);
+  return visibleOf(state, state.query).filter((e) => picked.has(e.path));
+}
+
+/**
+ * The files behind those photographs.
+ *
+ * Where a raw file and its JPEG are collapsed into one photograph, acting on
+ * "it" means both — rating it, tagging it, deleting it. The user is looking
+ * at a single frame, and a label that landed on only one of its files would
+ * vanish the moment the stack showed the other. Where the pair is listed as
+ * two files — the grid, the timeline — the file they picked is the file
+ * acted on.
+ */
+export function filesBehind(state: AppState, entries: FileEntry[]): FileEntry[] {
+  if (!stacksCollapse(state)) return entries;
+  const files = new Map<string, FileEntry>();
+  for (const entry of entries) {
+    files.set(entry.path, entry);
+    for (const sibling of siblingsOf(state.entries, entry)) files.set(sibling.path, sibling);
+  }
+  return [...files.values()];
 }
 
 /**
