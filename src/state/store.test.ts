@@ -176,6 +176,7 @@ function showing(selected: number[], anchor: number | null = null) {
     thumbs: {},
     thumbErrors: {},
     stacking: false,
+    stackLead: "jpg" as const,
     preferredMember: {},
     viewMode: "gallery" as const,
     galleryLayout: "grid" as const,
@@ -377,6 +378,9 @@ describe("a selection follows its photograph across a collapse", () => {
     similarity: null,
     labels: {},
     stacking: true,
+    // Raw-led here so the collapse genuinely swaps which file is showing —
+    // the harder case for holding the selection.
+    stackLead: "raw" as const,
     preferredMember: {},
     viewMode: "gallery" as const,
     galleryLayout: "grid" as const,

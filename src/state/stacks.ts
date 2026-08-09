@@ -91,16 +91,30 @@ export function groupStacks(entries: FileEntry[]): Map<string, FileEntry[]> {
 }
 
 /**
- * The member that stands for a stack: whichever one was picked, else the raw
- * file.
+ * Which member stands for a stack when the user has not picked one: the
+ * camera's JPG, or the raw negative.
  *
- * Raw first because it is the one worth editing — it holds the sensor data,
- * and the JPEG beside it is a rendering somebody's camera already chose.
+ * A global default rather than the raw always winning, because it depends on
+ * what the raw files are to the shoot. Working through an event where the
+ * JPGs are the pictures and the raws are insurance, the JPG is the one to
+ * look at and send; sitting down to edit, the raw holds the sensor data.
  */
-export function leadOf(members: FileEntry[], preferred: string | undefined): FileEntry | null {
+export type StackLead = "jpg" | "raw";
+
+/**
+ * The member that stands for a stack: whichever one was picked, else the one
+ * `lead` asks for, else the first there is.
+ */
+export function leadOf(
+  members: FileEntry[],
+  preferred: string | undefined,
+  lead: StackLead,
+): FileEntry | null {
   if (members.length === 0) return null;
   const picked = preferred ? members.find((m) => m.path === preferred) : undefined;
-  return picked ?? members.find(isRawEntry) ?? members[0] ?? null;
+  const wanted =
+    lead === "raw" ? members.find(isRawEntry) : members.find((m) => !isRawEntry(m));
+  return picked ?? wanted ?? members[0] ?? null;
 }
 
 /**
@@ -112,6 +126,7 @@ export function leadOf(members: FileEntry[], preferred: string | undefined): Fil
 export function collapseStacks(
   entries: FileEntry[],
   preferred: Record<string, string>,
+  lead: StackLead,
 ): FileEntry[] {
   const stacks = groupStacks(entries);
   const out: FileEntry[] = [];
@@ -120,8 +135,8 @@ export function collapseStacks(
     const key = stackKeyOf(entry);
     if (done.has(key)) continue;
     done.add(key);
-    const lead = leadOf(stacks.get(key) ?? [entry], preferred[key]);
-    if (lead) out.push(lead);
+    const shown = leadOf(stacks.get(key) ?? [entry], preferred[key], lead);
+    if (shown) out.push(shown);
   }
   return out;
 }

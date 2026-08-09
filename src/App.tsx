@@ -14,6 +14,7 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { events } from "./ipc";
+import { useSceneRefinement } from "./state/sceneRefinement";
 import { useAppStore } from "./state/store";
 import "./App.css";
 
@@ -25,6 +26,7 @@ function App() {
   const galleryLayout = useAppStore((s) => s.galleryLayout);
 
   useGlobalKeybindings();
+  useSceneRefinement();
 
   // Start in the default folder (testing convenience; see config.ts).
   useEffect(() => {

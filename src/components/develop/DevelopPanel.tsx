@@ -135,6 +135,8 @@ export function DevelopPanel() {
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
   const toggleStacking = useAppStore((s) => s.toggleStacking);
+  const stackLead = useAppStore((s) => s.stackLead);
+  const toggleStackLead = useAppStore((s) => s.toggleStackLead);
   const loupe = useDevelopStore((s) => s.loupe);
   const toggleLoupe = useDevelopStore((s) => s.toggleLoupe);
   const caption = useDevelopStore((s) => s.caption);
@@ -220,6 +222,15 @@ export function DevelopPanel() {
       {hasStacks && (
         <button className="develop-toggle" onClick={toggleStacking}>
           raw + JPG: {stacking ? "one photograph" : "two files"}
+        </button>
+      )}
+      {hasStacks && stacking && (
+        <button
+          className="develop-toggle"
+          onClick={toggleStackLead}
+          title="which of a pair stands for the photograph when you haven't picked one"
+        >
+          stack shows: {stackLead === "jpg" ? "JPG" : "raw"}
         </button>
       )}
 

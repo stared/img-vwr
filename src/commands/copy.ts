@@ -1,19 +1,23 @@
 import { copyFiles } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
-import { chosenEntries, filesBehind, useAppStore } from "../state/store";
+import { chosenEntries, useAppStore } from "../state/store";
 
 /**
  * Copying puts the selected photographs on the system clipboard as files —
  * paste in the Finder and they are copied there, paste into a chat and they
- * are attached. Same reach as deleting: the photographs the selection means,
- * down to both halves of a collapsed raw+JPEG pair.
+ * are attached.
+ *
+ * Exactly the files the screen shows, NOT the whole stack: copying is how a
+ * photograph leaves for a chat or a folder, and what should arrive there is
+ * the picture being looked at, not the raw negative riding along as a
+ * surprise attachment. The both-files reach stays with rating and deleting,
+ * where acting on half a photograph would be the bug.
  */
 async function copySelection(): Promise<void> {
   const state = useAppStore.getState();
   const photographs = chosenEntries(state);
   if (photographs.length === 0) return;
-  const files = filesBehind(state, photographs);
-  await copyFiles(files.map((f) => f.path));
+  await copyFiles(photographs.map((f) => f.path));
 }
 
 export function registerCopyCommands(): void {

@@ -216,6 +216,24 @@ impl EmbeddingService {
         Ok(self.rank(embedder.model_id, &anchor_vec, paths))
     }
 
+    /// Similarity of each consecutive pair: `scores[i]` describes
+    /// (`paths[i]`, `paths[i+1]`), or None where either vector is not yet
+    /// known. Scene refinement reads whole collections through this, so it
+    /// only ever *reads* vectors — memory or disk cache — and never computes
+    /// one: a miss must cost a stat, not a model forward pass hiding behind
+    /// an innocuous-looking call.
+    pub fn consecutive_scores(&self, paths: &[String]) -> Result<Vec<Option<f32>>, String> {
+        let embedder = self.active()?;
+        Ok(paths
+            .windows(2)
+            .map(|pair| {
+                let a = self.known_vector(&embedder, &pair[0])?;
+                let b = self.known_vector(&embedder, &pair[1])?;
+                Some(dot(&a, &b))
+            })
+            .collect())
+    }
+
     /// Rank `paths` by similarity to a text phrase.
     pub fn rank_text(&self, query: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
@@ -251,12 +269,42 @@ impl EmbeddingService {
             .collect()
     }
 
+    /// The vector cache file for one image, from the file's identity on disk.
+    fn vector_file(&self, embedder: &Embedder, path: &str) -> Result<PathBuf, String> {
+        let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        let mtime_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        Ok(self
+            .vectors_dir
+            .join(format!("{key}-{}.vec", embedder.model_id)))
+    }
+
+    /// The vector for one image if it is already known — session memory or
+    /// the disk cache — never computing one.
+    fn known_vector(&self, embedder: &Embedder, path: &str) -> Option<Arc<Vec<f32>>> {
+        let memory_key = (embedder.model_id.to_string(), path.to_string());
+        if let Some(v) = self.vectors.lock().unwrap().get(&memory_key) {
+            return Some(Arc::clone(v));
+        }
+        let vec_file = self.vector_file(embedder, path).ok()?;
+        let vector = Arc::new(read_vector(&vec_file, embedder.dim)?);
+        self.vectors
+            .lock()
+            .unwrap()
+            .insert(memory_key, Arc::clone(&vector));
+        Some(vector)
+    }
+
     /// The vector for one image: session memory → disk cache → compute from
     /// the cached thumbnail (generating that thumbnail if it doesn't exist).
     fn vector_for(&self, embedder: &Embedder, path: &str) -> Result<Arc<Vec<f32>>, String> {
-        let memory_key = (embedder.model_id.to_string(), path.to_string());
-        if let Some(v) = self.vectors.lock().unwrap().get(&memory_key) {
-            return Ok(Arc::clone(v));
+        if let Some(v) = self.known_vector(embedder, path) {
+            return Ok(v);
         }
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
         let mtime_ms = meta
@@ -270,20 +318,15 @@ impl EmbeddingService {
             .vectors_dir
             .join(format!("{key}-{}.vec", embedder.model_id));
 
-        let vector = match read_vector(&vec_file, embedder.dim) {
-            Some(v) => v,
-            None => {
-                let thumb = self.thumb_file(path, &key)?;
-                let v = embedder
-                    .embed_image_file(&thumb)
-                    .map_err(|e| e.to_string())?;
-                if let Err(e) = write_vector(&vec_file, &v) {
-                    eprintln!("vector cache write failed for {}: {e}", vec_file.display());
-                }
-                v
-            }
-        };
+        let thumb = self.thumb_file(path, &key)?;
+        let vector = embedder
+            .embed_image_file(&thumb)
+            .map_err(|e| e.to_string())?;
+        if let Err(e) = write_vector(&vec_file, &vector) {
+            eprintln!("vector cache write failed for {}: {e}", vec_file.display());
+        }
         let vector = Arc::new(vector);
+        let memory_key = (embedder.model_id.to_string(), path.to_string());
         self.vectors
             .lock()
             .unwrap()

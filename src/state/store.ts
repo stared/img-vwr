@@ -26,7 +26,14 @@ import {
   type Scope,
 } from "./collection";
 import type { Query, Sort } from "./query";
-import { collapseStacks, siblingsOf, stackKeyOf, stackKeyOfPath } from "./stacks";
+import { nextSceneGap } from "./scenes";
+import {
+  collapseStacks,
+  siblingsOf,
+  stackKeyOf,
+  stackKeyOfPath,
+  type StackLead,
+} from "./stacks";
 import {
   applyQuery,
   defaultQuery,
@@ -97,6 +104,23 @@ export interface AppState {
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
+   * Scene grouping: a pause in shooting longer than this many minutes
+   * starts a new scene. Null is off. Presentation over the visible list —
+   * the grid grows section headers and the scene-jump commands wake up,
+   * but nothing about what is shown or selected changes.
+   */
+  sceneGapMin: number | null;
+  /**
+   * Embedding similarity of each consecutive visible pair, refining scene
+   * boundaries: `scores[i]` describes (entries[i], entries[i+1]).
+   *
+   * Held with the exact list it was computed for and matched by identity —
+   * any filter, sort or stacking change makes it stale, and stale means the
+   * clock alone decides until fresh scores land. Null per pair marks images
+   * the embedding model has not indexed yet.
+   */
+  sceneSims: { entries: FileEntry[]; scores: (number | null)[] } | null;
+  /**
    * Collapse a raw file and the JPEG shot beside it into one photograph.
    *
    * Only where one photograph is on screen at a time — see `stacksCollapse`.
@@ -106,11 +130,18 @@ export interface AppState {
    */
   stacking: boolean;
   /**
+   * Which member stands for a stack nobody has picked for: the camera's JPG
+   * or the raw negative. JPG by default — going through a shoot means
+   * looking at (and sending) finished pictures; the raws wait underneath
+   * for the frames worth developing.
+   */
+  stackLead: StackLead;
+  /**
    * stack key → the member the user chose to show for that stack.
    *
-   * Absent means the default, which is the raw file. Recorded per stack
-   * rather than as a global "show JPEGs" mode because the choice is about
-   * one photograph — usually that the camera got a particular frame right.
+   * Absent means `stackLead` decides. Recorded per stack as well as
+   * globally because the choice is sometimes about one photograph — that
+   * this particular frame is the one worth opening as its negative.
    */
   preferredMember: Record<string, string>;
   /**
@@ -195,7 +226,13 @@ interface AppActions {
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
   setGridColumns: (columns: number) => void;
+  /** Walk the scene-gap choices: off → 2 → 5 → 15 min → off. */
+  cycleSceneGap: () => void;
+  /** Fresh consecutive-pair similarities for exactly this visible list. */
+  sceneSimsLoaded: (entries: FileEntry[], scores: (number | null)[]) => void;
   toggleStacking: () => void;
+  /** Swing the default stack representative between JPG and raw. */
+  toggleStackLead: () => void;
   /** Show `path` in place of whatever its stack was showing. */
   preferMember: (path: string) => void;
   /** Select one image, or nothing (null) — clicking empty space, or Esc. */
@@ -264,10 +301,13 @@ export const initialState: AppState = {
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
   gridColumns: 6,
+  sceneGapMin: null,
+  sceneSims: null,
   // On by default: working through a folder shot raw+JPEG otherwise means
   // every photograph twice, which is what the camera wrote but not what was
   // taken.
   stacking: true,
+  stackLead: "jpg",
   preferredMember: {},
   selectedIndex: null,
   selection: [],
@@ -413,6 +453,7 @@ type VisibleInputs = Pick<
   | "similarity"
   | "labels"
   | "stacking"
+  | "stackLead"
   | "preferredMember"
   | "viewMode"
   | "galleryLayout"
@@ -429,6 +470,22 @@ export function stacksCollapse(
   state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
 ): boolean {
   return state.stacking && (state.viewMode === "viewer" || state.galleryLayout === "darkroom");
+}
+
+/**
+ * The similarity scores for exactly this visible list, or null.
+ *
+ * Identity, not equality: the visible list is memoized, so the array the
+ * scores were fetched for is the same object for as long as the view they
+ * describe is the one on screen.
+ */
+export function sceneSimsFor(
+  state: Pick<AppState, "sceneSims">,
+  visible: FileEntry[],
+): (number | null)[] | null {
+  return state.sceneSims !== null && state.sceneSims.entries === visible
+    ? state.sceneSims.scores
+    : null;
 }
 
 /** The photographs the selection means, in the order they are on screen. */
@@ -783,8 +840,17 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
 
+  cycleSceneGap: () => set({ sceneGapMin: nextSceneGap(get().sceneGapMin) }),
+
+  sceneSimsLoaded: (entries, scores) => set({ sceneSims: { entries, scores } }),
+
   toggleStacking: () =>
     set((s) => withSelectionHeld(s, { stacking: !s.stacking })),
+
+  // Held like the stacking toggle: every unpicked stack changes which file
+  // represents it, and the selection must stay on the same photographs.
+  toggleStackLead: () =>
+    set((s) => withSelectionHeld(s, { stackLead: s.stackLead === "jpg" ? "raw" : "jpg" })),
 
   preferMember: (path) =>
     set((s) => {
@@ -973,6 +1039,7 @@ let visibleCache: {
   scores: Record<string, number> | null;
   labels: Record<string, ImageLabels> | null;
   stacking: boolean;
+  lead: StackLead;
   preferred: Record<string, string>;
   result: FileEntry[];
 } | null = null;
@@ -986,6 +1053,7 @@ export function visibleOf(
     | "similarity"
     | "labels"
     | "stacking"
+    | "stackLead"
     | "preferredMember"
     | "viewMode"
     | "galleryLayout"
@@ -1004,6 +1072,7 @@ export function visibleOf(
     scores,
     labels,
     stacksCollapse(state),
+    state.stackLead,
     state.preferredMember,
   );
 }
@@ -1015,6 +1084,7 @@ function applyQueryMemo(
   scores: Record<string, number> | null,
   labels: Record<string, ImageLabels> | null,
   stacking: boolean,
+  lead: StackLead,
   preferred: Record<string, string>,
 ): FileEntry[] {
   const c = visibleCache;
@@ -1026,6 +1096,7 @@ function applyQueryMemo(
     c.scores === scores &&
     c.labels === labels &&
     c.stacking === stacking &&
+    c.lead === lead &&
     c.preferred === preferred
   ) {
     return c.result;
@@ -1037,8 +1108,8 @@ function applyQueryMemo(
   });
   // Stacking collapses what the query already decided, so a filter that
   // matches only one member of a pair still shows that member.
-  const result = stacking ? collapseStacks(filtered, preferred) : filtered;
-  visibleCache = { entries, query, meta, scores, labels, stacking, preferred, result };
+  const result = stacking ? collapseStacks(filtered, preferred, lead) : filtered;
+  visibleCache = { entries, query, meta, scores, labels, stacking, lead, preferred, result };
   return result;
 }
 
@@ -1063,6 +1134,7 @@ export function useVisibleEntries(): FileEntry[] {
   const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
   const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
   const stacking = useAppStore(stacksCollapse);
+  const lead = useAppStore((s) => s.stackLead);
   const preferred = useAppStore((s) => s.preferredMember);
-  return applyQueryMemo(entries, query, meta, scores, labels, stacking, preferred);
+  return applyQueryMemo(entries, query, meta, scores, labels, stacking, lead, preferred);
 }

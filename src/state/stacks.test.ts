@@ -48,8 +48,17 @@ describe("stackKeyOf", () => {
 });
 
 describe("collapseStacks", () => {
-  it("shows the raw file of a pair and leaves lone files alone", () => {
-    const collapsed = collapseStacks(shoot, {});
+  it("shows the JPG of a pair by default and leaves lone files alone", () => {
+    const collapsed = collapseStacks(shoot, {}, "jpg");
+    expect(collapsed.map((e) => e.name)).toEqual([
+      "DSC_0001.JPG",
+      "DSC_0002.JPG",
+      "DSC_0003.NEF",
+    ]);
+  });
+
+  it("shows the raw file when the lead asks for it", () => {
+    const collapsed = collapseStacks(shoot, {}, "raw");
     expect(collapsed.map((e) => e.name)).toEqual([
       "DSC_0001.NEF",
       "DSC_0002.JPG",
@@ -61,7 +70,7 @@ describe("collapseStacks", () => {
     // Reverse-name order: the pair must stay at the front, not jump to
     // wherever the raw file happened to be.
     const reversed = [...shoot].reverse();
-    const collapsed = collapseStacks(reversed, {});
+    const collapsed = collapseStacks(reversed, {}, "raw");
     expect(collapsed.map((e) => e.name)).toEqual([
       "DSC_0003.NEF",
       "DSC_0002.JPG",
@@ -69,38 +78,41 @@ describe("collapseStacks", () => {
     ]);
   });
 
-  it("shows the member that was picked instead", () => {
-    const picked = collapseStacks(shoot, { "/p/DSC_0001": "/p/DSC_0001.JPG" });
-    expect(picked.map((e) => e.name)).toEqual(["DSC_0001.JPG", "DSC_0002.JPG", "DSC_0003.NEF"]);
+  it("shows the member that was picked instead, whatever the lead says", () => {
+    const picked = collapseStacks(shoot, { "/p/DSC_0001": "/p/DSC_0001.NEF" }, "jpg");
+    expect(picked.map((e) => e.name)).toEqual(["DSC_0001.NEF", "DSC_0002.JPG", "DSC_0003.NEF"]);
   });
 
   it("ignores a preference for a file the query has filtered away", () => {
     // Only the raw file survives the filter; the stored preference names the
     // JPEG, which is no longer there to show.
     const onlyRaw = shoot.filter((e) => e.formatHint === "nef");
-    const collapsed = collapseStacks(onlyRaw, { "/p/DSC_0001": "/p/DSC_0001.JPG" });
+    const collapsed = collapseStacks(onlyRaw, { "/p/DSC_0001": "/p/DSC_0001.JPG" }, "jpg");
     expect(collapsed.map((e) => e.name)).toEqual(["DSC_0001.NEF", "DSC_0003.NEF"]);
   });
 
   it("changes nothing when a folder holds no pairs", () => {
     const singles = [file("/p/a.JPG"), file("/p/b.JPG")];
-    expect(collapseStacks(singles, {})).toEqual(singles);
+    expect(collapseStacks(singles, {}, "jpg")).toEqual(singles);
   });
 });
 
 describe("leadOf", () => {
-  it("prefers the raw file, because that is the one worth editing", () => {
+  it("gives each default its member: the JPG to send, the raw to edit", () => {
     const pair = [file("/p/x.JPG"), file("/p/x.NEF")];
-    expect(leadOf(pair, undefined)?.name).toBe("x.NEF");
+    expect(leadOf(pair, undefined, "jpg")?.name).toBe("x.JPG");
+    expect(leadOf(pair, undefined, "raw")?.name).toBe("x.NEF");
   });
 
-  it("falls back to the first member when none is raw", () => {
-    const pair = [file("/p/x.JPG"), file("/p/x.PNG")];
-    expect(leadOf(pair, undefined)?.name).toBe("x.JPG");
+  it("falls back to the first member when nothing matches the lead", () => {
+    const finished = [file("/p/x.JPG"), file("/p/x.PNG")];
+    expect(leadOf(finished, undefined, "raw")?.name).toBe("x.JPG");
+    const negatives = [file("/p/x.NEF"), file("/p/x.DNG")];
+    expect(leadOf(negatives, undefined, "jpg")?.name).toBe("x.NEF");
   });
 
   it("has no lead for an empty stack", () => {
-    expect(leadOf([], undefined)).toBeNull();
+    expect(leadOf([], undefined, "jpg")).toBeNull();
   });
 });
 

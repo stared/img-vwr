@@ -5,6 +5,7 @@ import App from "./App";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
+import { registerSceneCommands } from "./commands/scenes";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
@@ -37,6 +38,7 @@ registerSourceCommands();
 registerSimilarity();
 registerLabels();
 registerDevelopCommands();
+registerSceneCommands();
 // Last, so the one destructive action sits at the bottom of the image menu.
 // Copy before Trash: the menu lists them in registration order, and the
 // destructive one belongs at the end.

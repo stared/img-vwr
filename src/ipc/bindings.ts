@@ -135,6 +135,20 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
 }
 },
 /**
+ * Similarity of each consecutive pair of `paths` (scores[i] describes
+ * paths[i] and paths[i+1]), from vectors already indexed; null where a
+ * vector is not yet known. Scene refinement calls this over whole
+ * collections, which is exactly why it never computes vectors itself.
+ */
+async embeddingConsecutiveScores(paths: string[]) : Promise<Result<(number | null)[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("embedding_consecutive_scores", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Per-image pixel statistics (histograms, color triangle) for the info
  * panel — computed from the cached thumbnail, off the main thread.
  */

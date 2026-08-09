@@ -62,6 +62,10 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+backspace", "image.trash"],
   ["arrowright", "image.next"],
   ["arrowleft", "image.prev"],
+  // The arrows one level up: step by scene instead of by photograph.
+  // Inapplicable (scenes off) they fall through and the chord does nothing.
+  ["mod+arrowright", "scene.next"],
+  ["mod+arrowleft", "scene.prev"],
   ["enter", "viewer.open"],
   ["mod+shift+c", "develop.copy"],
   ["mod+shift+v", "develop.paste"],

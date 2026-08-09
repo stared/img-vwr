@@ -273,6 +273,22 @@ pub async fn embedding_rank_image(
     .map_err(|e| e.to_string())?
 }
 
+/// Similarity of each consecutive pair of `paths` (scores[i] describes
+/// paths[i] and paths[i+1]), from vectors already indexed; null where a
+/// vector is not yet known. Scene refinement calls this over whole
+/// collections, which is exactly why it never computes vectors itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn embedding_consecutive_scores(
+    service: State<'_, Arc<EmbeddingService>>,
+    paths: Vec<String>,
+) -> Result<Vec<Option<f32>>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.consecutive_scores(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Per-image pixel statistics (histograms, color triangle) for the info
 /// panel — computed from the cached thumbnail, off the main thread.
 #[tauri::command]
