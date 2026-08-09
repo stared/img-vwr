@@ -42,9 +42,10 @@ export function nextSceneGap(current: number | null): number | null {
   return SCENE_GAPS_MIN[(at + 1) % SCENE_GAPS_MIN.length] ?? null;
 }
 
-/** What the control says: the state, in words. */
+/** What the control says: the state, in words. "~" because the minutes are
+ * a feel, not a cutoff — content decides where scenes break. */
 export function sceneGapLabel(gapMin: number | null): string {
-  return gapMin === null ? "scenes: off" : `scenes: ${gapMin} min gaps`;
+  return gapMin === null ? "scenes: off" : `scenes: ~${gapMin} min`;
 }
 
 /**
@@ -60,62 +61,106 @@ export function sceneTimeOf(entry: FileEntry, meta: Record<string, ImageMeta>): 
 }
 
 /**
- * Consecutive photographs at least this alike are one moment whatever the
- * clock says: the pause was the photographer waiting, not the scene ending.
+ * How many earlier scene members a photograph is compared against. Wide and
+ * close shots alternate within one scene; the best match among the last few
+ * is the honest "does this belong here", where the single previous frame is
+ * a coin toss.
  */
-export const SCENE_MERGE_SIM = 0.92;
+export const SCENE_BAND = 3;
 
 /**
- * Below this the content has moved on even though the shutter kept going —
- * a look outside in the middle of a table's run of frames.
- */
-export const SCENE_SPLIT_SIM = 0.55;
-
-/**
- * A dissimilar pair splits only across a pause at least this share of the
- * gap: within a burst, one odd frame (a passer-by, a flash misfire) is part
- * of the scene, not a boundary.
- */
-const SPLIT_MIN_GAP_SHARE = 0.2;
-
-/**
- * Group the visible list into scenes; a gap over `gapMs` starts a new one.
+ * The similarity a photograph needs to continue the scene, as a function of
+ * the pause before it.
  *
- * `sims` — consecutive-pair embedding similarity, where `sims[i]` describes
- * (entries[i], entries[i+1]) — refines the clock's verdict when present:
- * near-identical content bridges a long pause, and a content jump splits a
- * run the clock would keep together. Null (or null per pair, for images not
- * yet indexed) leaves the clock's verdict alone.
+ * Shooting continuously, only a hard content change ends a scene — the
+ * floor. After a long pause, only near-identical content bridges it — the
+ * ceiling. In between the requirement rises smoothly, and `tauMs` (the
+ * control's minutes) is the time constant of that rise: not a cutoff, but
+ * how quickly a pause makes the content's continuity harder to believe.
+ */
+export const SCENE_SIM_FLOOR = 0.55;
+export const SCENE_SIM_CEIL = 0.93;
+
+export function sceneThreshold(gapMs: number, tauMs: number): number {
+  return SCENE_SIM_CEIL - (SCENE_SIM_CEIL - SCENE_SIM_FLOOR) * Math.exp(-gapMs / tauMs);
+}
+
+/** The best similarity from `bands[i]` to members of the current scene at
+ * or after `sceneStart`, skipping index `skip` (-1 for none). Null when no
+ * comparison is known. */
+function bestToScene(
+  bands: readonly (readonly (number | null)[])[],
+  i: number,
+  sceneStart: number,
+  skip: number,
+): number | null {
+  const row = bands[i];
+  if (!row) return null;
+  let best: number | null = null;
+  for (let d = 1; d <= row.length; d += 1) {
+    const j = i - d;
+    if (j < sceneStart) break;
+    if (j === skip) continue;
+    const sim = row[d - 1];
+    if (sim !== null && sim !== undefined && (best === null || sim > best)) best = sim;
+  }
+  return best;
+}
+
+/**
+ * Group the visible list into scenes.
+ *
+ * Content decides, time modulates. With `bands` (each photograph's
+ * similarity to the few before it), a photograph continues the scene when
+ * its best match among the scene's recent members clears
+ * `sceneThreshold(pause, tauMs)` — so a run of shooting splits where the
+ * pictures change, however short the pause, and a long pause splits unless
+ * the pictures barely moved. One odd frame never cuts a scene: a would-be
+ * boundary is kept inside when the frame after it rejoins the scene over
+ * its head.
+ *
+ * Without a model (`bands` null, or unindexed rows), the clock alone
+ * decides: a pause over `tauMs` starts a new scene.
  */
 export function groupScenes(
   entries: FileEntry[],
   meta: Record<string, ImageMeta>,
-  gapMs: number,
-  sims: readonly (number | null)[] | null,
+  tauMs: number,
+  bands: readonly (readonly (number | null)[])[] | null,
 ): Scene[] {
   const scenes: Scene[] = [];
-  let previousMs = Number.NEGATIVE_INFINITY;
+  const times = entries.map((e) => sceneTimeOf(e, meta));
   for (let i = 0; i < entries.length; i += 1) {
-    const entry = entries[i];
-    if (!entry) continue;
-    const t = sceneTimeOf(entry, meta);
+    const t = times[i] ?? 0;
     const current = scenes[scenes.length - 1];
+    if (current === undefined) {
+      scenes.push({ start: i, end: i + 1, startMs: t });
+      continue;
+    }
     // Absolute distance: a sort running newest-first walks time backwards,
     // and "close together" is the same fact in either direction.
-    const gap = Math.abs(t - previousMs);
-    let breaks = current === undefined || gap > gapMs;
-    const sim = current === undefined ? null : (sims?.[i - 1] ?? null);
-    if (sim !== null) {
-      if (breaks && sim >= SCENE_MERGE_SIM) breaks = false;
-      else if (!breaks && sim < SCENE_SPLIT_SIM && gap > gapMs * SPLIT_MIN_GAP_SHARE)
-        breaks = true;
+    const gap = Math.abs(t - (times[i - 1] ?? 0));
+    const sim = bands ? bestToScene(bands, i, current.start, -1) : null;
+    let continues: boolean;
+    if (sim === null) {
+      continues = gap <= tauMs;
+    } else {
+      continues = sim >= sceneThreshold(gap, tauMs);
+      if (!continues && i + 1 < entries.length && bands) {
+        // The odd-frame reprieve: if the next photograph rejoins the scene
+        // over this one's head (compared against the scene as it stands,
+        // not against the odd frame), this frame is a passer-by inside the
+        // scene, not the start of a new one.
+        const nextSim = bestToScene(bands, i + 1, current.start, i);
+        const nextGap = Math.abs((times[i + 1] ?? 0) - (times[i - 1] ?? 0));
+        continues = nextSim !== null && nextSim >= sceneThreshold(nextGap, tauMs);
+      }
     }
-    if (!breaks && current) {
+    if (continues) {
       current.end = i + 1;
     } else {
       scenes.push({ start: i, end: i + 1, startMs: t });
     }
-    previousMs = t;
   }
   return scenes;
 }

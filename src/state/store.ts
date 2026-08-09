@@ -111,15 +111,16 @@ export interface AppState {
    */
   sceneGapMin: number | null;
   /**
-   * Embedding similarity of each consecutive visible pair, refining scene
-   * boundaries: `scores[i]` describes (entries[i], entries[i+1]).
+   * Embedding similarity of each visible photograph to the few before it,
+   * driving scene boundaries: `bands[i][d-1]` describes (entries[i],
+   * entries[i-d]).
    *
    * Held with the exact list it was computed for and matched by identity —
    * any filter, sort or stacking change makes it stale, and stale means the
    * clock alone decides until fresh scores land. Null per pair marks images
    * the embedding model has not indexed yet.
    */
-  sceneSims: { entries: FileEntry[]; scores: (number | null)[] } | null;
+  sceneSims: { entries: FileEntry[]; bands: (number | null)[][] } | null;
   /**
    * Collapse a raw file and the JPEG shot beside it into one photograph.
    *
@@ -228,8 +229,8 @@ interface AppActions {
   setGridColumns: (columns: number) => void;
   /** Walk the scene-gap choices: off → 2 → 5 → 15 min → off. */
   cycleSceneGap: () => void;
-  /** Fresh consecutive-pair similarities for exactly this visible list. */
-  sceneSimsLoaded: (entries: FileEntry[], scores: (number | null)[]) => void;
+  /** Fresh banded similarities for exactly this visible list. */
+  sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
   toggleStacking: () => void;
   /** Swing the default stack representative between JPG and raw. */
   toggleStackLead: () => void;
@@ -482,9 +483,9 @@ export function stacksCollapse(
 export function sceneSimsFor(
   state: Pick<AppState, "sceneSims">,
   visible: FileEntry[],
-): (number | null)[] | null {
+): (number | null)[][] | null {
   return state.sceneSims !== null && state.sceneSims.entries === visible
-    ? state.sceneSims.scores
+    ? state.sceneSims.bands
     : null;
 }
 
@@ -842,7 +843,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   cycleSceneGap: () => set({ sceneGapMin: nextSceneGap(get().sceneGapMin) }),
 
-  sceneSimsLoaded: (entries, scores) => set({ sceneSims: { entries, scores } }),
+  sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 
   toggleStacking: () =>
     set((s) => withSelectionHeld(s, { stacking: !s.stacking })),

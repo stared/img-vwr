@@ -44,7 +44,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_index,
             commands::embedding_rank_image,
             commands::embedding_rank_text,
-            commands::embedding_consecutive_scores,
+            commands::embedding_banded_scores,
             commands::image_stats,
             commands::labels_for_paths,
             commands::labels_set_stars,

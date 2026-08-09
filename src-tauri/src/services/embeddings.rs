@@ -216,20 +216,30 @@ impl EmbeddingService {
         Ok(self.rank(embedder.model_id, &anchor_vec, paths))
     }
 
-    /// Similarity of each consecutive pair: `scores[i]` describes
-    /// (`paths[i]`, `paths[i+1]`), or None where either vector is not yet
-    /// known. Scene refinement reads whole collections through this, so it
-    /// only ever *reads* vectors — memory or disk cache — and never computes
-    /// one: a miss must cost a stat, not a model forward pass hiding behind
-    /// an innocuous-looking call.
-    pub fn consecutive_scores(&self, paths: &[String]) -> Result<Vec<Option<f32>>, String> {
+    /// Similarity of each image to the few before it: `scores[i][d - 1]`
+    /// describes (`paths[i]`, `paths[i - d]`) for d = 1..=band, or None
+    /// where either vector is not yet known. Scene detection reads whole
+    /// collections through this, so it only ever *reads* vectors — memory
+    /// or disk cache — and never computes one: a miss must cost a stat, not
+    /// a model forward pass hiding behind an innocuous-looking call.
+    pub fn banded_scores(
+        &self,
+        paths: &[String],
+        band: usize,
+    ) -> Result<Vec<Vec<Option<f32>>>, String> {
         let embedder = self.active()?;
-        Ok(paths
-            .windows(2)
-            .map(|pair| {
-                let a = self.known_vector(&embedder, &pair[0])?;
-                let b = self.known_vector(&embedder, &pair[1])?;
-                Some(dot(&a, &b))
+        let vectors: Vec<Option<Arc<Vec<f32>>>> = paths
+            .iter()
+            .map(|p| self.known_vector(&embedder, p))
+            .collect();
+        Ok((0..paths.len())
+            .map(|i| {
+                (1..=band.min(i))
+                    .map(|d| match (&vectors[i], &vectors[i - d]) {
+                        (Some(a), Some(b)) => Some(dot(a, b)),
+                        _ => None,
+                    })
+                    .collect()
             })
             .collect())
     }

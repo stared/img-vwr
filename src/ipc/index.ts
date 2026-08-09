@@ -123,10 +123,14 @@ export async function embeddingRankText(
   return unwrap(await commands.embeddingRankText(query, paths));
 }
 
-/** Similarity of each consecutive pair of paths, from vectors already
- * indexed; null where an image has no vector yet. Never computes. */
-export async function embeddingConsecutiveScores(paths: string[]): Promise<(number | null)[]> {
-  return unwrap(await commands.embeddingConsecutiveScores(paths));
+/** Similarity of each path to the few before it (scores[i][d-1] describes
+ * paths[i] vs paths[i-d]), from vectors already indexed; null where an
+ * image has no vector yet. Never computes. */
+export async function embeddingBandedScores(
+  paths: string[],
+  band: number,
+): Promise<(number | null)[][]> {
+  return unwrap(await commands.embeddingBandedScores(paths, band));
 }
 
 /** Pixel statistics (histograms, color triangle) from the cached thumb. */

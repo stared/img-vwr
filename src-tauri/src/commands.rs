@@ -273,18 +273,19 @@ pub async fn embedding_rank_image(
     .map_err(|e| e.to_string())?
 }
 
-/// Similarity of each consecutive pair of `paths` (scores[i] describes
-/// paths[i] and paths[i+1]), from vectors already indexed; null where a
-/// vector is not yet known. Scene refinement calls this over whole
+/// Similarity of each of `paths` to the few before it (scores[i][d-1]
+/// describes paths[i] and paths[i-d]), from vectors already indexed; null
+/// where a vector is not yet known. Scene detection calls this over whole
 /// collections, which is exactly why it never computes vectors itself.
 #[tauri::command]
 #[specta::specta]
-pub async fn embedding_consecutive_scores(
+pub async fn embedding_banded_scores(
     service: State<'_, Arc<EmbeddingService>>,
     paths: Vec<String>,
-) -> Result<Vec<Option<f32>>, String> {
+    band: u32,
+) -> Result<Vec<Vec<Option<f32>>>, String> {
     let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.consecutive_scores(&paths))
+    tauri::async_runtime::spawn_blocking(move || service.banded_scores(&paths, band as usize))
         .await
         .map_err(|e| e.to_string())?
 }

@@ -135,14 +135,14 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
 }
 },
 /**
- * Similarity of each consecutive pair of `paths` (scores[i] describes
- * paths[i] and paths[i+1]), from vectors already indexed; null where a
- * vector is not yet known. Scene refinement calls this over whole
+ * Similarity of each of `paths` to the few before it (scores[i][d-1]
+ * describes paths[i] and paths[i-d]), from vectors already indexed; null
+ * where a vector is not yet known. Scene detection calls this over whole
  * collections, which is exactly why it never computes vectors itself.
  */
-async embeddingConsecutiveScores(paths: string[]) : Promise<Result<(number | null)[], string>> {
+async embeddingBandedScores(paths: string[], band: number) : Promise<Result<((number | null)[])[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("embedding_consecutive_scores", { paths }) };
+    return { status: "ok", data: await TAURI_INVOKE("embedding_banded_scores", { paths, band }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

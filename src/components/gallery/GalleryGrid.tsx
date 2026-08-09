@@ -183,7 +183,7 @@ export function GalleryGrid() {
       <div className="gallery-toolbar">
         <button
           onClick={cycleSceneGap}
-          title="group by pauses in shooting: a break longer than the gap starts a new scene"
+          title="scenes break where the pictures change; the longer a pause, the less change it takes — with no similarity model loaded, a pause over the minutes splits"
         >
           {sceneGapLabel(sceneGapMin)}
         </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
-import { embeddingConsecutiveScores, embeddingIndex } from "../ipc";
+import { embeddingBandedScores, embeddingIndex } from "../ipc";
+import { SCENE_BAND } from "./scenes";
 import { useAppStore, useVisibleEntries } from "./store";
 
 /**
@@ -51,9 +52,12 @@ export function useSceneRefinement(): void {
   useEffect(() => {
     if (!wanted || indexing || visible.length < 2) return;
     let stale = false;
-    embeddingConsecutiveScores(visible.map((e) => e.path))
-      .then((scores) => {
-        if (!stale) useAppStore.getState().sceneSimsLoaded(visible, scores);
+    embeddingBandedScores(
+      visible.map((e) => e.path),
+      SCENE_BAND,
+    )
+      .then((bands) => {
+        if (!stale) useAppStore.getState().sceneSimsLoaded(visible, bands);
       })
       .catch(() => {
         // "No model loaded" and friends — scenes stay time-only.
