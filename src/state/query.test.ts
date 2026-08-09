@@ -164,7 +164,7 @@ beforeAll(() => {
 
 /** QueryData with every channel empty unless a test provides it. */
 function data(part: Partial<QueryData> = {}): QueryData {
-  return { meta: {}, scores: {}, labels: {}, ...part };
+  return { meta: {}, scores: {}, labels: {}, people: {}, ...part };
 }
 
 function entry(name: string, ext: string, size: number, modifiedMs: number): FileEntry {

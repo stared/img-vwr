@@ -10,7 +10,14 @@ import {
   zoomAtPoint,
   type Point,
 } from "../components/viewer/viewport";
-import type { EmbedModelInfo, FileEntry, ImageLabels, ImageMeta, MetaEntry } from "../ipc";
+import type {
+  EmbedModelInfo,
+  FileEntry,
+  ImageLabels,
+  ImageMeta,
+  MetaEntry,
+  PersonCluster,
+} from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import { getSource } from "../registry/sources";
 import {
@@ -39,6 +46,7 @@ import {
   defaultQuery,
   usesLabels,
   usesMeta,
+  usesPeople,
   usesScores,
   withFormatToggled,
   withNameFilter,
@@ -190,6 +198,18 @@ export interface AppState {
   imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
   similarity: Similarity | null;
+  /**
+   * The people the face pass found: clusters of face crops, biggest first.
+   * Null until a pass has run for this folder.
+   */
+  people: PersonCluster[] | null;
+  /**
+   * photo path → person-cluster ids it shows (detected or implied). The
+   * person filter field reads this; rebuilt whenever `people` lands.
+   */
+  peopleByPath: Record<string, string[]>;
+  /** Face-detection progress; null when idle. */
+  facesProgress: { done: number; total: number } | null;
   /** Model catalog with downloaded/active flags, for the picker panel. */
   embedModels: EmbedModelInfo[];
   /** Latest model lifecycle event; null before any selection. */
@@ -231,6 +251,9 @@ interface AppActions {
   cycleSceneGap: () => void;
   /** Fresh banded similarities for exactly this visible list. */
   sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
+  /** The face pass's clusters for the current folder. */
+  peopleLoaded: (people: PersonCluster[]) => void;
+  setFacesProgress: (progress: { done: number; total: number } | null) => void;
   toggleStacking: () => void;
   /** Swing the default stack representative between JPG and raw. */
   toggleStackLead: () => void;
@@ -321,6 +344,9 @@ export const initialState: AppState = {
   palettePrompt: null,
   imageMenu: null,
   similarity: null,
+  people: null,
+  peopleByPath: {},
+  facesProgress: null,
   embedModels: [],
   embedStatus: null,
   embedProgress: null,
@@ -453,6 +479,7 @@ type VisibleInputs = Pick<
   | "meta"
   | "similarity"
   | "labels"
+  | "peopleByPath"
   | "stacking"
   | "stackLead"
   | "preferredMember"
@@ -845,6 +872,18 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 
+  peopleLoaded: (people) => {
+    const peopleByPath: Record<string, string[]> = {};
+    for (const cluster of people) {
+      for (const path of [...cluster.photos, ...cluster.implied]) {
+        (peopleByPath[path] ??= []).push(cluster.id);
+      }
+    }
+    set({ people, peopleByPath });
+  },
+
+  setFacesProgress: (facesProgress) => set({ facesProgress }),
+
   toggleStacking: () =>
     set((s) => withSelectionHeld(s, { stacking: !s.stacking })),
 
@@ -1039,6 +1078,7 @@ let visibleCache: {
   meta: Record<string, ImageMeta> | null;
   scores: Record<string, number> | null;
   labels: Record<string, ImageLabels> | null;
+  people: Record<string, string[]> | null;
   stacking: boolean;
   lead: StackLead;
   preferred: Record<string, string>;
@@ -1053,6 +1093,7 @@ export function visibleOf(
     | "meta"
     | "similarity"
     | "labels"
+    | "peopleByPath"
     | "stacking"
     | "stackLead"
     | "preferredMember"
@@ -1066,12 +1107,14 @@ export function visibleOf(
   const meta = usesMeta(query) ? state.meta : null;
   const scores = usesScores(query) ? (state.similarity?.scores ?? null) : null;
   const labels = usesLabels(query) ? state.labels : null;
+  const people = usesPeople(query) ? state.peopleByPath : null;
   return applyQueryMemo(
     state.entries,
     query,
     meta,
     scores,
     labels,
+    people,
     stacksCollapse(state),
     state.stackLead,
     state.preferredMember,
@@ -1084,6 +1127,7 @@ function applyQueryMemo(
   meta: Record<string, ImageMeta> | null,
   scores: Record<string, number> | null,
   labels: Record<string, ImageLabels> | null,
+  people: Record<string, string[]> | null,
   stacking: boolean,
   lead: StackLead,
   preferred: Record<string, string>,
@@ -1096,6 +1140,7 @@ function applyQueryMemo(
     c.meta === meta &&
     c.scores === scores &&
     c.labels === labels &&
+    c.people === people &&
     c.stacking === stacking &&
     c.lead === lead &&
     c.preferred === preferred
@@ -1106,11 +1151,12 @@ function applyQueryMemo(
     meta: meta ?? {},
     scores: scores ?? {},
     labels: labels ?? {},
+    people: people ?? {},
   });
   // Stacking collapses what the query already decided, so a filter that
   // matches only one member of a pair still shows that member.
   const result = stacking ? collapseStacks(filtered, preferred, lead) : filtered;
-  visibleCache = { entries, query, meta, scores, labels, stacking, lead, preferred, result };
+  visibleCache = { entries, query, meta, scores, labels, people, stacking, lead, preferred, result };
   return result;
 }
 
@@ -1134,8 +1180,9 @@ export function useVisibleEntries(): FileEntry[] {
   const meta = useAppStore((s) => (usesMeta(s.query) ? s.meta : null));
   const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
   const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
+  const people = useAppStore((s) => (usesPeople(s.query) ? s.peopleByPath : null));
   const stacking = useAppStore(stacksCollapse);
   const lead = useAppStore((s) => s.stackLead);
   const preferred = useAppStore((s) => s.preferredMember);
-  return applyQueryMemo(entries, query, meta, scores, labels, stacking, lead, preferred);
+  return applyQueryMemo(entries, query, meta, scores, labels, people, stacking, lead, preferred);
 }

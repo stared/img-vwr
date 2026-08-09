@@ -45,6 +45,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_rank_image,
             commands::embedding_rank_text,
             commands::embedding_banded_scores,
+            commands::faces_index,
+            commands::faces_people,
             commands::image_stats,
             commands::labels_for_paths,
             commands::labels_set_stars,
@@ -68,7 +70,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             events::MetaBatchReady,
             events::FolderChanged,
             events::EmbeddingStatus,
-            events::EmbeddingProgress
+            events::EmbeddingProgress,
+            events::FacesProgress
         ])
 }
 
@@ -142,7 +145,8 @@ pub fn run() {
                 cache_root.join("thumbnails"),
                 Arc::clone(&scenes),
             )?));
-            app.manage(Arc::new(EmbeddingService::new(cache_root)?));
+            app.manage(Arc::new(EmbeddingService::new(cache_root.clone())?));
+            app.manage(Arc::new(crate::services::faces::FaceService::new(cache_root)?));
             // Watches whichever folder is open, so files that appear on disk
             // appear in the gallery. Holds no data of its own.
             app.manage(Arc::new(WatchService::new()));

@@ -173,6 +173,7 @@ function showing(selected: number[], anchor: number | null = null) {
     meta: {},
     similarity: null,
     labels: {},
+    peopleByPath: {},
     thumbs: {},
     thumbErrors: {},
     stacking: false,
@@ -377,6 +378,7 @@ describe("a selection follows its photograph across a collapse", () => {
     meta: {},
     similarity: null,
     labels: {},
+    peopleByPath: {},
     stacking: true,
     // Raw-led here so the collapse genuinely swaps which file is showing —
     // the harder case for holding the selection.

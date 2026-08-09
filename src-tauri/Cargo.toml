@@ -65,8 +65,18 @@ webp = "0.3.1"
 
 # Copying photographs means file references on the pasteboard — what a paste
 # in the Finder or a chat understands as "these files" — see services::files.
+# Vision (objc2-vision) detects faces for the People view — see services::faces.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+objc2-vision = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "VNRequest",
+  "VNDetectFaceRectanglesRequest",
+  "VNRequestHandler",
+  "VNObservation",
+  "VNTypes",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "NSPasteboard",

@@ -1,5 +1,6 @@
 pub mod develop;
 pub mod embeddings;
+pub mod faces;
 pub mod files;
 pub mod labels;
 pub mod thumbnails;

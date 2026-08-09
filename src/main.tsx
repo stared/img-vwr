@@ -21,6 +21,7 @@ import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
 import { registerLabels } from "./labels";
+import { PeoplePanel, registerPeople } from "./people";
 import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
@@ -37,6 +38,7 @@ registerSource(commonsSource);
 registerSourceCommands();
 registerSimilarity();
 registerLabels();
+registerPeople();
 registerDevelopCommands();
 registerSceneCommands();
 // Last, so the one destructive action sits at the bottom of the image menu.
@@ -60,6 +62,7 @@ registerPanel({
   component: SimilarityPanel,
   icon: <SimilarityIcon />,
 });
+registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
 registerPanel({ id: "develop", title: "Develop", component: DevelopPanel, side: "right" });
 registerPanel({ id: "info", title: "Image", component: InfoPanel, side: "right" });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });

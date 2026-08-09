@@ -26,14 +26,16 @@ interface FieldBase {
 
 /** What a field's predicate reads beyond the entry itself; drives which
  * streaming store slices invalidate the visible list. */
-export type FieldReads = "entry" | "meta" | "labels";
+export type FieldReads = "entry" | "meta" | "labels" | "people";
 
 /** Per-entry data a predicate can read. Meta is undefined until the
  * background read delivers it; labels are TOTAL — an unlabeled image is
- * the empty label set, not an unknown. */
+ * the empty label set, not an unknown. People are the person-cluster ids
+ * the face pass put this photo in — empty until faces are found. */
 export interface FieldCtx {
   meta: ImageMeta | undefined;
   labels: ImageLabels;
+  people: string[];
 }
 
 /** Picking the row acts immediately (e.g. opens an inline input). */

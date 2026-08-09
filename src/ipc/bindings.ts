@@ -149,6 +149,27 @@ async embeddingBandedScores(paths: string[], band: number) : Promise<Result<((nu
 }
 },
 /**
+ * Detect faces over the collection in the background; progress arrives as
+ * `faces-progress` events. Per-photo results are cached as sidecars, so a
+ * repeat pass over an unchanged folder is a cache read.
+ */
+async facesIndex(paths: string[], epoch: number) : Promise<void> {
+    await TAURI_INVOKE("faces_index", { paths, epoch });
+},
+/**
+ * Cluster every detected face of `paths` into people, propagating identity
+ * onto near-identical faceless photos. Cheap to re-run: vectors and
+ * detections are cached, so this is dot products and bookkeeping.
+ */
+async facesPeople(paths: string[], threshold: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("faces_people", { paths, threshold, propagate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Per-image pixel statistics (histograms, color triangle) for the info
  * panel — computed from the cached thumbnail, off the main thread.
  */
@@ -313,6 +334,7 @@ export const events = __makeEvents__<{
 dirCountReady: DirCountReady,
 embeddingProgress: EmbeddingProgress,
 embeddingStatus: EmbeddingStatus,
+facesProgress: FacesProgress,
 folderChanged: FolderChanged,
 metaBatchReady: MetaBatchReady,
 scanBatch: ScanBatch,
@@ -322,6 +344,7 @@ thumbnailReady: ThumbnailReady
 dirCountReady: "dir-count-ready",
 embeddingProgress: "embedding-progress",
 embeddingStatus: "embedding-status",
+facesProgress: "faces-progress",
 folderChanged: "folder-changed",
 metaBatchReady: "meta-batch-ready",
 scanBatch: "scan-batch",
@@ -493,6 +516,10 @@ focalLength: number | null;
  * Decimal degrees; positive = north/east.
  */
 gpsLat: number | null; gpsLon: number | null }
+/**
+ * Progress of a background face-detection pass over the current collection.
+ */
+export type FacesProgress = { done: number; total: number; epoch: number }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**
  * Lowercased extension, e.g. "png".
@@ -571,6 +598,28 @@ export type Overlay =
  * Mark the pixels that have run out of range at either end.
  */
 "clipping"
+/**
+ * A person the clustering found: their face chips and their photographs.
+ */
+export type PersonCluster = { id: string; 
+/**
+ * The crop that stands for this person in the panel.
+ */
+cover: string; 
+/**
+ * A few more member crops — enough to judge at a glance whether the
+ * cluster really is one person.
+ */
+chips: string[]; 
+/**
+ * Photographs where a face of this person was detected.
+ */
+photos: string[]; 
+/**
+ * Photographs with no visible face, but near-identical to a member —
+ * the person turned away between two shots of the same moment.
+ */
+implied: string[] }
 export type Preset = { id: string; 
 /**
  * What the control says when this preset is the one in effect.

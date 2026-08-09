@@ -48,9 +48,10 @@ export interface QueryData {
   meta: Record<string, ImageMeta>;
   scores: Record<string, number>;
   labels: Record<string, ImageLabels>;
+  people: Record<string, string[]>;
 }
 
-export const EMPTY_QUERY_DATA: QueryData = { meta: {}, scores: {}, labels: {} };
+export const EMPTY_QUERY_DATA: QueryData = { meta: {}, scores: {}, labels: {}, people: {} };
 
 /** An image nobody labeled: genuinely zero stars-null tags-none, not unknown. */
 export const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
@@ -132,10 +133,11 @@ function compareValues(a: number | string, b: number | string): number {
 }
 
 export function applyQuery(entries: FileEntry[], query: Query, data: QueryData): FileEntry[] {
-  const { meta, scores, labels } = data;
+  const { meta, scores, labels, people } = data;
   const fieldCtx = (e: FileEntry): FieldCtx => ({
     meta: meta[e.path],
     labels: labels[e.path] ?? EMPTY_LABELS,
+    people: people[e.path] ?? [],
   });
   const filtered = query.filters.length
     ? entries.filter((e) => query.filters.every((f) => matches(e, f, fieldCtx(e))))
@@ -180,7 +182,7 @@ export function usesScores(query: Query): boolean {
 }
 
 /** True when any active field-keyed clause's field reads the given channel. */
-function filtersRead(query: Query, channel: "meta" | "labels"): boolean {
+function filtersRead(query: Query, channel: "meta" | "labels" | "people"): boolean {
   return query.filters.some((f) => {
     if (f.kind !== "select" && f.kind !== "range") return false;
     const field = getFilterField(f.field);
@@ -196,6 +198,11 @@ export function usesMeta(query: Query): boolean {
 /** True when applying the query needs user labels (stars, tags). */
 export function usesLabels(query: Query): boolean {
   return getSort(query.sort.key)?.reads === "labels" || filtersRead(query, "labels");
+}
+
+/** True when applying the query needs the person clusters. */
+export function usesPeople(query: Query): boolean {
+  return filtersRead(query, "people");
 }
 
 /* Pure query editing helpers — the store actions apply these. */

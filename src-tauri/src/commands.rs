@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
+use crate::services::faces::{FaceService, PersonCluster};
 use crate::services::files::TrashOutcome;
 use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
@@ -288,6 +289,47 @@ pub async fn embedding_banded_scores(
     tauri::async_runtime::spawn_blocking(move || service.banded_scores(&paths, band as usize))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Detect faces over the collection in the background; progress arrives as
+/// `faces-progress` events. Per-photo results are cached as sidecars, so a
+/// repeat pass over an unchanged folder is a cache read.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_index(
+    app: AppHandle,
+    service: State<'_, Arc<FaceService>>,
+    paths: Vec<String>,
+    epoch: u64,
+) {
+    use tauri_specta::Event as _;
+    let service = Arc::clone(service.inner());
+    std::thread::spawn(move || {
+        service.index(&paths, |done, total| {
+            let _ = crate::events::FacesProgress { done, total, epoch }.emit(&app);
+        });
+    });
+}
+
+/// Cluster every detected face of `paths` into people, propagating identity
+/// onto near-identical faceless photos. Cheap to re-run: vectors and
+/// detections are cached, so this is dot products and bookkeeping.
+#[tauri::command]
+#[specta::specta]
+pub async fn faces_people(
+    faces: State<'_, Arc<FaceService>>,
+    embeddings: State<'_, Arc<EmbeddingService>>,
+    paths: Vec<String>,
+    threshold: f32,
+    propagate: f32,
+) -> Result<Vec<PersonCluster>, String> {
+    let faces = Arc::clone(faces.inner());
+    let embeddings = Arc::clone(embeddings.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        faces.people(&embeddings, &paths, threshold, propagate)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Per-image pixel statistics (histograms, color triangle) for the info

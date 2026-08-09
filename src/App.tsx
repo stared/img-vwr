@@ -60,6 +60,12 @@ function App() {
       events.metaBatchReady.listen(({ payload }) =>
         metaBatchReady(payload.items, payload.epoch),
       ),
+      events.facesProgress.listen(({ payload }) => {
+        const s = useAppStore.getState();
+        if (payload.epoch === s.epoch) {
+          s.setFacesProgress({ done: payload.done, total: payload.total });
+        }
+      }),
     ];
     return () => {
       for (const unlisten of unlisteners) void unlisten.then((fn) => fn());

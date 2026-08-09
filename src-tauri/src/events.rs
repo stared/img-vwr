@@ -86,3 +86,12 @@ pub struct EmbeddingProgress {
     pub total: u32,
     pub epoch: u64,
 }
+
+/// Progress of a background face-detection pass over the current collection.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct FacesProgress {
+    pub done: u32,
+    pub total: u32,
+    pub epoch: u64,
+}

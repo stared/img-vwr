@@ -14,6 +14,7 @@ import type {
   ImageMeta,
   ImageStats,
   MetaEntry,
+  PersonCluster,
   Crop,
   Overlay,
   Preset,
@@ -38,6 +39,7 @@ export type {
   ImageMeta,
   ImageStats,
   MetaEntry,
+  PersonCluster,
   Crop,
   Overlay,
   Preset,
@@ -131,6 +133,22 @@ export async function embeddingBandedScores(
   band: number,
 ): Promise<(number | null)[][]> {
   return unwrap(await commands.embeddingBandedScores(paths, band));
+}
+
+/** Detect faces over the collection in the background; progress arrives as
+ * `facesProgress` events, per-photo results are cached. */
+export async function facesIndex(paths: string[], epoch: number): Promise<void> {
+  return commands.facesIndex(paths, epoch);
+}
+
+/** Cluster detected faces into people; identity propagates onto faceless
+ * photos near-identical to a member. Needs the embedding model loaded. */
+export async function facesPeople(
+  paths: string[],
+  threshold: number,
+  propagate: number,
+): Promise<PersonCluster[]> {
+  return unwrap(await commands.facesPeople(paths, threshold, propagate));
 }
 
 /** Pixel statistics (histograms, color triangle) from the cached thumb. */
