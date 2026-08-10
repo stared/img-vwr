@@ -73,6 +73,8 @@ objc2-vision = { version = "0.3", default-features = false, features = [
   "objc2-core-foundation",
   "VNRequest",
   "VNDetectFaceRectanglesRequest",
+  "VNDetectFaceLandmarksRequest",
+  "VNFaceLandmarks",
   "VNRequestHandler",
   "VNObservation",
   "VNTypes",

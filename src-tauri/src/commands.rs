@@ -321,12 +321,13 @@ pub async fn faces_people(
     embeddings: State<'_, Arc<EmbeddingService>>,
     paths: Vec<String>,
     threshold: f32,
+    merge: f32,
     propagate: f32,
 ) -> Result<Vec<PersonCluster>, String> {
     let faces = Arc::clone(faces.inner());
     let embeddings = Arc::clone(embeddings.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        faces.people(&embeddings, &paths, threshold, propagate)
+        faces.people(&embeddings, &paths, threshold, merge, propagate)
     })
     .await
     .map_err(|e| e.to_string())?

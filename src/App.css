@@ -2000,6 +2000,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   color: var(--text);
 }
 
+/* Background-only appearances: counted, but quietly — they matter least. */
+.person-bg {
+  color: var(--text-faint);
+}
+
 .menu-hint-row {
   margin: 0;
   padding: 6px 10px;

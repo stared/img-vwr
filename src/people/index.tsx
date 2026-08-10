@@ -16,17 +16,22 @@ import { useAppStore } from "../state/store";
  */
 
 /**
- * A face joins a person when its embedding matches this well.
+ * A face joins a person when its identity vector matches this well.
  *
- * Deliberately strict. The embedding space (SigLIP, the Similarity panel's
- * model) measures whole-image likeness, not facial identity — at looser
- * thresholds it happily groups different smiling women photographed in the
- * same greenery. At 0.95, measured on a real 675-photo event shoot, chips
- * within a cluster are one person; the cost is fragmentation (the same
- * person splits across sessions), which is the survivable failure mode. A
- * face-identity model can lower this later.
+ * The space is a real face recognizer (ArcFace-family), not the Similarity
+ * panel's general model — same-person cosine similarity separates cleanly
+ * from different-person there, so the threshold sits where the two
+ * distributions part rather than pinned defensively near 1.
  */
-const PERSON_SIM = 0.95;
+const PERSON_SIM = 0.45;
+
+/**
+ * Cluster fragments whose members agree this well pairwise, on average,
+ * are one person photographed in two conditions (day and stage light).
+ * Average linkage, not centroids — see the Rust side for why centroids
+ * of different people converge as clusters grow.
+ */
+const PERSON_MERGE = 0.38;
 
 /**
  * A faceless photo joins a person's photos when it is at least this similar
@@ -51,7 +56,7 @@ async function refreshPeople(): Promise<void> {
   const paths = localJpegPaths();
   if (paths.length === 0) return;
   try {
-    const clusters = await facesPeople(paths, PERSON_SIM, PERSON_PROPAGATE);
+    const clusters = await facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
     useAppStore.getState().peopleLoaded(clusters.filter((c) => c.photos.length >= MIN_FACES));
   } catch (error) {
     console.warn("clustering people failed", error);
@@ -71,12 +76,12 @@ export function PeoplePanel() {
   // When a detection pass finishes, cluster — and once only per finish.
   const clusteredFor = useRef<string | null>(null);
   useEffect(() => {
-    if (progress === null || progress.done < progress.total || !modelReady) return;
+    if (progress === null || progress.done < progress.total) return;
     const key = `${epoch}:${progress.total}`;
     if (clusteredFor.current === key) return;
     clusteredFor.current = key;
     void refreshPeople();
-  }, [progress, modelReady, epoch]);
+  }, [progress, epoch]);
 
   if (scope?.kind !== "folder") {
     return <p className="panel-hint">People live in local folders.</p>;
@@ -94,7 +99,7 @@ export function PeoplePanel() {
     <div className="people-panel">
       {!modelReady && (
         <p className="panel-hint">
-          Faces cluster with the Similarity panel's model — pick one there first.
+          Turned-away shots join their person only with a Similarity model loaded.
         </p>
       )}
       <button
@@ -121,15 +126,14 @@ export function PeoplePanel() {
               key={person.id}
               className={`person-chip ${active.has(person.id) ? "active" : ""}`}
               onClick={() => toggleSelectFilter("person", person.id)}
-              title={
-                person.implied.length > 0
-                  ? `${person.photos.length} photos, +${person.implied.length} near-identical without the face`
-                  : `${person.photos.length} photos`
-              }
+              title={`${person.solo.length} alone in frame, ${person.few.length} among a few, ${person.background.length} in the background${person.implied.length > 0 ? `, +${person.implied.length} near-identical without the face` : ""}`}
             >
               <img src={fileUrl(person.cover)} alt={`person ${person.id}`} draggable={false} />
               <span>
-                person {person.id} · {person.photos.length + person.implied.length}
+                person {person.id} · {person.solo.length + person.few.length}
+                {person.background.length > 0 && (
+                  <span className="person-bg"> +{person.background.length} bg</span>
+                )}
               </span>
             </button>
           ))}
@@ -157,7 +161,7 @@ function PersonMenuItems({ close }: { close: () => void }) {
             close();
           }}
         >
-          person {person.id} · {person.photos.length + person.implied.length}
+          person {person.id} · {person.solo.length + person.few.length}
           <span className="menu-check">
             {active?.kind === "select" && active.value === person.id ? "✓" : ""}
           </span>

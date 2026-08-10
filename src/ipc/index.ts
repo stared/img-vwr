@@ -146,9 +146,10 @@ export async function facesIndex(paths: string[], epoch: number): Promise<void> 
 export async function facesPeople(
   paths: string[],
   threshold: number,
+  merge: number,
   propagate: number,
 ): Promise<PersonCluster[]> {
-  return unwrap(await commands.facesPeople(paths, threshold, propagate));
+  return unwrap(await commands.facesPeople(paths, threshold, merge, propagate));
 }
 
 /** Pixel statistics (histograms, color triangle) from the cached thumb. */

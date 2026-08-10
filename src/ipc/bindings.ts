@@ -161,9 +161,9 @@ async facesIndex(paths: string[], epoch: number) : Promise<void> {
  * onto near-identical faceless photos. Cheap to re-run: vectors and
  * detections are cached, so this is dot products and bookkeeping.
  */
-async facesPeople(paths: string[], threshold: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
+async facesPeople(paths: string[], threshold: number, merge: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("faces_people", { paths, threshold, propagate }) };
+    return { status: "ok", data: await TAURI_INVOKE("faces_people", { paths, threshold, merge, propagate }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -612,9 +612,21 @@ cover: string;
  */
 chips: string[]; 
 /**
- * Photographs where a face of this person was detected.
+ * Photographs where a face of this person was detected, any role.
  */
 photos: string[]; 
+/**
+ * Photographs where they are the sole focus — the only sizable face.
+ */
+solo: string[]; 
+/**
+ * Photographs where they share the frame with a few comparable faces.
+ */
+few: string[]; 
+/**
+ * Photographs where they are small or behind others — background.
+ */
+background: string[]; 
 /**
  * Photographs with no visible face, but near-identical to a member —
  * the person turned away between two shots of the same moment.

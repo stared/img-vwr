@@ -342,3 +342,91 @@ mod tests {
         assert!(model_spec("nope").is_none());
     }
 }
+
+/// The face-identity recognizer: an ArcFace-family model whose vectors
+/// measure "same face", where the SigLIP models above measure "similar
+/// picture". Clustering people through a generic image embedding groups by
+/// lighting and hair; this is the model whose job identity actually is.
+///
+/// ResNet-50 trained on WebFace600K (insightface's buffalo_l recognizer),
+/// ONNX run through onnxruntime. The bigger tower earns its 174 MB: on
+/// unaligned crops the small MobileFaceNet's same-person and
+/// different-person similarities overlap, and clustering in an overlap is
+/// choosing which way to be wrong.
+pub struct FaceEmbedder {
+    /// onnxruntime sessions want &mut for `run`; the mutex serializes.
+    session: Mutex<ort::session::Session>,
+    input_name: String,
+    output_name: String,
+}
+
+pub const FACE_MODEL_REPO: &str = "immich-app/buffalo_l";
+pub const FACE_MODEL_FILE: &str = "recognition/model.onnx";
+/// Tags cached identity vectors, so switching recognizers can never read
+/// another model's space.
+pub const FACE_MODEL_ID: &str = "buffalo-l";
+const FACE_EDGE: usize = 112;
+
+impl FaceEmbedder {
+    /// Download (first use) and load the recognizer. Blocking.
+    pub fn load(cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
+        let api = hf_hub::api::sync::ApiBuilder::new()
+            .with_cache_dir(cache_dir.to_path_buf())
+            .build()
+            .map_err(|e| EmbedError::Download(e.to_string()))?;
+        let model_file = api
+            .model(FACE_MODEL_REPO.to_string())
+            .get(FACE_MODEL_FILE)
+            .map_err(|e| EmbedError::Download(e.to_string()))?;
+        let session = ort::session::Session::builder()
+            .map_err(|e| EmbedError::Model(e.to_string()))?
+            .commit_from_file(&model_file)
+            .map_err(|e| EmbedError::Model(e.to_string()))?;
+        let input_name = session
+            .inputs
+            .first()
+            .map(|i| i.name.clone())
+            .ok_or_else(|| EmbedError::Model("face model has no input".into()))?;
+        let output_name = session
+            .outputs
+            .first()
+            .map(|o| o.name.clone())
+            .ok_or_else(|| EmbedError::Model("face model has no output".into()))?;
+        Ok(Self {
+            session: Mutex::new(session),
+            input_name,
+            output_name,
+        })
+    }
+
+    /// The L2-normalized identity vector of an aligned 112×112 face crop.
+    pub fn embed_face_file(&self, path: &std::path::Path) -> Result<Vec<f32>, EmbedError> {
+        let img = image::open(path)
+            .map_err(|e| EmbedError::Image(e.to_string()))?
+            .resize_exact(
+                FACE_EDGE as u32,
+                FACE_EDGE as u32,
+                image::imageops::FilterType::Triangle,
+            )
+            .to_rgb8();
+        // NCHW, RGB, (x − 127.5) / 127.5 — the ArcFace convention.
+        let mut data = vec![0f32; 3 * FACE_EDGE * FACE_EDGE];
+        for (x, y, pixel) in img.enumerate_pixels() {
+            for c in 0..3 {
+                data[c * FACE_EDGE * FACE_EDGE + y as usize * FACE_EDGE + x as usize] =
+                    (f32::from(pixel[c]) - 127.5) / 127.5;
+            }
+        }
+        let tensor = ort::value::Tensor::from_array(([1usize, 3, FACE_EDGE, FACE_EDGE], data))
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let mut session = self.session.lock().unwrap();
+        let outputs = session
+            .run(ort::inputs![self.input_name.as_str() => tensor])
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let (_, raw) = outputs[self.output_name.as_str()]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let n = raw.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-12);
+        Ok(raw.iter().map(|v| v / n).collect())
+    }
+}

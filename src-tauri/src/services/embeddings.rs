@@ -216,13 +216,6 @@ impl EmbeddingService {
         Ok(self.rank(embedder.model_id, &anchor_vec, paths))
     }
 
-    /// The vector for any image file under the active model, computing it
-    /// if needed — the face service embeds its crops through this.
-    pub fn vector_for_path(&self, path: &str) -> Result<Arc<Vec<f32>>, String> {
-        let embedder = self.active()?;
-        self.vector_for(&embedder, path)
-    }
-
     /// The already-known vector for a path (memory or disk), never computing.
     pub fn known_vector_for_path(&self, path: &str) -> Option<Arc<Vec<f32>>> {
         let embedder = self.active().ok()?;
