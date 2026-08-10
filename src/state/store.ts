@@ -665,7 +665,15 @@ export function withDeleted(
  * not on screen is not something an action should reach.
  */
 export function withQuery(state: VisibleInputs, query: Query): Partial<AppState> {
-  return withSelectionHeld(state, { query });
+  const held = withSelectionHeld(state, { query });
+  // A filter that excludes the photograph being viewed must not strand an
+  // empty viewer on screen ("No image selected." and nothing else): with
+  // nothing left to view, the query result is the thing to look at, so
+  // the viewer yields to the gallery.
+  if (state.viewMode === "viewer" && held.selectedIndex === null) {
+    return { ...held, viewMode: "gallery" };
+  }
+  return held;
 }
 
 export function withThumb(

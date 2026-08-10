@@ -212,6 +212,26 @@ describe("selection can be empty", () => {
     });
   });
 
+  it("leaves the viewer when the filter excludes the photograph being viewed", () => {
+    // Viewing b.jpg, then filtering to names with "a.": the viewer would be
+    // an empty screen saying "No image selected." — the gallery is the
+    // thing worth showing instead.
+    const stranded = withQuery(
+      { ...showing([1]), viewMode: "viewer" as const },
+      { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] },
+    );
+    expect(stranded.selectedIndex).toBeNull();
+    expect(stranded.viewMode).toBe("gallery");
+
+    // Still viewable: the viewer stays.
+    const kept = withQuery(
+      { ...showing([0]), viewMode: "viewer" as const },
+      { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] },
+    );
+    expect(kept.selectedIndex).toBe(0);
+    expect(kept.viewMode).toBeUndefined();
+  });
+
   it("clears rather than reassigns when the selected image is filtered out", () => {
     // A name filter that keeps only "a" drops the selected "b".
     const dropped = withQuery(showing([1]), {

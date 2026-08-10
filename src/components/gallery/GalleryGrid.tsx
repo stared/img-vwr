@@ -240,6 +240,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
           {columns} per row
         </label>
       </div>
+      {entries.length === 0 && <p className="hint">Nothing matches these filters.</p>}
       <div
         ref={scrollRef}
         className="gallery-scroll"
