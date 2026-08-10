@@ -40,6 +40,12 @@ export function scopeLoading(scope: Scope, epoch: number) {
     selectionAnchor: null,
     similarity: null,
     embedProgress: null,
+    // People are of the previous folder; a finished detection left standing
+    // would auto-cluster the new one and report "no faces" for a folder
+    // that was never searched.
+    people: null,
+    peopleByPath: {} as Record<string, string[]>,
+    facesProgress: null,
     viewerView: null,
     viewerImg: null,
   };

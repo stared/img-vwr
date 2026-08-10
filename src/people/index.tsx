@@ -119,8 +119,11 @@ function localJpegPaths(): string[] {
 async function refreshPeople(): Promise<void> {
   const paths = localJpegPaths();
   if (paths.length === 0) return;
+  const epoch = useAppStore.getState().epoch;
   try {
     const clusters = await facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
+    // The folder changed while clustering ran; these are its people, not ours.
+    if (useAppStore.getState().epoch !== epoch) return;
     useAppStore.getState().peopleLoaded(clusters.filter((c) => c.photos.length >= MIN_FACES));
   } catch (error) {
     console.warn("clustering people failed", error);

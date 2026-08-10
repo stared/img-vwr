@@ -4,7 +4,7 @@ import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
-import { folderRescanned } from "./collection";
+import { folderRescanned, scopeLoading } from "./collection";
 import {
   movedSelection,
   scanBatchArrived,
@@ -117,6 +117,18 @@ describe("sortForScope", () => {
     expect(sortForScope(FOLDER_SCOPE, { key: "test.similar", dir: "desc" })).toEqual(
       defaultQuery.sort,
     );
+  });
+});
+
+describe("scopeLoading", () => {
+  it("forgets the previous folder's people and their finished detection", () => {
+    // A completed facesProgress left standing would auto-cluster the new
+    // folder's (unscanned) photos and announce "No faces found." for a
+    // search that never ran.
+    const reset = scopeLoading(FOLDER_SCOPE, 7);
+    expect(reset.people).toBeNull();
+    expect(reset.peopleByPath).toEqual({});
+    expect(reset.facesProgress).toBeNull();
   });
 });
 
