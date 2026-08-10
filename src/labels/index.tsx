@@ -14,7 +14,7 @@ import { chosenEntries, filesBehind, useAppStore } from "../state/store";
  * sort; nothing here is special-cased in the engine.
  *
  * Keys (Lightroom-style): 1–5 rate, 0 clears, t tags — on the selected
- * grid cell and in the viewer, where rating auto-advances for culling.
+ * grid cell and in the viewer.
  */
 
 /**
@@ -36,13 +36,8 @@ function labelTargets(): { photographs: FileEntry[]; files: FileEntry[] } {
 async function rateSelected(stars: number | null): Promise<void> {
   const { photographs, files } = labelTargets();
   if (photographs.length === 0) return;
-  const { viewMode, labelsApplied, navigate } = useAppStore.getState();
+  const { labelsApplied } = useAppStore.getState();
   labelsApplied(await labelsSetStars(files.map((e) => e.path), stars));
-  // Culling rhythm: rating in the viewer moves on to the next image. Only
-  // when one frame was rated — a rating applied to a whole selection is not
-  // a step through a sequence, and moving would leave the user somewhere
-  // they did not ask to be.
-  if (viewMode === "viewer" && stars !== null && photographs.length === 1) navigate(1);
 }
 
 async function tagSelected(tag: string): Promise<void> {
