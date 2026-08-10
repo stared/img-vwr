@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { requestMeta, requestThumbnails } from "../../ipc";
-import { groupScenes, sceneGapLabel, sceneLabel, SCENE_GAPS_MIN, type Scene } from "../../state/scenes";
+import {
+  groupScenes,
+  sceneGapLabel,
+  sceneLabel,
+  sliderFromTau,
+  tauFromSlider,
+  type Scene,
+} from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
@@ -85,6 +92,8 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const setGridColumns = useAppStore((s) => s.setGridColumns);
   const sceneGapMin = useAppStore((s) => s.sceneGapMin);
   const setSceneGap = useAppStore((s) => s.setSceneGap);
+  const contentWeight = useAppStore((s) => s.sceneContentWeight);
+  const setContentWeight = useAppStore((s) => s.setSceneContentWeight);
   // Subscribed only in the scenes view — metadata streams in by the
   // hundreds, and a plain contact sheet has no business re-rendering for it.
   const meta = useAppStore((s) => (grouped ? s.meta : null));
@@ -116,10 +125,11 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
             entries,
             meta ?? {},
             sceneGapMin * 60_000,
+            contentWeight,
             sceneSimsFor({ sceneSims }, entries),
           )
         : null,
-    [grouped, entries, meta, sceneGapMin, sceneSims],
+    [grouped, entries, meta, sceneGapMin, contentWeight, sceneSims],
   );
 
   const rows = useMemo(
@@ -186,17 +196,38 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   return (
     <>
       <div className="gallery-toolbar">
-        {grouped &&
-          SCENE_GAPS_MIN.map((min) => (
-            <button
-              key={min}
-              className={min === sceneGapMin ? "active" : ""}
-              onClick={() => setSceneGap(min)}
-              title="the feel of a scene break: the longer a pause, the less the pictures need to change — with no similarity model loaded, a pause over the minutes splits"
-            >
-              {sceneGapLabel(min)}
-            </button>
-          ))}
+        {grouped && (
+          <label
+            className="gallery-size"
+            title="the feel of a scene break: the longer a pause, the less the pictures need to change — log scale, 30 s to an hour"
+          >
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={sliderFromTau(sceneGapMin)}
+              onChange={(e) => setSceneGap(tauFromSlider(Number(e.currentTarget.value)))}
+            />
+            {sceneGapLabel(sceneGapMin)}
+          </label>
+        )}
+        {grouped && (
+          <label
+            className="gallery-size"
+            title="how much the pictures outvote the clock: at 0% a pause over the time splits and nothing else does; at 100% the content decides how a pause reads"
+          >
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={contentWeight}
+              onChange={(e) => setContentWeight(Number(e.currentTarget.value))}
+            />
+            content: {Math.round(contentWeight * 100)}%
+          </label>
+        )}
         <label className="gallery-size" title="how many photos fill a row">
           <input
             type="range"

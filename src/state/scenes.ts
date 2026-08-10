@@ -30,15 +30,34 @@ export interface Scene {
 }
 
 /**
- * The time constants worth offering, minutes — a small enumerable domain,
- * shown as one-click options in the scenes view's toolbar.
+ * The time constant's slider range, minutes. Logarithmic: the difference
+ * that matters between 30 s and a minute is the same *ratio* that matters
+ * between 15 and 30 minutes, so equal slider distance means equal ratio.
  */
-export const SCENE_GAPS_MIN: readonly number[] = [2, 5, 15];
+export const SCENE_TAU_MIN = 0.5;
+export const SCENE_TAU_MAX = 60;
 
-/** How an option names itself: "~" because the minutes are a feel, not a
+/** Slider position 0..1 → minutes, log scale. */
+export function tauFromSlider(x: number): number {
+  return SCENE_TAU_MIN * Math.pow(SCENE_TAU_MAX / SCENE_TAU_MIN, Math.min(Math.max(x, 0), 1));
+}
+
+/** Minutes → slider position 0..1. */
+export function sliderFromTau(tauMin: number): number {
+  const x = Math.log(tauMin / SCENE_TAU_MIN) / Math.log(SCENE_TAU_MAX / SCENE_TAU_MIN);
+  return Math.min(Math.max(x, 0), 1);
+}
+
+/** How the value names itself: "~" because the minutes are a feel, not a
  * cutoff — content decides where scenes break. */
 export function sceneGapLabel(gapMin: number): string {
-  return `~${gapMin} min`;
+  if (gapMin < 0.95) return `~${Math.max(5, Math.round((gapMin * 60) / 5) * 5)} s`;
+  if (gapMin >= 59.5) return "~1 h";
+  if (gapMin < 9.5) {
+    const rounded = Math.round(gapMin * 2) / 2;
+    return `~${rounded % 1 === 0 ? rounded : rounded.toFixed(1)} min`;
+  }
+  return `~${Math.round(gapMin)} min`;
 }
 
 /**
@@ -74,8 +93,21 @@ export const SCENE_BAND = 3;
 export const SCENE_SIM_FLOOR = 0.55;
 export const SCENE_SIM_CEIL = 0.93;
 
-export function sceneThreshold(gapMs: number, tauMs: number): number {
-  return SCENE_SIM_CEIL - (SCENE_SIM_CEIL - SCENE_SIM_FLOOR) * Math.exp(-gapMs / tauMs);
+/** A threshold no similarity reaches: with the content weight at zero this
+ * is what "the clock says split" compiles to. */
+const SCENE_NEVER = 1.01;
+
+/**
+ * `weight` is how much the pictures outvote the clock, 0..1. The pure-clock
+ * rule IS a threshold curve — zero up to the gap, impossible past it — so
+ * the weight honestly interpolates between the two models rather than
+ * scaling some cosmetic knob: at 0 this reduces exactly to "a pause over
+ * tau splits", at 1 content alone decides how the pause reads.
+ */
+export function sceneThreshold(gapMs: number, tauMs: number, weight: number): number {
+  const smooth = SCENE_SIM_CEIL - (SCENE_SIM_CEIL - SCENE_SIM_FLOOR) * Math.exp(-gapMs / tauMs);
+  const clock = gapMs <= tauMs ? 0 : SCENE_NEVER;
+  return weight * smooth + (1 - weight) * clock;
 }
 
 /** The best similarity from `bands[i]` to members of the current scene at
@@ -119,6 +151,7 @@ export function groupScenes(
   entries: FileEntry[],
   meta: Record<string, ImageMeta>,
   tauMs: number,
+  weight: number,
   bands: readonly (readonly (number | null)[])[] | null,
 ): Scene[] {
   const scenes: Scene[] = [];
@@ -138,7 +171,7 @@ export function groupScenes(
     if (sim === null) {
       continues = gap <= tauMs;
     } else {
-      continues = sim >= sceneThreshold(gap, tauMs);
+      continues = sim >= sceneThreshold(gap, tauMs, weight);
       if (!continues && i + 1 < entries.length && bands) {
         // The odd-frame reprieve: if the next photograph rejoins the scene
         // over this one's head (compared against the scene as it stands,
@@ -146,7 +179,7 @@ export function groupScenes(
         // scene, not the start of a new one.
         const nextSim = bestToScene(bands, i + 1, current.start, i);
         const nextGap = Math.abs((times[i + 1] ?? 0) - (times[i - 1] ?? 0));
-        continues = nextSim !== null && nextSim >= sceneThreshold(nextGap, tauMs);
+        continues = nextSim !== null && nextSim >= sceneThreshold(nextGap, tauMs, weight);
       }
     }
     if (continues) {

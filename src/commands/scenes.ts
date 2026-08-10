@@ -14,7 +14,13 @@ function jumpScene(direction: 1 | -1): void {
   const visible = visibleOf(s, s.query);
   // The same scenes the grid draws — including the embedding refinement,
   // when its scores are fresh for this exact list.
-  const scenes = groupScenes(visible, s.meta, s.sceneGapMin * 60_000, sceneSimsFor(s, visible));
+  const scenes = groupScenes(
+    visible,
+    s.meta,
+    s.sceneGapMin * 60_000,
+    s.sceneContentWeight,
+    sceneSimsFor(s, visible),
+  );
   const target = sceneJumpTarget(scenes, s.selectedIndex, direction);
   if (target !== null) s.select(target);
 }

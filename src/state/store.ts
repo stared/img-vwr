@@ -117,6 +117,12 @@ export interface AppState {
    */
   sceneGapMin: number;
   /**
+   * How much the pictures outvote the clock at scene boundaries, 0..1.
+   * Zero is the plain hard gap; one lets content alone decide how a pause
+   * reads. Only matters while embedding similarities are available.
+   */
+  sceneContentWeight: number;
+  /**
    * Embedding similarity of each visible photograph to the few before it,
    * driving scene boundaries: `bands[i][d-1]` describes (entries[i],
    * entries[i-d]).
@@ -246,6 +252,7 @@ interface AppActions {
   setTimelineThumbPx: (px: number) => void;
   setGridColumns: (columns: number) => void;
   setSceneGap: (min: number) => void;
+  setSceneContentWeight: (weight: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
   sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
   /** The face pass's clusters for the current folder. */
@@ -323,6 +330,7 @@ export const initialState: AppState = {
   timelineThumbPx: 64,
   gridColumns: 6,
   sceneGapMin: 2,
+  sceneContentWeight: 1,
   sceneSims: null,
   // On by default: working through a folder shot raw+JPEG otherwise means
   // every photograph twice, which is what the camera wrote but not what was
@@ -873,6 +881,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setGridColumns: (columns) => set({ gridColumns: columns }),
 
   setSceneGap: (min) => set({ sceneGapMin: min }),
+
+  setSceneContentWeight: (weight) => set({ sceneContentWeight: weight }),
 
   sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 
