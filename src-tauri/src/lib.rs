@@ -47,6 +47,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_banded_scores,
             commands::faces_index,
             commands::faces_people,
+            commands::faces_rename,
+            commands::faces_names,
             commands::image_stats,
             commands::labels_for_paths,
             commands::labels_set_stars,
@@ -146,14 +148,18 @@ pub fn run() {
                 Arc::clone(&scenes),
             )?));
             app.manage(Arc::new(EmbeddingService::new(cache_root.clone())?));
-            app.manage(Arc::new(crate::services::faces::FaceService::new(cache_root)?));
             // Watches whichever folder is open, so files that appear on disk
             // appear in the gallery. Holds no data of its own.
             app.manage(Arc::new(WatchService::new()));
-            // Labels and edits are user data, not a cache — they live in app
-            // data, and deliberately never beside the user's photos.
+            // Labels, edits and person names are user data, not a cache —
+            // they live in app data, and deliberately never beside the
+            // user's photos.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            app.manage(Arc::new(crate::services::faces::FaceService::new(
+                cache_root,
+                &data_dir.join("faces.db"),
+            )?));
             app.manage(Arc::new(LabelService::new(&data_dir.join("labels.db"))?));
             app.manage(Arc::new(DevelopService::new(
                 scenes,

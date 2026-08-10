@@ -333,6 +333,27 @@ pub async fn faces_people(
     .map_err(|e| e.to_string())?
 }
 
+/// Name (or, with an empty name, un-name) a person cluster of the most
+/// recent clustering. Names anchor to the cluster's identity vectors, so
+/// naming two fragments alike merges them on the next clustering.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_rename(
+    faces: State<'_, Arc<FaceService>>,
+    cluster_id: String,
+    name: String,
+    merge: f32,
+) -> Result<(), String> {
+    faces.rename(&cluster_id, &name, merge)
+}
+
+/// Every name ever given to a person, for the rename input's suggestions.
+#[tauri::command]
+#[specta::specta]
+pub fn faces_names(faces: State<'_, Arc<FaceService>>) -> Result<Vec<String>, String> {
+    faces.known_names()
+}
+
 /// Per-image pixel statistics (histograms, color triangle) for the info
 /// panel — computed from the cached thumbnail, off the main thread.
 #[tauri::command]

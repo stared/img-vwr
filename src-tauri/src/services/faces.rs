@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::services::embeddings::EmbeddingService;
@@ -46,7 +47,12 @@ pub struct Face {
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonCluster {
+    /// The filter value and map key. A named person's id IS their name —
+    /// names are anchored to identity vectors, so they survive reclustering
+    /// and follow the person into other folders; run ordinals do neither.
     pub id: String,
+    /// The user's name for this person, if they gave one.
+    pub name: Option<String>,
     /// The crop that stands for this person in the panel.
     pub cover: String,
     /// A few more member crops — enough to judge at a glance whether the
@@ -103,6 +109,39 @@ pub struct FaceService {
     face_vectors_dir: PathBuf,
     /// Hugging Face cache, shared with the similarity models.
     models_dir: PathBuf,
+    /// Named identities: user data, not a cache — names must survive every
+    /// cache wipe. One row per exemplar vector, keyed by name.
+    names: Mutex<Connection>,
+    /// The clusters of the most recent `people()` run, so a rename can find
+    /// the vectors behind the id the frontend is pointing at.
+    last_clusters: Mutex<Vec<LastCluster>>,
+}
+
+struct LastCluster {
+    id: String,
+    name: Option<String>,
+    vectors: Vec<Arc<Vec<f32>>>,
+}
+
+/// A saved name with the exemplar vectors that recognize its person.
+struct Identity {
+    name: String,
+    exemplars: Vec<Vec<f32>>,
+}
+
+/// Exemplar vectors saved per name. Enough to cover a person across
+/// lighting conditions without the matching cost growing with their photos.
+const MAX_EXEMPLARS: usize = 24;
+
+/// Exemplars contributed by one naming action — a spread sample of the
+/// cluster being named.
+const NAME_SAMPLE: usize = 8;
+
+/// A spread sample of up to `take` vectors — the same "not just the head"
+/// sampling the linkage merge uses, since mistakes cluster at the tail.
+fn spread<T: Clone>(items: &[T], take: usize) -> Vec<T> {
+    let step = (items.len() / take).max(1);
+    items.iter().step_by(step).take(take).cloned().collect()
 }
 
 struct IndexingPass<'a>(&'a AtomicBool);
@@ -114,15 +153,23 @@ impl Drop for IndexingPass<'_> {
 }
 
 impl FaceService {
-    pub fn new(cache_root: PathBuf) -> std::io::Result<Self> {
+    pub fn new(cache_root: PathBuf, names_db: &Path) -> Result<Self, String> {
         let sidecars_dir = cache_root.join("faces");
         let crops_dir = cache_root.join("face-crops");
         let face_vectors_dir = cache_root.join("face-vectors");
         let models_dir = cache_root.join("models");
-        std::fs::create_dir_all(&sidecars_dir)?;
-        std::fs::create_dir_all(&crops_dir)?;
-        std::fs::create_dir_all(&face_vectors_dir)?;
-        std::fs::create_dir_all(&models_dir)?;
+        for dir in [&sidecars_dir, &crops_dir, &face_vectors_dir, &models_dir] {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let names = Connection::open(names_db).map_err(|e| e.to_string())?;
+        names
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS person_exemplars (
+                     name   TEXT NOT NULL,
+                     vector BLOB NOT NULL
+                 ) STRICT;",
+            )
+            .map_err(|e| e.to_string())?;
         Ok(Self {
             faces: Mutex::new(HashMap::new()),
             indexing: AtomicBool::new(false),
@@ -132,7 +179,129 @@ impl FaceService {
             face_vectors: Mutex::new(HashMap::new()),
             face_vectors_dir,
             models_dir,
+            names: Mutex::new(names),
+            last_clusters: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Every named identity with its exemplar vectors.
+    fn identities(&self) -> Result<Vec<Identity>, String> {
+        let conn = self.names.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT name, vector FROM person_exemplars ORDER BY name")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out: Vec<Identity> = Vec::new();
+        for row in rows {
+            let (name, blob) = row.map_err(|e| e.to_string())?;
+            let vector: Vec<f32> = blob
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            match out.last_mut() {
+                Some(id) if id.name == name => id.exemplars.push(vector),
+                _ => out.push(Identity {
+                    name,
+                    exemplars: vec![vector],
+                }),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Replace one identity's exemplars; an empty set deletes the identity.
+    fn store_identity(&self, name: &str, exemplars: &[Vec<f32>]) -> Result<(), String> {
+        let mut conn = self.names.lock().unwrap();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM person_exemplars WHERE name = ?", [name])
+            .map_err(|e| e.to_string())?;
+        for vector in exemplars {
+            let blob: Vec<u8> = vector.iter().flat_map(|v| v.to_le_bytes()).collect();
+            tx.execute(
+                "INSERT INTO person_exemplars (name, vector) VALUES (?, ?)",
+                rusqlite::params![name, blob],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())
+    }
+
+    /// Every name ever given, for the rename input's suggestions.
+    pub fn known_names(&self) -> Result<Vec<String>, String> {
+        let conn = self.names.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT name FROM person_exemplars ORDER BY name")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    }
+
+    /// Name (or, with an empty name, un-name) a cluster of the most recent
+    /// `people()` run.
+    ///
+    /// Naming saves a spread sample of the cluster's vectors as the name's
+    /// exemplars — giving two fragments the same name therefore merges them
+    /// on the next clustering, because both keep matching those exemplars.
+    /// Renaming away first withdraws the exemplars this cluster accounts
+    /// for, so a wrong merge is undone the same way it was made.
+    pub fn rename(&self, cluster_id: &str, name: &str, merge: f32) -> Result<(), String> {
+        let mut last = self.last_clusters.lock().unwrap();
+        let cluster = last
+            .iter_mut()
+            .find(|c| c.id == cluster_id)
+            .ok_or_else(|| format!("no current cluster {cluster_id}"))?;
+        let name = name.trim();
+        let new_name = (!name.is_empty()).then(|| name.to_string());
+        if cluster.name == new_name {
+            return Ok(());
+        }
+        let sample = spread(&cluster.vectors, NAME_SAMPLE);
+
+        if let Some(old) = cluster.name.take() {
+            if Some(&old) != new_name.as_ref() {
+                // Withdraw this cluster's contribution: an exemplar leaves
+                // when ANY member vouches for it — exemplars are copies of
+                // member vectors, so their people are in this cluster. Max,
+                // not average: a merged cluster is a mixed bag, and an
+                // average against it dilutes every fragment's agreement.
+                let members = cluster.vectors.clone();
+                let kept: Vec<Vec<f32>> = self
+                    .identities()?
+                    .into_iter()
+                    .find(|id| id.name == old)
+                    .map(|id| id.exemplars)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|e| {
+                        members
+                            .iter()
+                            .map(|v| imgvwr_embed::dot(e, v))
+                            .fold(f32::MIN, f32::max)
+                            < merge
+                    })
+                    .collect();
+                self.store_identity(&old, &kept)?;
+            }
+        }
+        if let Some(new) = &new_name {
+            let mut exemplars = self
+                .identities()?
+                .into_iter()
+                .find(|id| &id.name == new)
+                .map(|id| id.exemplars)
+                .unwrap_or_default();
+            exemplars.extend(sample.iter().map(|v| v.as_ref().clone()));
+            let exemplars = spread(&exemplars, MAX_EXEMPLARS);
+            self.store_identity(new, &exemplars)?;
+        }
+        cluster.name = new_name;
+        Ok(())
     }
 
     /// The identity model, loading it on first call (a ~13 MB download the
@@ -353,6 +522,8 @@ impl FaceService {
             /// The member vectors, kept for average-linkage merging.
             vectors: Vec<Arc<Vec<f32>>>,
             best: (f32, String), // closest crop to centroid = cover
+            /// The stored identity this cluster matched, if any.
+            name: Option<String>,
         }
 
         /// Average pairwise similarity between two clusters, sampled.
@@ -420,6 +591,7 @@ impl FaceService {
                         faces: vec![(path.clone(), face.crop.clone(), role)],
                         vectors: vec![Arc::clone(&vector)],
                         best: (1.0, face.crop.clone()),
+                        name: None,
                     }),
                 }
             }
@@ -458,6 +630,63 @@ impl FaceService {
             if !merged_any {
                 break;
             }
+        }
+
+        // Named identities: exemplar vectors saved when the user named a
+        // cluster. Each cluster takes the name it agrees with best, by the
+        // same average-linkage measure the merge uses — so a name given
+        // once keeps finding its person across reclusters and folders.
+        let identities = self.identities()?;
+        for c in clusters.iter_mut() {
+            let sample = spread(&c.vectors, 12);
+            // Best-scoring name wins when identities compete for a cluster;
+            // one name may claim several clusters — those merge below.
+            let mut best: Option<(f32, &String)> = None;
+            for identity in &identities {
+                // The best-agreeing exemplar decides, NOT the average over
+                // all of them: an identity's exemplars deliberately span
+                // fragments the user merged by hand — fragments whose
+                // cross-similarity sits BELOW the merge bar (that is why
+                // they needed the hand) — so averaging across the set
+                // dilutes every fragment's own agreement under the bar.
+                let score = identity
+                    .exemplars
+                    .iter()
+                    .map(|e| {
+                        sample.iter().map(|v| imgvwr_embed::dot(e, v)).sum::<f32>()
+                            / sample.len() as f32
+                    })
+                    .fold(f32::MIN, f32::max);
+                if score >= merge && best.is_none_or(|(s, _)| score > s) {
+                    best = Some((score, &identity.name));
+                }
+            }
+            c.name = best.map(|(_, name)| name.clone());
+        }
+
+        // Two clusters wearing one name are one person the user has
+        // vouched for — union them regardless of what the vectors say.
+        let mut i = 0;
+        while i < clusters.len() {
+            let mut j = i + 1;
+            while j < clusters.len() {
+                if clusters[i].name.is_some() && clusters[i].name == clusters[j].name {
+                    let absorbed = clusters.remove(j);
+                    let host = &mut clusters[i];
+                    for (acc, v) in host.centroid.iter_mut().zip(absorbed.centroid.iter()) {
+                        *acc += v;
+                    }
+                    host.members += absorbed.members;
+                    host.faces.extend(absorbed.faces);
+                    host.vectors.extend(absorbed.vectors);
+                    if absorbed.best.0 > host.best.0 {
+                        host.best = absorbed.best;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            i += 1;
         }
 
         // Subjects first: a person mostly in backgrounds sorts after one the
@@ -521,8 +750,10 @@ impl FaceService {
                 .map(|(_, crop, _)| crop.clone())
                 .collect();
             out.push(PersonCluster {
-                // Bare number: the filter chip already says "person:".
-                id: format!("{}", i + 1),
+                // The name where there is one; otherwise a bare number (the
+                // filter chip already says "person:").
+                id: c.name.clone().unwrap_or_else(|| format!("{}", i + 1)),
+                name: c.name.clone(),
                 cover: c.best.1.clone(),
                 chips,
                 solo: of_role(Role::Solo),
@@ -532,6 +763,15 @@ impl FaceService {
                 implied,
             });
         }
+        *self.last_clusters.lock().unwrap() = out
+            .iter()
+            .zip(clusters.iter())
+            .map(|(person, c)| LastCluster {
+                id: person.id.clone(),
+                name: c.name.clone(),
+                vectors: c.vectors.clone(),
+            })
+            .collect();
         Ok(out)
     }
 }
@@ -873,5 +1113,68 @@ mod platform {
 
     pub fn detect_faces(_img: &image::DynamicImage) -> Result<Vec<super::DetectedFace>, String> {
         Err("face detection is not implemented for this platform yet".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The tempdir must outlive the service — dropping it deletes the db.
+    fn service() -> (tempfile::TempDir, FaceService) {
+        let dir = tempfile::tempdir().unwrap();
+        let svc = FaceService::new(dir.path().join("cache"), &dir.path().join("faces.db")).unwrap();
+        (dir, svc)
+    }
+
+    /// A unit vector along one axis — orthogonal axes are distinct people.
+    fn axis(i: usize) -> Arc<Vec<f32>> {
+        let mut v = vec![0.0f32; 4];
+        v[i] = 1.0;
+        Arc::new(v)
+    }
+
+    fn install_clusters(svc: &FaceService, clusters: &[(&str, usize)]) {
+        *svc.last_clusters.lock().unwrap() = clusters
+            .iter()
+            .map(|(id, ax)| LastCluster {
+                id: id.to_string(),
+                name: None,
+                vectors: vec![axis(*ax); 4],
+            })
+            .collect();
+    }
+
+    #[test]
+    fn a_name_sticks_to_vectors_and_leaves_with_them() {
+        let (_dir, svc) = service();
+        install_clusters(&svc, &[("1", 0), ("2", 1)]);
+
+        // Naming saves exemplars; both fragments named alike share them.
+        svc.rename("1", "Ania", 0.38).unwrap();
+        assert_eq!(svc.known_names().unwrap(), vec!["Ania"]);
+        svc.rename("2", "Ania", 0.38).unwrap();
+        let ania = &svc.identities().unwrap()[0];
+        assert!(ania.exemplars.iter().any(|e| e[0] > 0.9));
+        assert!(ania.exemplars.iter().any(|e| e[1] > 0.9));
+
+        // Renaming one fragment away withdraws only ITS exemplars.
+        svc.rename("2", "Kasia", 0.38).unwrap();
+        let ids = svc.identities().unwrap();
+        let ania = ids.iter().find(|i| i.name == "Ania").unwrap();
+        assert!(ania.exemplars.iter().all(|e| e[0] > 0.9));
+        let kasia = ids.iter().find(|i| i.name == "Kasia").unwrap();
+        assert!(kasia.exemplars.iter().all(|e| e[1] > 0.9));
+
+        // Clearing the last cluster of a name deletes the identity.
+        svc.rename("1", "", 0.38).unwrap();
+        svc.rename("2", "  ", 0.38).unwrap();
+        assert_eq!(svc.known_names().unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn renaming_an_unknown_cluster_is_an_error_not_a_panic() {
+        let (_dir, svc) = service();
+        assert!(svc.rename("7", "Ania", 0.38).is_err());
     }
 }

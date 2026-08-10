@@ -1,6 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { facesIndex, facesPeople, fileUrl, type PersonCluster } from "../ipc";
+import {
+  facesIndex,
+  facesNames,
+  facesPeople,
+  facesRename,
+  fileUrl,
+  type PersonCluster,
+} from "../ipc";
 import { registerFilterField } from "../registry/filters";
 import { isRawEntry } from "../state/stacks";
 import { useAppStore } from "../state/store";
@@ -108,6 +115,24 @@ function countTags(
 const TAG_LEGEND =
   "counts: alone in frame · sharing it with others · in the background (hollow)";
 
+/** The chip's text: the given name, or "person N" until there is one. */
+function personLabel(person: PersonCluster): string {
+  return person.name ?? `person ${person.id}`;
+}
+
+function CountsRow({ person }: { person: PersonCluster }) {
+  return (
+    <span className="person-counts">
+      {countTags(person).map(({ key, Icon, n, dim }) => (
+        <span key={key} className={dim ? "person-bg" : ""}>
+          <Icon />
+          {n}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function localJpegPaths(): string[] {
   const s = useAppStore.getState();
   if (s.scope?.kind !== "folder") return [];
@@ -138,6 +163,11 @@ export function PeoplePanel() {
   const epoch = useAppStore((s) => s.epoch);
   const query = useAppStore((s) => s.query);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
+  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
+  /** The cluster whose name is being edited in place, if any. */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [knownNames, setKnownNames] = useState<string[]>([]);
 
   // When a detection pass finishes, cluster — and once only per finish.
   const clusteredFor = useRef<string | null>(null);
@@ -161,6 +191,31 @@ export function PeoplePanel() {
     query.filters.flatMap((f) => (f.kind === "select" && f.field === "person" ? [f.value] : [])),
   );
 
+  async function commitName(person: PersonCluster): Promise<void> {
+    const name = draft.trim();
+    setEditing(null);
+    if (name === (person.name ?? "")) return;
+    try {
+      await facesRename(person.id, name, PERSON_MERGE);
+      if (active.has(person.id)) {
+        // The person's id is about to change with their name — keep an
+        // active filter pointing at them, or drop it when the name (and
+        // with it the stable id) is gone.
+        if (name !== "") setSelectFilter("person", name);
+        else toggleSelectFilter("person", person.id);
+      }
+      await refreshPeople();
+    } catch (error) {
+      console.warn("naming person failed", error);
+    }
+  }
+
+  function startEditing(person: PersonCluster): void {
+    setDraft(person.name ?? "");
+    setEditing(person.id);
+    facesNames().then(setKnownNames, () => setKnownNames([]));
+  }
+
   return (
     <div className="people-panel">
       <button
@@ -178,25 +233,51 @@ export function PeoplePanel() {
       )}
       {people !== null && people.length > 0 && (
         <div className="people-grid">
-          {people.map((person) => (
-            <button
-              key={person.id}
-              className={`person-chip ${active.has(person.id) ? "active" : ""}`}
-              onClick={() => toggleSelectFilter("person", person.id)}
-              title={`${TAG_LEGEND}${person.implied.length > 0 ? ` · +${person.implied.length} near-identical without the face` : ""}`}
-            >
-              <img src={fileUrl(person.cover)} alt={`person ${person.id}`} draggable={false} />
-              <span>person {person.id}</span>
-              <span className="person-counts">
-                {countTags(person).map(({ key, Icon, n, dim }) => (
-                  <span key={key} className={dim ? "person-bg" : ""}>
-                    <Icon />
-                    {n}
-                  </span>
-                ))}
-              </span>
-            </button>
-          ))}
+          {people.map((person) =>
+            editing === person.id ? (
+              <div key={person.id} className="person-chip">
+                <img src={fileUrl(person.cover)} alt={personLabel(person)} draggable={false} />
+                <input
+                  className="person-name-input"
+                  value={draft}
+                  autoFocus
+                  list="person-name-options"
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void commitName(person);
+                    else if (e.key === "Escape") setEditing(null);
+                  }}
+                  onBlur={() => setEditing(null)}
+                />
+                <CountsRow person={person} />
+              </div>
+            ) : (
+              <button
+                key={person.id}
+                className={`person-chip ${active.has(person.id) ? "active" : ""}`}
+                onClick={() => toggleSelectFilter("person", person.id)}
+                title={`${TAG_LEGEND}${person.implied.length > 0 ? ` · +${person.implied.length} near-identical without the face` : ""}`}
+              >
+                <img src={fileUrl(person.cover)} alt={personLabel(person)} draggable={false} />
+                <span
+                  className="person-name"
+                  title="click to name — the same name given twice merges the two"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startEditing(person);
+                  }}
+                >
+                  {personLabel(person)}
+                </span>
+                <CountsRow person={person} />
+              </button>
+            ),
+          )}
+          <datalist id="person-name-options">
+            {knownNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </div>
       )}
     </div>
@@ -221,15 +302,8 @@ function PersonMenuItems({ close }: { close: () => void }) {
             close();
           }}
         >
-          person {person.id}
-          <span className="person-counts">
-            {countTags(person).map(({ key, Icon, n, dim }) => (
-              <span key={key} className={dim ? "person-bg" : ""}>
-                <Icon />
-                {n}
-              </span>
-            ))}
-          </span>
+          {personLabel(person)}
+          <CountsRow person={person} />
           <span className="menu-check">
             {active?.kind === "select" && active.value === person.id ? "✓" : ""}
           </span>

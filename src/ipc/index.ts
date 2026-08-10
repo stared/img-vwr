@@ -152,6 +152,22 @@ export async function facesPeople(
   return unwrap(await commands.facesPeople(paths, threshold, merge, propagate));
 }
 
+/** Name (or, with an empty name, un-name) a cluster of the last people run.
+ * Names anchor to identity vectors: two clusters named alike merge on the
+ * next clustering, and the name follows the person into other folders. */
+export async function facesRename(
+  clusterId: string,
+  name: string,
+  merge: number,
+): Promise<void> {
+  unwrap(await commands.facesRename(clusterId, name, merge));
+}
+
+/** Every name ever given to a person, for the rename input's suggestions. */
+export async function facesNames(): Promise<string[]> {
+  return unwrap(await commands.facesNames());
+}
+
 /** Pixel statistics (histograms, color triangle) from the cached thumb. */
 export async function imageStats(path: string): Promise<ImageStats> {
   return unwrap(await commands.imageStats(path));

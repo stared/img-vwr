@@ -2000,6 +2000,21 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   color: var(--text);
 }
 
+/* Naming, in place: the chip's text becomes an input where it stands.
+   Same type, same footprint — the underline is the whole edit signal. */
+.person-name-input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  outline: none;
+}
+
 /* The frame-situation counts under a chip: silhouettes with numbers —
    alone, sharing the frame, background (hollow, dimmed). */
 .person-counts {

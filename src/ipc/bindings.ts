@@ -170,6 +170,30 @@ async facesPeople(paths: string[], threshold: number, merge: number, propagate: 
 }
 },
 /**
+ * Name (or, with an empty name, un-name) a person cluster of the most
+ * recent clustering. Names anchor to the cluster's identity vectors, so
+ * naming two fragments alike merges them on the next clustering.
+ */
+async facesRename(clusterId: string, name: string, merge: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("faces_rename", { clusterId, name, merge }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Every name ever given to a person, for the rename input's suggestions.
+ */
+async facesNames() : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("faces_names") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Per-image pixel statistics (histograms, color triangle) for the info
  * panel — computed from the cached thumbnail, off the main thread.
  */
@@ -601,7 +625,17 @@ export type Overlay =
 /**
  * A person the clustering found: their face chips and their photographs.
  */
-export type PersonCluster = { id: string; 
+export type PersonCluster = { 
+/**
+ * The filter value and map key. A named person's id IS their name —
+ * names are anchored to identity vectors, so they survive reclustering
+ * and follow the person into other folders; run ordinals do neither.
+ */
+id: string; 
+/**
+ * The user's name for this person, if they gave one.
+ */
+name: string | null; 
 /**
  * The crop that stands for this person in the panel.
  */
