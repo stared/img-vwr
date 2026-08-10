@@ -30,22 +30,15 @@ export interface Scene {
 }
 
 /**
- * The gaps worth offering, minutes. Cycled through by one control — a small
- * enumerable domain, so the choices are stated rather than typed. Null is
- * off: the grid is a plain contact sheet again.
+ * The time constants worth offering, minutes — a small enumerable domain,
+ * shown as one-click options in the scenes view's toolbar.
  */
-export const SCENE_GAPS_MIN: readonly (number | null)[] = [null, 2, 5, 15];
+export const SCENE_GAPS_MIN: readonly number[] = [2, 5, 15];
 
-export function nextSceneGap(current: number | null): number | null {
-  const at = SCENE_GAPS_MIN.indexOf(current);
-  // An unknown value (a future stored preference, say) restarts the cycle.
-  return SCENE_GAPS_MIN[(at + 1) % SCENE_GAPS_MIN.length] ?? null;
-}
-
-/** What the control says: the state, in words. "~" because the minutes are
- * a feel, not a cutoff — content decides where scenes break. */
-export function sceneGapLabel(gapMin: number | null): string {
-  return gapMin === null ? "scenes: off" : `scenes: ~${gapMin} min`;
+/** How an option names itself: "~" because the minutes are a feel, not a
+ * cutoff — content decides where scenes break. */
+export function sceneGapLabel(gapMin: number): string {
+  return `~${gapMin} min`;
 }
 
 /**

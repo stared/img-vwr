@@ -1245,6 +1245,13 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
+/* The scenes view's time-constant options: one click each, the active one
+   marked — never a control that cycles values under the pointer. */
+.gallery-toolbar button.active {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
 /* Photo size: presentation only — sliding never moves the time window. */
 .tl-size,
 .gallery-size {

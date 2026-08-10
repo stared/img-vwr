@@ -11,7 +11,6 @@ import { sceneSimsFor, useAppStore, visibleOf } from "../state/store";
  */
 function jumpScene(direction: 1 | -1): void {
   const s = useAppStore.getState();
-  if (s.sceneGapMin === null) return;
   const visible = visibleOf(s, s.query);
   // The same scenes the grid draws — including the embedding refinement,
   // when its scores are fresh for this exact list.
@@ -20,10 +19,11 @@ function jumpScene(direction: 1 | -1): void {
   if (target !== null) s.select(target);
 }
 
-/** With scenes off there is nothing to jump between — the chord falls through. */
+/** Outside the scenes view there are no boundaries to jump — the chord
+ * falls through. */
 function scenesOn(ctx: CommandContext): boolean {
   const s = ctx.store.getState();
-  return s.sceneGapMin !== null && s.entries.length > 0;
+  return s.galleryLayout === "scenes" && s.entries.length > 0;
 }
 
 export function registerSceneCommands(): void {

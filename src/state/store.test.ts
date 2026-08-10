@@ -340,7 +340,7 @@ describe("stacking is a darkroom rule", () => {
     patch: Partial<{
       stacking: boolean;
       viewMode: "gallery" | "viewer";
-      galleryLayout: "grid" | "timeline" | "map" | "darkroom";
+      galleryLayout: "grid" | "timeline" | "map" | "darkroom" | "scenes";
     }>,
   ) => ({
     stacking: true,
@@ -351,6 +351,7 @@ describe("stacking is a darkroom rule", () => {
 
   it("collapses pairs where one photograph is on screen at a time", () => {
     expect(stacksCollapse(state({ galleryLayout: "darkroom" }))).toBe(true);
+    expect(stacksCollapse(state({ galleryLayout: "scenes" }))).toBe(true);
     expect(stacksCollapse(state({ viewMode: "viewer" }))).toBe(true);
   });
 

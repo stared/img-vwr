@@ -4,7 +4,6 @@ import type { FileEntry, ImageMeta } from "../ipc";
 import {
   groupScenes,
   sceneThreshold,
-  nextSceneGap,
   sceneAt,
   sceneGapLabel,
   sceneJumpTarget,
@@ -245,15 +244,8 @@ describe("scene jumps", () => {
 });
 
 describe("the scenes control", () => {
-  it("cycles off through the offered gaps and back to off", () => {
-    expect(nextSceneGap(null)).toBe(2);
-    expect(nextSceneGap(2)).toBe(5);
-    expect(nextSceneGap(5)).toBe(15);
-    expect(nextSceneGap(15)).toBeNull();
-  });
-
-  it("states its value in words", () => {
-    expect(sceneGapLabel(null)).toBe("scenes: off");
-    expect(sceneGapLabel(2)).toBe("scenes: ~2 min");
+  it("names each offered time constant as a feel, not a cutoff", () => {
+    expect(sceneGapLabel(2)).toBe("~2 min");
+    expect(sceneGapLabel(15)).toBe("~15 min");
   });
 });

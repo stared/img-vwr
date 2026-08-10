@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { requestMeta, requestThumbnails } from "../../ipc";
-import { groupScenes, sceneGapLabel, sceneLabel, type Scene } from "../../state/scenes";
+import { groupScenes, sceneGapLabel, sceneLabel, SCENE_GAPS_MIN, type Scene } from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
@@ -70,7 +70,12 @@ export function gridRows(
   return rows;
 }
 
-export function GalleryGrid() {
+/**
+ * The grid, and the scenes view: the same rows of cells, except that scenes
+ * groups them into moments with a header per scene. One component because
+ * everything else — virtualization, selection, thumbnails — is identical.
+ */
+export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const entries = useVisibleEntries();
   const epoch = useAppStore((s) => s.epoch);
   const status = useAppStore((s) => s.status);
@@ -79,10 +84,10 @@ export function GalleryGrid() {
   const preferredColumns = useAppStore((s) => s.gridColumns);
   const setGridColumns = useAppStore((s) => s.setGridColumns);
   const sceneGapMin = useAppStore((s) => s.sceneGapMin);
-  const cycleSceneGap = useAppStore((s) => s.cycleSceneGap);
-  // Subscribed only while scenes are on — metadata streams in by the
+  const setSceneGap = useAppStore((s) => s.setSceneGap);
+  // Subscribed only in the scenes view — metadata streams in by the
   // hundreds, and a plain contact sheet has no business re-rendering for it.
-  const meta = useAppStore((s) => (s.sceneGapMin === null ? null : s.meta));
+  const meta = useAppStore((s) => (grouped ? s.meta : null));
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -97,24 +102,24 @@ export function GalleryGrid() {
   // whatever EXIF has not streamed in yet (same pattern as the stats panel —
   // getState() keeps in-flight paths from re-firing the request).
   useEffect(() => {
-    if (sceneGapMin === null || status !== "loaded" || remote || allEntries.length === 0) return;
+    if (!grouped || status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
     const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
     if (missing.length > 0) void requestMeta(missing, epoch);
-  }, [sceneGapMin, status, remote, allEntries, epoch]);
+  }, [grouped, status, remote, allEntries, epoch]);
 
-  const sceneSims = useAppStore((s) => (s.sceneGapMin === null ? null : s.sceneSims));
+  const sceneSims = useAppStore((s) => (grouped ? s.sceneSims : null));
   const scenes = useMemo(
     () =>
-      sceneGapMin === null
-        ? null
-        : groupScenes(
+      grouped
+        ? groupScenes(
             entries,
             meta ?? {},
             sceneGapMin * 60_000,
             sceneSimsFor({ sceneSims }, entries),
-          ),
-    [entries, meta, sceneGapMin, sceneSims],
+          )
+        : null,
+    [grouped, entries, meta, sceneGapMin, sceneSims],
   );
 
   const rows = useMemo(
@@ -181,12 +186,17 @@ export function GalleryGrid() {
   return (
     <>
       <div className="gallery-toolbar">
-        <button
-          onClick={cycleSceneGap}
-          title="scenes break where the pictures change; the longer a pause, the less change it takes — with no similarity model loaded, a pause over the minutes splits"
-        >
-          {sceneGapLabel(sceneGapMin)}
-        </button>
+        {grouped &&
+          SCENE_GAPS_MIN.map((min) => (
+            <button
+              key={min}
+              className={min === sceneGapMin ? "active" : ""}
+              onClick={() => setSceneGap(min)}
+              title="the feel of a scene break: the longer a pause, the less the pictures need to change — with no similarity model loaded, a pause over the minutes splits"
+            >
+              {sceneGapLabel(min)}
+            </button>
+          ))}
         <label className="gallery-size" title="how many photos fill a row">
           <input
             type="range"

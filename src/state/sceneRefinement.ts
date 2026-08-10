@@ -17,7 +17,7 @@ import { useAppStore, useVisibleEntries } from "./store";
  * that arrives, never a dependency that blocks.
  */
 export function useSceneRefinement(): void {
-  const sceneGapMin = useAppStore((s) => s.sceneGapMin);
+  const inScenes = useAppStore((s) => s.galleryLayout === "scenes");
   const localScope = useAppStore((s) => s.scope?.kind === "folder");
   const modelId = useAppStore((s) =>
     s.embedStatus?.phase === "ready" ? s.embedStatus.modelId : null,
@@ -27,7 +27,7 @@ export function useSceneRefinement(): void {
   );
   const epoch = useAppStore((s) => s.epoch);
   const visible = useVisibleEntries();
-  const wanted = sceneGapMin !== null && localScope && modelId !== null;
+  const wanted = inScenes && localScope && modelId !== null;
 
   // Ask for indexing once per (folder, model) — remembered in a ref, NOT
   // derived from progress. The pass itself reports progress, so an effect

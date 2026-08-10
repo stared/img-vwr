@@ -33,7 +33,6 @@ import {
   type Scope,
 } from "./collection";
 import type { Query, Sort } from "./query";
-import { nextSceneGap } from "./scenes";
 import {
   collapseStacks,
   siblingsOf,
@@ -60,7 +59,7 @@ import {
 } from "./query";
 
 export type ViewMode = "gallery" | "viewer";
-export type GalleryLayout = "grid" | "timeline" | "map" | "darkroom";
+export type GalleryLayout = "grid" | "timeline" | "map" | "darkroom" | "scenes";
 export type TimelineOrientation = "vertical" | "horizontal";
 
 export type { FolderStatus, Scope } from "./collection";
@@ -112,12 +111,11 @@ export interface AppState {
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
-   * Scene grouping: a pause in shooting longer than this many minutes
-   * starts a new scene. Null is off. Presentation over the visible list —
-   * the grid grows section headers and the scene-jump commands wake up,
-   * but nothing about what is shown or selected changes.
+   * The scenes view's time constant, minutes: how quickly a pause makes
+   * the content's continuity harder to believe. A parameter of that view,
+   * not a switch — entering the scenes view is what turns grouping on.
    */
-  sceneGapMin: number | null;
+  sceneGapMin: number;
   /**
    * Embedding similarity of each visible photograph to the few before it,
    * driving scene boundaries: `bands[i][d-1]` describes (entries[i],
@@ -247,8 +245,7 @@ interface AppActions {
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
   setGridColumns: (columns: number) => void;
-  /** Walk the scene-gap choices: off → 2 → 5 → 15 min → off. */
-  cycleSceneGap: () => void;
+  setSceneGap: (min: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
   sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
   /** The face pass's clusters for the current folder. */
@@ -325,7 +322,7 @@ export const initialState: AppState = {
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
   gridColumns: 6,
-  sceneGapMin: null,
+  sceneGapMin: 2,
   sceneSims: null,
   // On by default: working through a folder shot raw+JPEG otherwise means
   // every photograph twice, which is what the camera wrote but not what was
@@ -497,7 +494,14 @@ type VisibleInputs = Pick<
 export function stacksCollapse(
   state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
 ): boolean {
-  return state.stacking && (state.viewMode === "viewer" || state.galleryLayout === "darkroom");
+  return (
+    state.stacking &&
+    (state.viewMode === "viewer" ||
+      state.galleryLayout === "darkroom" ||
+      // Scenes are moments of photographs, so a raw+JPEG pair is one
+      // member — and what leaves via ⌘C there is the shown JPG.
+      state.galleryLayout === "scenes")
+  );
 }
 
 /**
@@ -868,7 +872,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
 
-  cycleSceneGap: () => set({ sceneGapMin: nextSceneGap(get().sceneGapMin) }),
+  setSceneGap: (min) => set({ sceneGapMin: min }),
 
   sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 

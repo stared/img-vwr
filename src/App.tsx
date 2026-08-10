@@ -93,7 +93,8 @@ function App() {
             ) : galleryLayout === "darkroom" ? (
               <DarkroomGallery />
             ) : (
-              <GalleryGrid />
+              // Scenes is the grid grouped into moments; one component.
+              <GalleryGrid grouped={galleryLayout === "scenes"} />
             )
           )}
           {count > 0 && viewMode === "viewer" && <ImageViewer />}

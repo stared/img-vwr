@@ -77,6 +77,18 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "gallery.scenes",
+    title: "Toggle Scenes View",
+    keywords: ["moments", "groups", "series", "burst", "grid"],
+    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
+    menus: [],
+    run: ({ store }) => {
+      const { galleryLayout, setGalleryLayout } = store.getState();
+      setGalleryLayout(galleryLayout === "scenes" ? "grid" : "scenes");
+    },
+  });
+
+  registerCommand({
     id: "gallery.darkroom",
     title: "Toggle Darkroom View",
     keywords: ["develop", "edit", "filmstrip", "lightroom", "grid"],

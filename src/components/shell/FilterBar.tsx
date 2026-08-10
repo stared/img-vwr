@@ -48,6 +48,7 @@ const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" 
 /** Renderings of the query result the view chip offers. */
 const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
   { layout: "grid", hint: "thumbnails" },
+  { layout: "scenes", hint: "grouped into moments" },
   { layout: "timeline", hint: "by date" },
   { layout: "map", hint: "geolocated" },
   { layout: "darkroom", hint: "one large, strip below" },
