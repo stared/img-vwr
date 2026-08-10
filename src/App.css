@@ -2000,12 +2000,28 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   color: var(--text);
 }
 
-/* The frame-situation counts under a chip: [1]12 [2+]9 [bg]5. */
+/* The frame-situation counts under a chip: silhouettes with numbers —
+   alone, sharing the frame, background (hollow, dimmed). */
 .person-counts {
   display: flex;
-  gap: 6px;
+  gap: 7px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.person-counts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.role-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.role-icon-wide {
+  width: 14px;
 }
 
 /* Background-only appearances: counted, but quietly — they matter least. */

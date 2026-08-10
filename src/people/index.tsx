@@ -44,22 +44,69 @@ const PERSON_PROPAGATE = 0.92;
 /** Clusters below this many faces are noise, not people worth a chip. */
 const MIN_FACES = 3;
 
+/* One head-and-shoulders silhouette; the vocabulary for "people in the
+ * frame". Alone = one filled figure, sharing = two overlapping, background
+ * = a hollow outline — the emptiness is the point. */
+
+function PersonShape({ x, hollow, faded }: { x: number; hollow: boolean; faded: boolean }) {
+  return (
+    <g
+      transform={`translate(${x} 0)`}
+      opacity={faded ? 0.45 : 1}
+      fill={hollow ? "none" : "currentColor"}
+      stroke={hollow ? "currentColor" : "none"}
+      strokeWidth={hollow ? 1.6 : 0}
+    >
+      <circle cx="8" cy="4.6" r="3.1" />
+      <path d="M2.2 14.6a5.8 5.8 0 0 1 11.6 0Z" />
+    </g>
+  );
+}
+
+function SoloIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="role-icon" aria-label="alone in frame">
+      <PersonShape x={0} hollow={false} faded={false} />
+    </svg>
+  );
+}
+
+function FewIcon() {
+  return (
+    <svg viewBox="0 0 22 16" className="role-icon role-icon-wide" aria-label="with others">
+      <PersonShape x={6} hollow={false} faded={true} />
+      <PersonShape x={0} hollow={false} faded={false} />
+    </svg>
+  );
+}
+
+function BgIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="role-icon" aria-label="in the background">
+      <PersonShape x={0} hollow={true} faded={false} />
+    </svg>
+  );
+}
+
 /**
- * The counts, tagged by frame situation: [1] alone in frame, [2+] sharing
- * it with comparable others, [bg] in the background. Zero counts are
- * omitted — a tag names its number, so nothing is positional.
+ * The counts by frame situation, each wearing its silhouette. Zero counts
+ * are omitted — an icon names its number, so nothing is positional.
  */
-function countTags(person: PersonCluster): { tag: string; n: number; dim: boolean }[] {
+function countTags(
+  person: PersonCluster,
+): { key: string; Icon: () => React.JSX.Element; n: number; dim: boolean }[] {
   const tags = [];
-  if (person.solo.length > 0) tags.push({ tag: "[1]", n: person.solo.length, dim: false });
-  if (person.few.length > 0) tags.push({ tag: "[2+]", n: person.few.length, dim: false });
+  if (person.solo.length > 0)
+    tags.push({ key: "solo", Icon: SoloIcon, n: person.solo.length, dim: false });
+  if (person.few.length > 0)
+    tags.push({ key: "few", Icon: FewIcon, n: person.few.length, dim: false });
   if (person.background.length > 0)
-    tags.push({ tag: "[bg]", n: person.background.length, dim: true });
+    tags.push({ key: "bg", Icon: BgIcon, n: person.background.length, dim: true });
   return tags;
 }
 
 const TAG_LEGEND =
-  "[1] alone in frame · [2+] sharing it with others · [bg] in the background";
+  "counts: alone in frame · sharing it with others · in the background (hollow)";
 
 function localJpegPaths(): string[] {
   const s = useAppStore.getState();
@@ -148,9 +195,9 @@ export function PeoplePanel() {
               <img src={fileUrl(person.cover)} alt={`person ${person.id}`} draggable={false} />
               <span>person {person.id}</span>
               <span className="person-counts">
-                {countTags(person).map(({ tag, n, dim }) => (
-                  <span key={tag} className={dim ? "person-bg" : ""}>
-                    {tag}
+                {countTags(person).map(({ key, Icon, n, dim }) => (
+                  <span key={key} className={dim ? "person-bg" : ""}>
+                    <Icon />
                     {n}
                   </span>
                 ))}
@@ -181,10 +228,15 @@ function PersonMenuItems({ close }: { close: () => void }) {
             close();
           }}
         >
-          person {person.id} ·{" "}
-          {countTags(person)
-            .map(({ tag, n }) => `${tag}${n}`)
-            .join(" ")}
+          person {person.id}
+          <span className="person-counts">
+            {countTags(person).map(({ key, Icon, n, dim }) => (
+              <span key={key} className={dim ? "person-bg" : ""}>
+                <Icon />
+                {n}
+              </span>
+            ))}
+          </span>
           <span className="menu-check">
             {active?.kind === "select" && active.value === person.id ? "✓" : ""}
           </span>
