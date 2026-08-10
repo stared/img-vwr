@@ -2000,6 +2000,14 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   color: var(--text);
 }
 
+/* The frame-situation counts under a chip: [1]12 [2+]9 [bg]5. */
+.person-counts {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Background-only appearances: counted, but quietly — they matter least. */
 .person-bg {
   color: var(--text-faint);

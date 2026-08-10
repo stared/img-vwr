@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { facesIndex, facesPeople, fileUrl } from "../ipc";
+import { facesIndex, facesPeople, fileUrl, type PersonCluster } from "../ipc";
 import { registerFilterField } from "../registry/filters";
 import { isRawEntry } from "../state/stacks";
 import { useAppStore } from "../state/store";
@@ -43,6 +43,23 @@ const PERSON_PROPAGATE = 0.92;
 
 /** Clusters below this many faces are noise, not people worth a chip. */
 const MIN_FACES = 3;
+
+/**
+ * The counts, tagged by frame situation: [1] alone in frame, [2+] sharing
+ * it with comparable others, [bg] in the background. Zero counts are
+ * omitted — a tag names its number, so nothing is positional.
+ */
+function countTags(person: PersonCluster): { tag: string; n: number; dim: boolean }[] {
+  const tags = [];
+  if (person.solo.length > 0) tags.push({ tag: "[1]", n: person.solo.length, dim: false });
+  if (person.few.length > 0) tags.push({ tag: "[2+]", n: person.few.length, dim: false });
+  if (person.background.length > 0)
+    tags.push({ tag: "[bg]", n: person.background.length, dim: true });
+  return tags;
+}
+
+const TAG_LEGEND =
+  "[1] alone in frame · [2+] sharing it with others · [bg] in the background";
 
 function localJpegPaths(): string[] {
   const s = useAppStore.getState();
@@ -126,14 +143,17 @@ export function PeoplePanel() {
               key={person.id}
               className={`person-chip ${active.has(person.id) ? "active" : ""}`}
               onClick={() => toggleSelectFilter("person", person.id)}
-              title={`${person.solo.length} alone in frame, ${person.few.length} among a few, ${person.background.length} in the background${person.implied.length > 0 ? `, +${person.implied.length} near-identical without the face` : ""}`}
+              title={`${TAG_LEGEND}${person.implied.length > 0 ? ` · +${person.implied.length} near-identical without the face` : ""}`}
             >
               <img src={fileUrl(person.cover)} alt={`person ${person.id}`} draggable={false} />
-              <span>
-                person {person.id} · {person.solo.length + person.few.length}
-                {person.background.length > 0 && (
-                  <span className="person-bg"> +{person.background.length} bg</span>
-                )}
+              <span>person {person.id}</span>
+              <span className="person-counts">
+                {countTags(person).map(({ tag, n, dim }) => (
+                  <span key={tag} className={dim ? "person-bg" : ""}>
+                    {tag}
+                    {n}
+                  </span>
+                ))}
               </span>
             </button>
           ))}
@@ -161,7 +181,10 @@ function PersonMenuItems({ close }: { close: () => void }) {
             close();
           }}
         >
-          person {person.id} · {person.solo.length + person.few.length}
+          person {person.id} ·{" "}
+          {countTags(person)
+            .map(({ tag, n }) => `${tag}${n}`)
+            .join(" ")}
           <span className="menu-check">
             {active?.kind === "select" && active.value === person.id ? "✓" : ""}
           </span>
