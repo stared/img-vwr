@@ -132,7 +132,6 @@ export function PeoplePanel() {
   const entryCount = useAppStore((s) => s.entries.length);
   const people = useAppStore((s) => s.people);
   const progress = useAppStore((s) => s.facesProgress);
-  const modelReady = useAppStore((s) => s.embedStatus?.phase === "ready");
   const epoch = useAppStore((s) => s.epoch);
   const query = useAppStore((s) => s.query);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
@@ -161,24 +160,15 @@ export function PeoplePanel() {
 
   return (
     <div className="people-panel">
-      {!modelReady && (
-        <p className="panel-hint">
-          Turned-away shots join their person only with a Similarity model loaded.
-        </p>
-      )}
       <button
         className="people-scan"
         disabled={indexing}
         onClick={() => {
           void facesIndex(localJpegPaths(), epoch);
         }}
-        title="detect faces in every photo, then group them into people — cached, so a re-run only reads new photos"
+        title="detect faces in every photo and group them into people — cached, so a re-run only reads new photos"
       >
-        {indexing
-          ? `looking: ${progress.done} / ${progress.total}`
-          : people === null
-            ? "find people"
-            : `found ${people.length} people — again`}
+        {indexing ? `looking: ${progress.done} / ${progress.total}` : "find people"}
       </button>
       {people !== null && people.length === 0 && (
         <p className="panel-hint">No faces found.</p>
