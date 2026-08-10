@@ -1950,20 +1950,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   padding: 4px 2px;
 }
 
-.people-scan {
-  height: 26px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.people-scan:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
 .people-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));

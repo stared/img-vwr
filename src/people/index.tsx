@@ -158,6 +158,7 @@ async function refreshPeople(): Promise<void> {
 export function PeoplePanel() {
   const scope = useAppStore((s) => s.scope);
   const entryCount = useAppStore((s) => s.entries.length);
+  const status = useAppStore((s) => s.status);
   const people = useAppStore((s) => s.people);
   const progress = useAppStore((s) => s.facesProgress);
   const epoch = useAppStore((s) => s.epoch);
@@ -168,6 +169,20 @@ export function PeoplePanel() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [knownNames, setKnownNames] = useState<string[]>([]);
+
+  // People are a view over the folder, not a job to order: opening the
+  // panel looks for faces by itself. A folder seen before is a cache read;
+  // photos appearing on disk later re-fire this through the entry count.
+  const indexedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (scope?.kind !== "folder" || status !== "loaded") return;
+    const paths = localJpegPaths();
+    if (paths.length === 0) return;
+    const key = `${epoch}:${paths.length}`;
+    if (indexedFor.current === key) return;
+    indexedFor.current = key;
+    void facesIndex(paths, epoch);
+  }, [scope, status, epoch, entryCount]);
 
   // When a detection pass finishes, cluster — and once only per finish.
   const clusteredFor = useRef<string | null>(null);
@@ -218,17 +233,12 @@ export function PeoplePanel() {
 
   return (
     <div className="people-panel">
-      <button
-        className="people-scan"
-        disabled={indexing}
-        onClick={() => {
-          void facesIndex(localJpegPaths(), epoch);
-        }}
-        title="detect faces in every photo and group them into people — cached, so a re-run only reads new photos"
-      >
-        {indexing ? `looking: ${progress.done} / ${progress.total}` : "find people"}
-      </button>
-      {people !== null && people.length === 0 && (
+      {indexing && (
+        <p className="panel-hint">
+          looking: {progress.done} / {progress.total}
+        </p>
+      )}
+      {!indexing && people !== null && people.length === 0 && (
         <p className="panel-hint">No faces found.</p>
       )}
       {people !== null && people.length > 0 && (
