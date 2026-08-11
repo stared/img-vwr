@@ -20,8 +20,29 @@ Non-destructive editing over scene-linear pixels: white balance (temperature
 and tint), exposure, contrast, highlights, shadows, whites, blacks, vibrance
 and saturation, with a live histogram of the developed result and a focus-map
 overlay that marks which regions resolve fine detail. Edits are stored
-app-locally in `develop.db`, never beside the originals; `Export Developed
-Image…` renders at full resolution to a destination you pick.
+app-locally in `develop.db`, never beside the originals.
+
+Crop is Lightroom's model: the rectangle stays square on screen and the
+photograph turns underneath it, so a horizon can be judged without tilting
+your head. Handles trim it, the inside moves it, the outside draws a new one,
+and a row of shapes (as shot, 1:1, 5:4, 4:3, 3:2, 16:9) holds it to one. The
+crop is always shrunk to stay inside the frame, which is what stops a
+straighten from dragging in corners that were never photographed.
+
+## Export
+
+`Export…` (⇧⌘E) writes the selection into a folder you pick: JPEG or PNG, a
+quality, and a longest edge, with a line that says what it will do before it
+does it.
+
+The interesting option is what happens to a photograph nobody edited. In a
+raw + JPEG shoot that is most of them, and rendering those from the sensor is
+both slow and a *different* picture from the one the camera made. So by
+default an untouched frame exports as the JPG beside the raw — copied byte for
+byte at full size, with its metadata intact. Edited frames are developed, and
+are given their sibling JPG's EXIF, so a developed export still says when and
+how it was taken. The other reading is a click away: "developed like the rest"
+puts every frame through the same pipeline.
 
 Camera raw (NEF and friends) decodes through the raw plugin. On macOS that is
 Core Image, because recent Nikon bodies write High Efficiency / HE\* NEFs — a

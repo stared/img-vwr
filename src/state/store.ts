@@ -198,6 +198,14 @@ export interface AppState {
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
+  /**
+   * The export sheet is up.
+   *
+   * A flag rather than a route, because an export is about whatever is
+   * selected right now — it reads the selection when it opens and holds it,
+   * so the sheet is a decision about a set the user has already made.
+   */
+  exportOpen: boolean;
   /** Right-click menu position over the selected image; null = closed. */
   imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
@@ -295,6 +303,7 @@ interface AppActions {
   /** VS Code semantics: re-selecting the active icon collapses the sidebar. */
   setActivePanel: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
+  setExportOpen: (open: boolean) => void;
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
   setImageMenu: (pos: { x: number; y: number } | null) => void;
@@ -347,6 +356,7 @@ export const initialState: AppState = {
   activePanelId: "folders",
   paletteOpen: false,
   palettePrompt: null,
+  exportOpen: false,
   imageMenu: null,
   similarity: null,
   people: null,
@@ -1017,6 +1027,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
+
+  setExportOpen: (open) => set({ exportOpen: open }),
 
   promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
 

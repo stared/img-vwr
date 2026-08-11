@@ -5,6 +5,7 @@ import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
 import { MapGallery } from "./components/gallery/MapGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
+import { ExportDialog } from "./components/shell/ExportDialog";
 import { FilterBar } from "./components/shell/FilterBar";
 import { ImageContextMenu } from "./components/shell/ImageContextMenu";
 import { DEFAULT_START_FOLDER } from "./config";
@@ -103,6 +104,7 @@ function App() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <ExportDialog />
       <ImageContextMenu />
     </div>
   );

@@ -8,6 +8,12 @@ import type {
   DevelopState,
   DirEntry,
   EmbedModelInfo,
+  ExifSource,
+  Exported,
+  ExportFormat,
+  ExportJob,
+  ExportPlan,
+  ExportSize,
   FileEntry,
   Histogram,
   ImageLabels,
@@ -33,6 +39,12 @@ export type {
   DevelopState,
   DirEntry,
   EmbedModelInfo,
+  ExifSource,
+  Exported,
+  ExportFormat,
+  ExportJob,
+  ExportPlan,
+  ExportSize,
   FileEntry,
   Histogram,
   ImageLabels,
@@ -271,12 +283,9 @@ export async function developEditedPaths(paths: string[]): Promise<string[]> {
   return unwrap(await commands.developEditedPaths(paths));
 }
 
-export async function developExport(
-  path: string,
-  settings: DevelopSettings,
-  destination: string,
-): Promise<void> {
-  unwrap(await commands.developExport(path, settings, destination));
+/** Carry out one photograph's export; the caller drives the batch. */
+export async function developExport(job: ExportJob, plan: ExportPlan): Promise<Exported> {
+  return unwrap(await commands.developExport(job, plan));
 }
 
 /**

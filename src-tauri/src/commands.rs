@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
+use crate::services::export::{ExportJob, ExportPlan, Exported};
 use crate::services::faces::{FaceService, PersonCluster};
 use crate::services::files::TrashOutcome;
 use crate::services::labels::{ImageLabels, LabelService};
@@ -590,20 +591,20 @@ pub async fn develop_edited_paths(
         .map_err(|e| e.to_string())?
 }
 
-/// Develop at full resolution and write to `destination`, which the user
-/// picked in a save dialog. Nothing is ever written beside the original.
+/// Export one photograph into the folder the plan names.
+///
+/// One file per call rather than a whole batch, so the UI owns the progress,
+/// the cancellation and the order — and so a single failure is one line in a
+/// report rather than the end of the export.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_export(
     service: State<'_, Arc<DevelopService>>,
-    path: String,
-    settings: DevelopSettings,
-    destination: String,
-) -> Result<(), String> {
+    job: ExportJob,
+    plan: ExportPlan,
+) -> Result<Exported, String> {
     let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        service.export(&path, &settings, std::path::Path::new(&destination))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || service.export(&job, &plan))
+        .await
+        .map_err(|e| e.to_string())?
 }

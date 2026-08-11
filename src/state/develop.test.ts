@@ -4,7 +4,6 @@ import type { DevelopSettings, DevelopState } from "../ipc";
 import { exportName } from "../commands/develop";
 import {
   baselineOf,
-  cropFromDrag,
   FULL_CROP,
   isCropped,
   isNeutral,
@@ -318,37 +317,6 @@ describe("pastedSettings", () => {
     // The two frames were shot under different light; the copied reading
     // describes the other one.
     expect(pastedSettings(target, copied).whiteBalance).toEqual(target.whiteBalance);
-  });
-});
-
-describe("cropFromDrag", () => {
-  it("builds the same rectangle whichever corner was dragged to", () => {
-    const a = cropFromDrag({ x: 0.2, y: 0.3 }, { x: 0.6, y: 0.8 }, 0);
-    const b = cropFromDrag({ x: 0.6, y: 0.8 }, { x: 0.2, y: 0.3 }, 0);
-    expect(a).toEqual(b);
-    expect(a.x).toBeCloseTo(0.2);
-    expect(a.width).toBeCloseTo(0.4);
-    expect(a.height).toBeCloseTo(0.5);
-  });
-
-  it("stops at the edge when the drag runs off it", () => {
-    // A crop that is partly nowhere would be a crop of pixels that do not
-    // exist.
-    const c = cropFromDrag({ x: -0.4, y: 0.5 }, { x: 1.9, y: 1.4 }, 0);
-    expect(c.x).toBe(0);
-    expect(c.y).toBeCloseTo(0.5);
-    expect(c.x + c.width).toBeCloseTo(1);
-    expect(c.y + c.height).toBeCloseTo(1);
-  });
-
-  it("never produces a speck from a stray click", () => {
-    const c = cropFromDrag({ x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, 0);
-    expect(c.width).toBeGreaterThan(0);
-    expect(c.height).toBeGreaterThan(0);
-  });
-
-  it("carries the angle through, so straightening survives a re-drag", () => {
-    expect(cropFromDrag({ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }, -3.5).angle).toBe(-3.5);
   });
 });
 

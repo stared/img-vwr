@@ -16,6 +16,8 @@ use imgvwr_develop::{DevelopParams, DevelopSettings, Histogram, Overlay};
 use rusqlite::Connection;
 use serde::Serialize;
 
+use super::export::{self, ExportFormat, ExportJob, ExportPlan, Exported};
+
 /// How many opened images to hold. The viewer shows one at a time; a couple
 /// more keeps arrow-key navigation between neighbours instant without pinning
 /// hundreds of megabytes of decoded sensor data.
@@ -365,47 +367,68 @@ impl DevelopService {
             .map(|(_, bytes)| bytes.clone())
     }
 
-    /// Develop at full sensor resolution and write the result. The only place
-    /// this app writes pixels anywhere, and always to a caller-chosen path.
-    pub fn export(
-        &self,
-        path: &str,
-        settings: &DevelopSettings,
-        destination: &Path,
-    ) -> Result<(), String> {
-        let entry = self.scene_for(path).map_err(|e| e.to_string())?;
-        let (w, h) = entry.scene.native_size();
-        let developed =
-            imgvwr_develop::render(
-                entry.scene.as_ref(),
-                settings,
-                w.max(h),
-                Overlay::None,
-                Region::FULL,
-            )
+    /// Carry out one photograph's export. The only place this app writes
+    /// pixels anywhere, and always into a folder the user picked.
+    ///
+    /// A `Copy` job never touches the pipeline at all — that is the whole
+    /// point of it — so an export of a shoot nobody has edited is a folder of
+    /// file copies and takes no longer than the disk does.
+    pub fn export(&self, job: &ExportJob, plan: &ExportPlan) -> Result<Exported, String> {
+        let folder = Path::new(&plan.folder);
+        if !folder.is_dir() {
+            return Err(format!("{} is not a folder", plan.folder));
+        }
+        let source = job.source().to_string();
+
+        match job {
+            ExportJob::Copy { path } => {
+                let from = Path::new(path);
+                // A copy keeps the JPEG it is copying, so the extension comes
+                // from the source rather than from the plan's format.
+                let ext = match plan.format {
+                    ExportFormat::Png => "png",
+                    ExportFormat::Jpeg { .. } => "jpg",
+                };
+                let destination = export::destination_for(folder, path, ext);
+                let copied = export::copy_jpeg(from, plan, &destination)?;
+                Ok(Exported {
+                    source,
+                    path: destination.to_string_lossy().into_owned(),
+                    copied,
+                })
+            }
+            ExportJob::Render { path, exif } => {
+                let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+                let (w, h) = entry.scene.native_size();
+                // Whatever the darkroom would be showing: the stored edit, or
+                // what this kind of pixels opens with when nobody has edited it.
+                let settings = self.stored_settings(path)?.unwrap_or_else(|| {
+                    imgvwr_develop::opening_settings(entry.scene.as_shot(), entry.scene.rendering())
+                });
+                let developed = imgvwr_develop::render(
+                    entry.scene.as_ref(),
+                    &settings,
+                    plan.size.edge(w.max(h)),
+                    Overlay::None,
+                    Region::FULL,
+                )
                 .map_err(|e| e.to_string())?;
 
-        let img = image::RgbaImage::from_raw(
-            developed.image.width,
-            developed.image.height,
-            developed.image.rgba,
-        )
-        .ok_or_else(|| "developed buffer size mismatch".to_string())?;
+                let img = image::RgbaImage::from_raw(
+                    developed.image.width,
+                    developed.image.height,
+                    developed.image.rgba,
+                )
+                .ok_or_else(|| "developed buffer size mismatch".to_string())?;
 
-        let ext = destination
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("jpg")
-            .to_ascii_lowercase();
-        if ext == "png" {
-            img.save(destination).map_err(|e| e.to_string())
-        } else {
-            // JPEG has no alpha channel, and a developed photo has nothing
-            // meaningful in one anyway.
-            image::DynamicImage::ImageRgba8(img)
-                .into_rgb8()
-                .save_with_format(destination, image::ImageFormat::Jpeg)
-                .map_err(|e| e.to_string())
+                let destination = export::destination_for(folder, path, plan.format.extension());
+                export::write_rendered(img, plan, exif, &destination)?;
+                Ok(Exported {
+                    source,
+                    path: destination.to_string_lossy().into_owned(),
+                    copied: false,
+                })
+            }
         }
     }
 
@@ -1001,46 +1024,87 @@ mod tests {
         .unwrap()
     }
 
+    fn plan(dir: &Path, format: ExportFormat, size: crate::services::export::ExportSize) -> ExportPlan {
+        ExportPlan {
+            folder: dir.to_str().unwrap().to_string(),
+            format,
+            size,
+        }
+    }
+
     #[test]
     fn export_writes_at_full_resolution() {
+        use crate::services::export::{ExifSource, ExportSize};
         let (dir, svc) = service();
         let path = sample(dir.path(), "g.png");
-        let path = path.to_str().unwrap();
-        let dest = dir.path().join("exported.jpg");
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
 
-        svc.export(
-            path,
-            &DevelopSettings {
-                white_balance: WhiteBalance::D65,
-                params: DevelopParams {
-                    exposure: 0.5,
-                    ..Default::default()
+        let exported = svc
+            .export(
+                &ExportJob::Render {
+                    path: path.to_str().unwrap().to_string(),
+                    exif: ExifSource::None,
                 },
-                basis: imgvwr_develop::presets::NONE.to_owned(),
-                crop: imgvwr_develop::Crop::FULL,
-            },
-            &dest,
-        )
-        .unwrap();
+                &plan(&out, ExportFormat::Jpeg { quality: 92 }, ExportSize::Full),
+            )
+            .unwrap();
 
-        let written = image::open(&dest).unwrap();
+        assert!(!exported.copied);
+        let written = image::open(&exported.path).unwrap();
         assert_eq!((written.width(), written.height()), (60, 40));
     }
 
     #[test]
-    fn export_honours_a_png_destination() {
+    fn export_honours_a_png_plan_and_a_size_limit() {
+        use crate::services::export::{ExifSource, ExportSize};
         let (dir, svc) = service();
         let path = sample(dir.path(), "h.png");
-        let dest = dir.path().join("exported.png");
-        svc.export(
-            path.to_str().unwrap(),
-            &DevelopSettings::neutral(WhiteBalance::D65),
-            &dest,
-        )
-        .unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+
+        let exported = svc
+            .export(
+                &ExportJob::Render {
+                    path: path.to_str().unwrap().to_string(),
+                    exif: ExifSource::None,
+                },
+                &plan(&out, ExportFormat::Png, ExportSize::Longest { pixels: 30 }),
+            )
+            .unwrap();
+
+        assert!(exported.path.ends_with("h.png"));
+        let written = image::ImageReader::open(&exported.path).unwrap();
+        assert_eq!(written.format(), Some(image::ImageFormat::Png));
+        assert_eq!(written.decode().unwrap().width(), 30);
+    }
+
+    #[test]
+    fn a_copy_job_never_opens_the_pipeline() {
+        use crate::services::export::ExportSize;
+        // The point of copying: an untouched frame exports as the camera's
+        // own file, so a format the develop pipeline cannot even open still
+        // exports fine.
+        let (dir, svc) = service();
+        let img = image::RgbImage::from_pixel(24, 16, image::Rgb([10, 20, 30]));
+        let source = dir.path().join("DSC_1234.JPG");
+        img.save(&source).unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+
+        let exported = svc
+            .export(
+                &ExportJob::Copy {
+                    path: source.to_str().unwrap().to_string(),
+                },
+                &plan(&out, ExportFormat::Jpeg { quality: 90 }, ExportSize::Full),
+            )
+            .unwrap();
+
+        assert!(exported.copied);
         assert_eq!(
-            image::ImageReader::open(&dest).unwrap().format(),
-            Some(image::ImageFormat::Png)
+            std::fs::read(&exported.path).unwrap(),
+            std::fs::read(&source).unwrap()
         );
     }
 

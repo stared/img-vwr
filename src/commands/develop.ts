@@ -1,8 +1,6 @@
-import { save } from "@tauri-apps/plugin-dialog";
-
-import { developExport } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { useDevelopStore } from "../state/develop";
+import { useAppStore } from "../state/store";
 
 /** Suggested filename for an export: the original's stem, plus the format. */
 export function exportName(path: string, extension: string): string {
@@ -17,29 +15,24 @@ function hasSession(): boolean {
 
 /**
  * Develop commands. Export is the only path by which developed pixels leave
- * the app, and it always goes through a save dialog — nothing is ever written
- * beside the user's originals.
+ * the app, and it always goes into a folder the user picks — nothing is ever
+ * written beside the user's originals.
  */
 export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.export",
-    title: "Export Developed Image…",
-    keywords: ["save", "jpeg", "png", "render", "develop"],
-    menus: [{ menu: "image", submenu: null, label: "Export developed…" }],
-    when: hasSession,
-    run: async () => {
-      const session = useDevelopStore.getState().session;
-      if (!session) return;
-      const destination = await save({
-        title: "Export developed image",
-        defaultPath: exportName(session.path, "jpg"),
-        filters: [
-          { name: "JPEG", extensions: ["jpg", "jpeg"] },
-          { name: "PNG", extensions: ["png"] },
-        ],
-      });
-      if (typeof destination !== "string") return;
-      await developExport(session.path, session.settings, destination);
+    title: "Export…",
+    keywords: ["save", "jpeg", "png", "render", "develop", "share"],
+    menus: [{ menu: "image", submenu: null, label: "Export…" }],
+    // Everything selected, not just the one in the darkroom: exporting a take
+    // is the ordinary case, and exporting one photograph is that with one
+    // selected.
+    when: (ctx: CommandContext) => {
+      const s = ctx.store.getState();
+      return s.scope?.kind === "folder" && s.selection.length > 0;
+    },
+    run: () => {
+      useAppStore.getState().setExportOpen(true);
     },
   });
 

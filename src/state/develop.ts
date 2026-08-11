@@ -11,6 +11,15 @@ import type {
   RegionArg,
 } from "../ipc";
 import {
+  ASPECT_CHOICES,
+  fitted,
+  FULL_CROP as WHOLE_FRAME,
+  ratioIn,
+  ratioOf,
+  straightened,
+  withRatio,
+} from "./crop";
+import {
   developAutoExposure,
   developFocusPoint,
   developPickWhiteBalance,
@@ -343,10 +352,27 @@ export interface DevelopStore {
   cropping: boolean;
   setCropping: (cropping: boolean) => void;
   setCrop: (crop: Crop) => void;
+  /**
+   * The shape a crop is held to, by the id of a choice in `ASPECT_CHOICES`.
+   *
+   * A property of the *tool*, not of the photograph: cropping a set to 4:5
+   * means cropping all of them to 4:5, and having to say so again on every
+   * frame would be the whole tedium of the job. It outlives the session for
+   * the same reason.
+   */
+  cropChoice: string;
+  /** Which way round that shape stands. Meaningless for 1:1, and harmless. */
+  cropPortrait: boolean;
+  setCropChoice: (id: string) => void;
+  toggleCropOrientation: () => void;
+  /** Turn the frame under the rectangle, giving back as much as still fits. */
+  straighten: (angle: number) => void;
 }
 
-/** The whole frame, unturned — what "no crop" is. */
-export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1, angle: 0 };
+/* Crop geometry lives in `./crop`, which is where the rectangle, the angle
+ * and the frame's aspect are reconciled. Re-exported so the panels that only
+ * want "is this cropped" need not know that. */
+export { FULL_CROP, isCropped } from "./crop";
 
 /**
  * The size in real pixels of what the viewer is showing.
@@ -365,39 +391,10 @@ export function displayedSize(
   };
 }
 
-export function isCropped(crop: Crop): boolean {
-  return (
-    crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1 || crop.angle !== 0
-  );
-}
-
-/**
- * A crop rectangle from a drag across the image, in normalised coordinates.
- *
- * Either corner may be dragged to, so the rectangle is built from the extremes
- * rather than from start-to-end, and it is clamped to the frame — a drag that
- * runs off the edge should stop at the edge, not produce a crop that is partly
- * nowhere.
- */
-export function cropFromDrag(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  angle: number,
-): Crop {
-  const clamp = (v: number) => Math.min(1, Math.max(0, v));
-  const x0 = clamp(Math.min(from.x, to.x));
-  const x1 = clamp(Math.max(from.x, to.x));
-  const y0 = clamp(Math.min(from.y, to.y));
-  const y1 = clamp(Math.max(from.y, to.y));
-  // A stray click is not a crop; below this it is a mis-drag.
-  const MIN = 0.02;
-  return {
-    x: x0,
-    y: y0,
-    width: Math.max(MIN, x1 - x0),
-    height: Math.max(MIN, y1 - y0),
-    angle,
-  };
+/** The frame's shape, which every rotation in `./crop` has to be told: an
+ * angle only means what it looks like in a space that is not stretched. */
+export function frameAspect(native: { width: number; height: number }): number {
+  return native.height > 0 ? native.width / native.height : 1;
 }
 
 /** Largest detail crop we will develop, in pixels of the longest edge. */
@@ -661,7 +658,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     // photograph as shot. Drawing it on an already-cropped image would mean
     // every rectangle was relative to the last one, and there would be no way
     // to grow a crop back.
-    const live = get().cropping ? { ...start.settings, crop: FULL_CROP } : start.settings;
+    const live = get().cropping ? { ...start.settings, crop: WHOLE_FRAME } : start.settings;
     const settings = get().comparing ? start.info.settings : live;
 
     const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
@@ -780,6 +777,8 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     copied: null,
     comparing: false,
     cropping: false,
+    cropChoice: "free",
+    cropPortrait: false,
     opening: null,
 
     warm: {},
@@ -958,10 +957,60 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       void pump();
     },
 
+    /**
+     * Every route to a crop lands here, and every crop that lands here is
+     * made to fit the frame first.
+     *
+     * That is the invariant the whole feature rests on. A rectangle whose
+     * corners have been swept outside the picture by a straighten cannot be
+     * rendered — the pixels were never recorded — and the renderer's only
+     * option is to clamp at the edge, which smears a border of stretched
+     * pixels down the side of the photograph and reads as a broken decoder.
+     * Shrinking the rectangle instead is what every editor does, and it is
+     * honest: straightening costs you edges.
+     */
     setCrop: (crop) => {
       const session = get().session;
       if (!session) return;
-      change({ ...session.settings, crop });
+      change({ ...session.settings, crop: fitted(crop, frameAspect(session.info)) });
+    },
+
+    setCropChoice: (id) => {
+      set({ cropChoice: id });
+      const session = get().session;
+      const choice = ASPECT_CHOICES.find((c) => c.id === id);
+      if (!session || !choice) return;
+      const aspect = frameAspect(session.info);
+      // Applied at once rather than only to the next drag: a shape you have
+      // to re-draw the crop to see is a shape you cannot judge.
+      const ratio = ratioOf(choice, aspect, get().cropPortrait);
+      change({ ...session.settings, crop: withRatio(session.settings.crop, ratio, aspect) });
+    },
+
+    toggleCropOrientation: () => {
+      const portrait = !get().cropPortrait;
+      set({ cropPortrait: portrait });
+      const session = get().session;
+      const choice = ASPECT_CHOICES.find((c) => c.id === get().cropChoice);
+      if (!session) return;
+      const aspect = frameAspect(session.info);
+      const crop = session.settings.crop;
+      // Turning a free crop on its side is still a meaningful thing to ask
+      // for, so it stands the shape it has on end rather than doing nothing.
+      const ratio = choice ? ratioOf(choice, aspect, portrait) : null;
+      change({
+        ...session.settings,
+        crop: withRatio(crop, ratio ?? 1 / ratioIn(crop, aspect), aspect),
+      });
+    },
+
+    straighten: (angle) => {
+      const session = get().session;
+      if (!session) return;
+      change({
+        ...session.settings,
+        crop: straightened(session.settings.crop, angle, frameAspect(session.info)),
+      });
     },
 
     applyPreset: (id) => {

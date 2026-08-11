@@ -67,6 +67,8 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+arrowright", "scene.next"],
   ["mod+arrowleft", "scene.prev"],
   ["enter", "viewer.open"],
+  // Lightroom's chord, and the one every photographer's hands already know.
+  ["mod+shift+e", "develop.export"],
   ["mod+shift+c", "develop.copy"],
   ["mod+shift+v", "develop.paste"],
   // The photographer's habit: one key, held or tapped, to see what you had.

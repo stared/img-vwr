@@ -2,8 +2,17 @@ import { useEffect, useRef, useState } from "react";
 
 import { developFrameUrl, fileUrl } from "../../ipc";
 import {
-  cropFromDrag,
+  ASPECT_CHOICES,
+  drawn,
+  HANDLES,
+  moved,
+  ratioOf,
+  resized,
+  type Handle,
+} from "../../state/crop";
+import {
   displayedSize,
+  frameAspect,
   FULL_CROP,
   loupeCovers,
   loupeRegion,
@@ -76,7 +85,22 @@ export function ImageCanvas() {
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
   const setCrop = useDevelopStore((s) => s.setCrop);
-  const [drag, setDrag] = useState<{ from: Point2; to: Point2 } | null>(null);
+  const cropChoice = useDevelopStore((s) => s.cropChoice);
+  const cropPortrait = useDevelopStore((s) => s.cropPortrait);
+  /**
+   * What a press on the picture is doing to the crop.
+   *
+   * Three gestures, told apart by where the press landed rather than by a
+   * mode: a handle resizes, the inside moves, the outside draws a new
+   * rectangle. Nothing to arm, nothing to remember — the cursor over each
+   * says which it is.
+   */
+  const [drag, setDrag] = useState<
+    | { kind: "draw"; from: Point2; to: Point2 }
+    | { kind: "move"; grab: Point2 }
+    | { kind: "resize"; handle: Handle }
+    | null
+  >(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -211,18 +235,26 @@ export function ImageCanvas() {
   };
 
   /**
-   * Dragging out a crop. Coordinates are the original frame's, because the
-   * canvas shows the whole frame while cropping.
+   * Where a pointer is while cropping, as an offset from the crop's centre in
+   * the *turned* frame — the space the rectangle is axis-aligned in, and so
+   * the only space a corner drag means anything in.
+   *
+   * The canvas shows the whole frame while cropping, turned by the straighten
+   * angle so the horizon is level and the rectangle can sit square on screen.
+   * Screen coordinates are therefore already the turned frame's, minus the
+   * crop's centre — no rotation happens here, which is exactly the point of
+   * turning the picture rather than the rectangle.
    */
-  const pointOf = (e: React.PointerEvent): { x: number; y: number } | null => {
-    if (!view || !img) return null;
+  const cropPointOf = (e: React.PointerEvent): Point2 | null => {
+    if (!view || !img || !session) return null;
     const rect = e.currentTarget.getBoundingClientRect();
     const spanX = view.scale * img.width;
     const spanY = view.scale * img.height;
     if (spanX <= 0 || spanY <= 0) return null;
+    const crop = session.settings.crop;
     return {
-      x: (e.clientX - rect.left - view.tx) / spanX,
-      y: (e.clientY - rect.top - view.ty) / spanY,
+      x: (e.clientX - rect.left - view.tx) / spanX - (crop.x + crop.width / 2),
+      y: (e.clientY - rect.top - view.ty) / spanY - (crop.y + crop.height / 2),
     };
   };
 
@@ -269,11 +301,27 @@ export function ImageCanvas() {
       capture(e);
       return;
     }
-    if (!cropping) return;
-    const at = pointOf(e);
+    if (!cropping || !session) return;
+    const at = cropPointOf(e);
     if (!at) return;
     e.preventDefault();
-    setDrag({ from: at, to: at });
+    const crop = session.settings.crop;
+    const inside =
+      Math.abs(at.x) <= crop.width / 2 && Math.abs(at.y) <= crop.height / 2;
+    // Inside the rectangle the drag moves the picture within it; outside it
+    // draws a new one. A handle press never reaches here — the handle's own
+    // element takes it and says which one.
+    setDrag(inside ? { kind: "move", grab: at } : { kind: "draw", from: at, to: at });
+    capture(e);
+  };
+
+  /** A handle taken hold of: the resize runs on the canvas from here on, so
+   * the pointer may leave the little square without the drag ending. */
+  const handleGrab = (handle: Handle) => (e: React.PointerEvent) => {
+    if (!cropping) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDrag({ kind: "resize", handle });
     capture(e);
   };
 
@@ -289,9 +337,29 @@ export function ImageCanvas() {
       if (at) aimLoupe(at);
       return;
     }
-    if (!cropping || !drag) return;
-    const at = pointOf(e);
-    if (at) setDrag({ ...drag, to: at });
+    if (!cropping || !drag || !session) return;
+    const at = cropPointOf(e);
+    if (!at) return;
+    const crop = session.settings.crop;
+    const aspect = frameAspect(session.info);
+    if (drag.kind === "draw") {
+      setDrag({ ...drag, to: at });
+      return;
+    }
+    // Move and resize commit as they go: the rectangle is what the render is
+    // about, and a crop that only appeared on release would be a guess until
+    // then. Drawing waits, because a half-finished rectangle is not a crop.
+    if (drag.kind === "move") {
+      // Measured against the crop as it stands, not as it was pressed: every
+      // move puts the grabbed point back under the pointer, so the next
+      // event's offset is again relative to the same place on the rectangle.
+      // Reading from a remembered start would double every delta.
+      setCrop(moved(crop, at.x - drag.grab.x, at.y - drag.grab.y, aspect));
+    } else {
+      const choice = ASPECT_CHOICES.find((c) => c.id === cropChoice) ?? null;
+      const ratio = choice ? ratioOf(choice, aspect, cropPortrait) : null;
+      setCrop(resized(crop, drag.handle, at, aspect, ratio));
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -302,11 +370,13 @@ export function ImageCanvas() {
     }
     if (!cropping || !drag) return;
     release(e);
-    const moved = Math.abs(drag.to.x - drag.from.x) + Math.abs(drag.to.y - drag.from.y);
-    // A click that went nowhere leaves crop mode instead of cropping to a
-    // speck — the commonest way to say "never mind".
-    if (moved < 0.01) setCropping(false);
-    else setCrop(cropFromDrag(drag.from, drag.to, session?.settings.crop.angle ?? 0));
+    if (drag.kind === "draw" && session) {
+      const went = Math.abs(drag.to.x - drag.from.x) + Math.abs(drag.to.y - drag.from.y);
+      // A click that went nowhere leaves crop mode instead of cropping to a
+      // speck — the commonest way to say "never mind".
+      if (went < 0.01) setCropping(false);
+      else setCrop(drawn(session.settings.crop, drag.from, drag.to, frameAspect(session.info)));
+    }
     setDrag(null);
   };
 
@@ -343,6 +413,30 @@ export function ImageCanvas() {
       : null;
   const previewScale =
     frame !== null && shown !== null && frame.width > 0 ? shown.width / frame.width : 1;
+
+  /**
+   * The turn that makes cropping judgeable: the photograph rotates under a
+   * rectangle that stays square on screen.
+   *
+   * The stored rectangle is axis-aligned in a frame turned by `angle`, so
+   * showing the frame turned by the same amount puts the two in the same
+   * space — the rectangle can be drawn as an ordinary box, dragged with
+   * ordinary handles, and what you see inside it is what will be rendered.
+   * Turning the rectangle instead would leave the horizon crooked and the
+   * rectangle crooked with it, and you would have to tilt your head to judge
+   * whether you had got it straight.
+   *
+   * About the crop's own centre, in percentages of the element, so it works
+   * whatever size preview happens to be standing in for the frame.
+   */
+  const turning = cropping && session !== null && session.settings.crop.angle !== 0;
+  const turn = turning && session
+    ? (() => {
+        const crop = session.settings.crop;
+        const [cx, cy] = [(crop.x + crop.width / 2) * 100, (crop.y + crop.height / 2) * 100];
+        return ` translate(${cx}%, ${cy}%) rotate(${-crop.angle}deg) translate(${-cx}%, ${-cy}%)`;
+      })()
+    : "";
 
   if (src === null) {
     // A raw file whose first frame has not arrived. The decode takes a couple
@@ -400,29 +494,47 @@ export function ImageCanvas() {
         draggable={false}
         style={{
           transform: view
-            ? `translate(${view.tx}px, ${view.ty}px) scale(${view.scale * previewScale})`
+            ? `translate(${view.tx}px, ${view.ty}px) scale(${view.scale * previewScale})${turn}`
             : undefined,
           visibility: view ? "visible" : "hidden",
         }}
       />
-      {/* While cropping, the rectangle: the one being dragged if there is a
-          drag, otherwise the one already stored, so entering crop mode shows
-          what you have rather than a blank frame. */}
-      {cropping && view !== null && img !== null && (() => {
-        const c = drag
-          ? cropFromDrag(drag.from, drag.to, 0)
-          : (session?.settings.crop ?? null);
-        if (!c) return null;
+      {/* While cropping, the rectangle: the one being dragged out if there is
+          a drag, otherwise the one already stored, so entering crop mode shows
+          what you have rather than a blank frame.
+
+          It is always square on screen, because the picture behind it is the
+          thing that turns. Its handles are what a crop is adjusted by — a
+          rectangle you can only ever re-draw is one where nudging an edge
+          means starting again. */}
+      {cropping && view !== null && img !== null && session !== null && (() => {
+        const c =
+          drag?.kind === "draw"
+            ? drawn(session.settings.crop, drag.from, drag.to, frameAspect(session.info))
+            : session.settings.crop;
+        const box = {
+          left: view.tx + c.x * img.width * view.scale,
+          top: view.ty + c.y * img.height * view.scale,
+          width: c.width * img.width * view.scale,
+          height: c.height * img.height * view.scale,
+        };
         return (
-          <div
-            className="viewer-crop"
-            style={{
-              left: view.tx + c.x * img.width * view.scale,
-              top: view.ty + c.y * img.height * view.scale,
-              width: c.width * img.width * view.scale,
-              height: c.height * img.height * view.scale,
-            }}
-          />
+          <div className="viewer-crop" style={box}>
+            {/* Thirds inside the crop, which is where a composition is
+                judged — the frame they used to describe is half thrown away
+                by the time you are here. */}
+            <span className="viewer-crop-third down" style={{ left: "33.333%" }} />
+            <span className="viewer-crop-third down" style={{ left: "66.667%" }} />
+            <span className="viewer-crop-third across" style={{ top: "33.333%" }} />
+            <span className="viewer-crop-third across" style={{ top: "66.667%" }} />
+            {HANDLES.map((handle) => (
+              <span
+                key={handle}
+                className={`viewer-crop-handle ${handle}`}
+                onPointerDown={handleGrab(handle)}
+              />
+            ))}
+          </div>
         );
       })()}
       {/* Thirds guides, laid over the image itself rather than the viewport,

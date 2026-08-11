@@ -326,12 +326,15 @@ async developEditedPaths(paths: string[]) : Promise<Result<string[], string>> {
 }
 },
 /**
- * Develop at full resolution and write to `destination`, which the user
- * picked in a save dialog. Nothing is ever written beside the original.
+ * Export one photograph into the folder the plan names.
+ * 
+ * One file per call rather than a whole batch, so the UI owns the progress,
+ * the cancellation and the order — and so a single failure is one line in a
+ * report rather than the end of the export.
  */
-async developExport(path: string, settings: DevelopSettings, destination: string) : Promise<Result<null, string>> {
+async developExport(job: ExportJob, plan: ExportPlan) : Promise<Result<Exported, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("develop_export", { path, settings, destination }) };
+    return { status: "ok", data: await TAURI_INVOKE("develop_export", { job, plan }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -524,6 +527,17 @@ export type EmbeddingProgress = { done: number; total: number; epoch: number }
  * "downloading" → "loading" → "ready", or "error".
  */
 export type EmbeddingStatus = { modelId: string; phase: string; error: string | null }
+/**
+ * Where an export's metadata comes from.
+ * 
+ * A discriminated choice rather than an optional path, because "there is no
+ * JPEG of this frame" is a state the caller knows and should have to say.
+ */
+export type ExifSource = { kind: "none" } | 
+/**
+ * Carry the EXIF of this file — the camera's JPEG of the same frame.
+ */
+{ kind: "file"; path: string }
 export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; lens: string | null; 
 /**
  * The exposure, as a photographer states it. Kept as numbers rather than
@@ -540,6 +554,58 @@ focalLength: number | null;
  * Decimal degrees; positive = north/east.
  */
 gpsLat: number | null; gpsLon: number | null }
+/**
+ * What an exported file is encoded as.
+ */
+export type ExportFormat = 
+/**
+ * Quality on the usual 1–100 scale; 90 is the "good enough that the
+ * codec is not what you are looking at" setting.
+ */
+{ kind: "jpeg"; quality: number } | { kind: "png" }
+/**
+ * One photograph's worth of work.
+ */
+export type ExportJob = 
+/**
+ * Develop this file under its stored edit — or, where there is none,
+ * under what it opens with.
+ * 
+ * The settings are not carried in the job: they are already in
+ * `develop.db`, every change saves there as it is made, and a batch that
+ * had to fetch them first would open every raw file twice.
+ */
+{ kind: "render"; path: string; exif: ExifSource } | 
+/**
+ * Take this JPEG as it stands. What an untouched frame in a raw + JPEG
+ * shoot exports as, and the reason exporting a whole take is fast.
+ */
+{ kind: "copy"; path: string }
+/**
+ * The settings shared by every file in one export.
+ */
+export type ExportPlan = { folder: string; format: ExportFormat; size: ExportSize }
+/**
+ * How big the exported file is.
+ */
+export type ExportSize = 
+/**
+ * Everything the crop holds. Never more: an export is not an upscaler.
+ */
+{ kind: "full" } | { kind: "longest"; pixels: number }
+/**
+ * What actually happened to one photograph.
+ */
+export type Exported = { source: string; 
+/**
+ * Where it landed — not always the name asked for, since an export never
+ * overwrites a file that is already there.
+ */
+path: string; 
+/**
+ * True when the camera's own JPEG was taken rather than pixels rendered.
+ */
+copied: boolean }
 /**
  * Progress of a background face-detection pass over the current collection.
  */

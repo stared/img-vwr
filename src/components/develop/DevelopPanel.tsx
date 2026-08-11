@@ -1,11 +1,14 @@
 import { useEffect, useMemo } from "react";
 
+import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
 import { groupStacks, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
   CAPTION_LABELS,
   CAPTION_NOTES,
+  displayedSize,
+  frameAspect,
   FULL_CROP,
   isCropped,
   nextCaption,
@@ -131,6 +134,10 @@ export function DevelopPanel() {
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
   const setCrop = useDevelopStore((s) => s.setCrop);
+  const cropChoice = useDevelopStore((s) => s.cropChoice);
+  const setCropChoice = useDevelopStore((s) => s.setCropChoice);
+  const toggleCropOrientation = useDevelopStore((s) => s.toggleCropOrientation);
+  const straighten = useDevelopStore((s) => s.straighten);
   const allEntries = useAppStore((s) => s.entries);
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
@@ -183,6 +190,10 @@ export function DevelopPanel() {
   // A raw file opens with a look already on it, so "is this the identity edit"
   // is the wrong question for whether there is anything to undo.
   const untouched = !info.edited && isAtOpening(session);
+  // What a crop actually produces, in pixels. The one number that says what a
+  // trim has cost, and it belongs beside the control that did the trimming.
+  const cropped = isCropped(settings.crop);
+  const developedSize = displayedSize(info, settings.crop);
 
   return (
     <div className="develop-panel">
@@ -320,10 +331,45 @@ export function DevelopPanel() {
         <h4>Crop</h4>
         <button
           className={cropping ? "develop-toggle armed" : "develop-toggle"}
+          title="Drag the handles to trim, the inside to move it, the outside to draw a new one."
           onClick={() => setCropping(!cropping)}
         >
-          {cropping ? "cropping: drag across the image" : "crop"}
+          {cropping ? "cropping: drag the rectangle" : "crop"}
         </button>
+        {/* The shapes, as a row: there are seven of them, they are a closed
+            set, and which one is on is a fact worth being able to read
+            without opening anything. */}
+        <div className="develop-choices">
+          {ASPECT_CHOICES.map((choice) => (
+            <button
+              key={choice.id}
+              className={
+                cropChoice === choice.id ? "develop-choice on" : "develop-choice"
+              }
+              title={
+                choice.id === "original"
+                  ? "The frame's own shape."
+                  : choice.id === "free"
+                    ? "No constraint; every handle moves on its own."
+                    : `Held to ${choice.label}`
+              }
+              onClick={() => setCropChoice(choice.id)}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+        <button
+          className="develop-toggle"
+          title="Stand the shape on end. A free crop swaps the extents it has."
+          onClick={toggleCropOrientation}
+        >
+          standing: {isPortrait(settings.crop, frameAspect(info)) ? "portrait" : "landscape"}
+        </button>
+        {/* Straightening turns the photograph under the rectangle and gives
+            back as much of it as still fits inside the frame — so the crop
+            gets smaller as the angle grows, and never contains a corner that
+            was never photographed. */}
         <Slider
           label="straighten"
           value={settings.crop.angle}
@@ -332,9 +378,13 @@ export function DevelopPanel() {
           max={45}
           step={0.1}
           display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
-          onChange={(angle) => setCrop({ ...settings.crop, angle })}
+          onChange={straighten}
         />
-        {isCropped(settings.crop) && (
+        <p className="develop-note">
+          {developedSize.width} × {developedSize.height} px
+          {cropped ? "" : " · the whole frame"}
+        </p>
+        {cropped && (
           <button className="develop-toggle" onClick={() => setCrop(FULL_CROP)}>
             back to the whole frame
           </button>

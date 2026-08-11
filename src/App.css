@@ -1609,13 +1609,215 @@ button.stats-row:hover .stats-label {
    the bright one. */
 .viewer-crop {
   position: absolute;
+  /* The box itself is not a target — a press inside it is a press on the
+     picture, and the canvas decides what that means. Only the handles take
+     the pointer. */
   pointer-events: none;
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
 }
 
+/* Thirds inside the crop, which is where the composition is. Fainter than
+   the border: they are a guide, not the edge of the picture. */
+.viewer-crop-third {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.viewer-crop-third.down {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.viewer-crop-third.across {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* Handles: small white squares that hang half outside the rectangle, so the
+   corner itself stays visible while it is being dragged. Their hit area is
+   larger than they look — a 8 px target is a target you miss. */
+.viewer-crop-handle {
+  position: absolute;
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 1px;
+  box-sizing: border-box;
+}
+
+.viewer-crop-handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+
+.viewer-crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.viewer-crop-handle.n { left: 50%; top: 0; cursor: ns-resize; }
+.viewer-crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.viewer-crop-handle.e { left: 100%; top: 50%; cursor: ew-resize; }
+.viewer-crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.viewer-crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
+.viewer-crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.viewer-crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
+
 .viewer-canvas.cropping {
   cursor: crosshair;
+}
+
+/* A row of the answers a control can have, with the current one lit. The
+   develop panel's shape for anything enumerable — see the aspect shapes and
+   the export sheet. */
+.develop-choices,
+.export-row-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 8px 4px;
+}
+
+.develop-choice,
+.export-choice {
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.develop-choice:hover,
+.export-choice:hover {
+  border-color: var(--accent);
+}
+
+.develop-choice.on,
+.export-choice.on {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* ---- Export sheet ---- */
+
+.export-sheet {
+  width: min(560px, 90vw);
+  margin: 12vh auto 0;
+  padding: 16px 8px 14px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.export-sheet h3 {
+  margin: 0 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.export-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.export-row-label {
+  flex: 0 0 88px;
+  padding-left: 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.export-row-choices {
+  flex: 1;
+  margin-left: 0;
+}
+
+/* What the export will actually do, counted. The one line worth reading. */
+.export-summary {
+  margin: 12px 8px 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.export-note,
+.export-failed {
+  margin: 0 8px 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.export-failed {
+  list-style: none;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 8px 0;
+}
+
+.export-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-folder:hover {
+  border-color: var(--accent);
+}
+
+.export-go {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 14px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.export-progress {
+  height: 3px;
+  margin: 8px 8px 0;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.export-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
 }
 
 /* Thirds guides. A hairline in both black and white so the line reads over a
