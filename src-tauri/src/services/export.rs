@@ -165,11 +165,6 @@ pub fn destination_for(folder: &Path, source: &str, extension: &str) -> PathBuf 
 /// whole point of preferring the camera's JPEG for an untouched frame — asking
 /// the codec to have another go at pixels nobody changed can only lose.
 pub fn copy_jpeg(source: &Path, plan: &ExportPlan, destination: &Path) -> Result<bool, String> {
-    let quality = match plan.format {
-        ExportFormat::Jpeg { quality } => quality,
-        // A PNG export of an untouched JPEG still has to be encoded as one.
-        ExportFormat::Png => 0,
-    };
     let bytes = std::fs::read(source).map_err(|e| e.to_string())?;
 
     if plan.size.is_full() && matches!(plan.format, ExportFormat::Jpeg { .. }) {
@@ -192,8 +187,9 @@ pub fn copy_jpeg(source: &Path, plan: &ExportPlan, destination: &Path) -> Result
     };
 
     match plan.format {
+        // A PNG export of an untouched JPEG still has to be encoded as one.
         ExportFormat::Png => scaled.into_rgba8().save(destination).map_err(|e| e.to_string())?,
-        ExportFormat::Jpeg { .. } => {
+        ExportFormat::Jpeg { quality } => {
             // The camera's EXIF rides along: a resized share copy that has
             // forgotten the date and the lens is a worse photograph.
             let encoded = encode_jpeg(&scaled.into_rgb8(), quality)?;

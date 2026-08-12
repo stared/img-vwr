@@ -11,7 +11,6 @@ import {
   QUALITY_MAX,
   QUALITY_MIN,
   nativeSizeOf,
-  sameSize,
   sizeFromSlider,
   sizeLabel,
   sizeMarksFor,
@@ -153,19 +152,6 @@ describe("summaryOf", () => {
     const none = planAll([candidate("/shoot/DSC_0001", false)], DEFAULT_OPTIONS);
     expect(summaryOf(none)).toBe("1 photograph, all copied from the camera's JPG");
     expect(summaryOf([])).toBe("nothing selected");
-  });
-});
-
-describe("sameSize", () => {
-  it("tells the sizes apart so a mark can say which one is on", () => {
-    expect(sameSize({ kind: "full" }, { kind: "full" })).toBe(true);
-    expect(sameSize({ kind: "full" }, { kind: "longest", pixels: 2048 })).toBe(false);
-    expect(
-      sameSize({ kind: "longest", pixels: 2048 }, { kind: "longest", pixels: 2048 }),
-    ).toBe(true);
-    expect(
-      sameSize({ kind: "longest", pixels: 2048 }, { kind: "longest", pixels: 1024 }),
-    ).toBe(false);
   });
 });
 

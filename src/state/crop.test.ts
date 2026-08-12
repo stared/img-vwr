@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { Crop } from "../ipc";
 import {
   ASPECT_CHOICES,
-  choiceOf,
   cornersOf,
   drawn,
   fitted,
@@ -239,14 +238,6 @@ describe("shapes", () => {
     const original = need(ASPECT_CHOICES.find((c) => c.id === "original"), "as shot");
     expect(ratioOf(original, 16 / 9, false)).toBeCloseTo(16 / 9);
     expect(ratioOf(need(ASPECT_CHOICES[0], "free"), ASPECT, false)).toBeNull();
-  });
-
-  it("names the shape a crop is actually on, either way up", () => {
-    const wide = withRatio(FULL_CROP, 16 / 9, ASPECT);
-    expect(choiceOf(wide, ASPECT)?.id).toBe("16:9");
-    const tall = withRatio(FULL_CROP, 9 / 16, ASPECT);
-    expect(choiceOf(tall, ASPECT)?.id).toBe("16:9");
-    expect(choiceOf({ x: 0, y: 0, width: 0.77, height: 0.31, angle: 0 }, ASPECT)).toBeNull();
   });
 });
 

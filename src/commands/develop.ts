@@ -2,13 +2,6 @@ import { registerCommand, type CommandContext } from "../registry/commands";
 import { useDevelopStore } from "../state/develop";
 import { useAppStore } from "../state/store";
 
-/** Suggested filename for an export: the original's stem, plus the format. */
-export function exportName(path: string, extension: string): string {
-  const base = path.split("/").pop() ?? "image";
-  const stem = base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base;
-  return `${stem}.${extension}`;
-}
-
 function hasSession(): boolean {
   return useDevelopStore.getState().session !== null;
 }

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { DevelopSettings, DevelopState } from "../ipc";
-import { exportName } from "../commands/develop";
 import {
   baselineOf,
   FULL_CROP,
@@ -127,21 +126,6 @@ describe("needsDevelopedFrame", () => {
       settings: { ...neutralSettings, params: { ...neutralSettings.params, contrast: 20 } },
     });
     expect(needsDevelopedFrame(edited)).toBe(true);
-  });
-});
-
-describe("exportName", () => {
-  it("keeps the stem and swaps the extension", () => {
-    expect(exportName("/photos/DSC_0008.NEF", "jpg")).toBe("DSC_0008.jpg");
-    expect(exportName("/photos/holiday.jpeg", "png")).toBe("holiday.png");
-  });
-
-  it("copes with a name that has no extension", () => {
-    expect(exportName("/photos/scan", "jpg")).toBe("scan.jpg");
-  });
-
-  it("copes with dots inside the name", () => {
-    expect(exportName("/photos/2026.08.02 walk.NEF", "jpg")).toBe("2026.08.02 walk.jpg");
   });
 });
 

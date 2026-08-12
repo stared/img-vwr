@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { developEditedPaths, developExport, type Exported } from "../../ipc";
 import {
@@ -127,6 +127,39 @@ export function ExportDialog() {
     [candidates, options],
   );
 
+  /**
+   * The export itself: one file at a time, in the order they are on screen.
+   *
+   * Serial on purpose. Each render holds a whole sensor's worth of floats and
+   * the pipeline is already parallel inside; four at once would compete for
+   * the same cores and the same memory, and the only thing gained would be a
+   * less honest progress line.
+   */
+  const run = useCallback(async () => {
+    if (folder === null || planned.length === 0) return;
+    stopped.current = false;
+    const written: Exported[] = [];
+    const failed: { path: string; error: string }[] = [];
+    for (const [at, item] of planned.entries()) {
+      // Between files, not during one: a half-written JPEG is worse than one
+      // more JPEG, and one file is a fraction of a second anyway.
+      if (stopped.current) break;
+      setPhase({ kind: "running", done: at, total: planned.length, now: item.entry.name });
+      try {
+        written.push(
+          await developExport(item.job, {
+            folder,
+            format: options.format,
+            size: options.size,
+          }),
+        );
+      } catch (error) {
+        failed.push({ path: item.entry.name, error: String(error) });
+      }
+    }
+    setPhase({ kind: "done", written, failed, stopped: stopped.current });
+  }, [folder, planned, options]);
+
   /*
    * The two keys a dialog owes you: Escape to leave and Enter to do the thing.
    * On the window and in the capture phase, because the gallery's own bare
@@ -141,15 +174,20 @@ export function ExportDialog() {
     if (!exportOpen) return;
     const onKey = (e: KeyboardEvent) => {
       const editing = document.activeElement?.tagName === "INPUT";
-      if (e.key === "Escape" && !editing) {
+      if (editing || phase.kind === "running") return;
+      if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         setExportOpen(false);
+      } else if (e.key === "Enter" && phase.kind === "setting-up") {
+        e.preventDefault();
+        e.stopPropagation();
+        void run();
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [exportOpen, setExportOpen]);
+  }, [exportOpen, setExportOpen, phase.kind, run]);
 
   /*
    * How big the photographs actually are, which is what makes "full size" an
@@ -185,39 +223,6 @@ export function ExportDialog() {
       defaultPath: folder ?? undefined,
     });
     if (typeof picked === "string") setFolder(picked);
-  };
-
-  /**
-   * The export itself: one file at a time, in the order they are on screen.
-   *
-   * Serial on purpose. Each render holds a whole sensor's worth of floats and
-   * the pipeline is already parallel inside; four at once would compete for
-   * the same cores and the same memory, and the only thing gained would be a
-   * less honest progress line.
-   */
-  const run = async () => {
-    if (folder === null || planned.length === 0) return;
-    stopped.current = false;
-    const written: Exported[] = [];
-    const failed: { path: string; error: string }[] = [];
-    for (const [at, item] of planned.entries()) {
-      // Between files, not during one: a half-written JPEG is worse than one
-      // more JPEG, and one file is a fraction of a second anyway.
-      if (stopped.current) break;
-      setPhase({ kind: "running", done: at, total: planned.length, now: item.entry.name });
-      try {
-        written.push(
-          await developExport(item.job, {
-            folder,
-            format: options.format,
-            size: options.size,
-          }),
-        );
-      } catch (error) {
-        failed.push({ path: item.entry.name, error: String(error) });
-      }
-    }
-    setPhase({ kind: "done", written, failed, stopped: stopped.current });
   };
 
   const quality = options.format.kind === "jpeg" ? options.format.quality : null;

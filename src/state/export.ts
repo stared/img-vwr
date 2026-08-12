@@ -96,7 +96,7 @@ export function planAll(candidates: Candidate[], options: ExportOptions): Planne
 }
 
 /** How many of each kind, for the line that says what the export will do. */
-export function summarise(planned: Planned[]): { copied: number; rendered: number } {
+function summarise(planned: Planned[]): { copied: number; rendered: number } {
   const copied = planned.filter((p) => p.job.kind === "copy").length;
   return { copied, rendered: planned.length - copied };
 }
@@ -286,7 +286,3 @@ export function qualityLabel(quality: number): string {
   return `${quality} · small`;
 }
 
-export function sameSize(a: ExportSize, b: ExportSize): boolean {
-  if (a.kind === "full" || b.kind === "full") return a.kind === b.kind;
-  return a.pixels === b.pixels;
-}

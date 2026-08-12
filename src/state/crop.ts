@@ -337,20 +337,6 @@ export function isPortrait(crop: Crop, aspect: number): boolean {
   return ratioIn(crop, aspect) < 1;
 }
 
-/** Which choice the crop currently matches, so the row can say which one it
- * is on rather than remembering a click that may no longer be true. */
-export function choiceOf(crop: Crop, aspect: number): AspectChoice | null {
-  const ratio = ratioIn(crop, aspect);
-  const near = (a: number, b: number) => Math.abs(a - b) < 0.01 * Math.max(a, b);
-  for (const choice of ASPECT_CHOICES) {
-    if (choice.id === "free") continue;
-    const value = choice.id === "original" ? aspect : choice.ratio;
-    if (value === null) continue;
-    if (near(ratio, value) || near(ratio, 1 / value)) return choice;
-  }
-  return null;
-}
-
 /** A finite number no smaller than `floor` — a size, sanitised. */
 function atLeast(v: number, floor: number): number {
   return Number.isFinite(v) && v > floor ? v : floor;
