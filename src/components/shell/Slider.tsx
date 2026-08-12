@@ -18,11 +18,45 @@
  * toolbar lays them along a line, and nothing else differs between them.
  */
 
-/** A value worth marking on the track, in the slider's own units. */
+/**
+ * A value worth marking on the track, in the slider's own units.
+ *
+ * A mark is a shortcut, not a stop: land on it by clicking it or by dragging
+ * onto it, and nothing prevents the thumb sitting between two.
+ *
+ * The mark is drawn *on* the track — that is where the value it names is —
+ * and the interaction is a snap rather than a button, which is what lets it be
+ * both. A button on the track would take the pointer, and a press that landed
+ * on a mark would then be a press that could not become a drag.
+ */
 export interface SliderTick {
   at: number;
-  /** Said on hover; the marks themselves stay quiet. */
+  /** What this value is for; named in the control's own tooltip. */
   title: string;
+}
+
+/**
+ * How close counts as landed on a mark, as a share of the whole track.
+ *
+ * Small enough that the value beside a mark is still reachable — at 1.5% of a
+ * 40–100 quality scale that is a hair under one point, so 89 and 91 are both
+ * yours — and large enough that letting go anywhere near 2048 px gives you
+ * 2048 px rather than 2032.
+ */
+const SNAP = 0.015;
+
+/** The value a raw slider position becomes, once the marks have had their
+ * say. Exported for the test that pins the behaviour down. */
+export function snapped(value: number, ticks: readonly SliderTick[], span: number): number {
+  if (span <= 0) return value;
+  let best: SliderTick | null = null;
+  for (const tick of ticks) {
+    const distance = Math.abs(tick.at - value);
+    if (distance <= span * SNAP && (best === null || distance < Math.abs(best.at - value))) {
+      best = tick;
+    }
+  }
+  return best === null ? value : best.at;
 }
 
 export interface SliderProps {
@@ -94,24 +128,30 @@ export function Slider({
             "--fill-b": `${Math.max(here, origin)}%`,
           } as React.CSSProperties
         }
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
+        onChange={(e) => onChange(snapped(Number(e.currentTarget.value), ticks, max - min))}
         // Double-clicking returns the control to its own neutral — the
         // camera's temperature, not the bottom of the scale.
         onDoubleClick={() => onChange(neutral)}
       />
+      {/* Drawn under the input rather than over it: the input keeps every
+          pointer event, so a press that lands on a mark is still a press that
+          can become a drag, and the thumb passes in front of a mark instead
+          of disappearing behind it. */}
       {ticks.map((tick) => (
         <span
           key={tick.at}
-          className="slider-tick"
-          title={tick.title}
+          className={
+            Math.abs(tick.at - value) < (max - min) * 1e-6 ? "slider-tick on" : "slider-tick"
+          }
           style={{ left: `${positionOf(tick.at, min, max)}%` }}
         />
       ))}
     </span>
   );
 
+  const marks = ticks.length === 0 ? "" : `\n\nMarks: ${ticks.map((t) => t.title).join("; ")}`;
   return (
-    <label className={`slider ${layout}`} title={title}>
+    <label className={`slider ${layout}`} title={`${title}${marks}`}>
       {layout === "stacked" ? (
         <>
           <span className="slider-head">{head}</span>

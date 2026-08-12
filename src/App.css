@@ -1269,29 +1269,43 @@ button.stats-row:hover .stats-label {
   font-size: 12px;
 }
 
-/* And a label column, so the tracks start together as well as ending
-   together once the row has wrapped and the sliders are stacked. */
+/* And a fixed label column, so the tracks start together as well as ending
+   together once the row has wrapped and the sliders are stacked. Fixed, not a
+   minimum: a label one pixel wider than the minimum pushes its own track a
+   pixel right of the one above it. */
 .gallery-toolbar .slider-label {
-  flex: 0 0 auto;
-  min-width: 68px;
+  flex: 0 0 76px;
 }
 
-/* Equal basis, equal growth: several sliders sharing a row end up with tracks
-   of the same length whatever their labels weigh, which is the only way the
-   thumbs mean the same thing at the same distance along. */
+/* Equal share, equal track: the sliders themselves grow evenly, so three of
+   them on one line get the same width as each other and one of them on a line
+   of its own fills it — which is the only way the thumbs mean the same thing
+   at the same distance along, whichever way the row has wrapped. */
+.gallery-toolbar .slider {
+  flex: 1 1 260px;
+}
+
 .gallery-toolbar .slider-track,
 .tl-toolbar .slider-track {
-  flex: 1 1 96px;
+  flex: 1 1 auto;
   min-width: 64px;
-  max-width: 140px;
+}
+
+.tl-toolbar .slider {
+  flex: 0 0 auto;
+}
+
+.tl-toolbar .slider-track {
+  flex: 0 0 110px;
 }
 
 /* ...and the value gets a column of its own, so a label does not slide left
    and right as the number beside it changes width. */
+/* Fixed, for the same reason the export sheet's is: a value sized to its own
+   text takes the difference out of the track beside it. */
 .gallery-toolbar .slider-value,
 .tl-toolbar .slider-value {
-  flex: 0 0 auto;
-  min-width: 54px;
+  flex: 0 0 54px;
 }
 
 .tl-fit {
@@ -1531,21 +1545,39 @@ button.stats-row:hover .stats-label {
 }
 
 /* A value worth landing on — the quality people use, the size a site wants.
-   A mark under the track rather than a stop on it: you can sit on one, and
-   you can sit between two, and the control never says otherwise. */
+   Drawn ON the track, because that is where the value it names is, and big
+   enough to aim at.
+
+   Under the input, never over it: the input keeps every pointer event, so a
+   press that lands on a mark can still become a drag, and the thumb passes in
+   front of a mark instead of vanishing behind it. Landing on one is a snap in
+   the component rather than a button here — see `snapped`. */
+.slider-track input[type="range"] {
+  position: relative;
+  z-index: 1;
+}
+
 .slider-tick {
   position: absolute;
-  top: 9px;
-  width: 3px;
-  height: 3px;
-  margin-left: -1.5px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  transform: translate(-50%, -50%);
   background: var(--border);
   pointer-events: none;
+  transition: background 120ms ease;
 }
 
 .slider:hover .slider-tick {
   background: var(--text-faint);
+}
+
+/* Sitting exactly on a mark: the mark says so, so "2048 px" and "some number
+   near 2048" are not the same picture. */
+.slider-tick.on,
+.slider:hover .slider-tick.on {
+  background: var(--accent-text);
 }
 
 .develop-reset,
@@ -1781,7 +1813,7 @@ button.stats-row:hover .stats-label {
 /* ---- Export sheet ---- */
 
 .export-sheet {
-  width: min(560px, 90vw);
+  width: min(620px, 90vw);
   margin: 12vh auto 0;
   padding: 16px 8px 14px;
   background: var(--bg-overlay);
@@ -1796,11 +1828,18 @@ button.stats-row:hover .stats-label {
   font-weight: 600;
 }
 
+/* Every row is the same height and its label sits in the same column, whether
+   the row holds buttons or a slider — so the four of them read as one form
+   rather than as four controls that happen to be stacked.
+
+   Centred, not baseline-aligned: a slider's track has no text to take a
+   baseline from, so a baseline row hangs it off whatever the label's font
+   happens to be doing and it sits a few pixels high. */
 .export-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  min-height: 28px;
   gap: 8px;
-  margin-bottom: 2px;
 }
 
 .export-row-label {
@@ -1813,8 +1852,7 @@ button.stats-row:hover .stats-label {
 
 .export-row-choices {
   flex: 1;
-  margin-left: 0;
-  margin-right: 12px;
+  margin: 0 12px 0 0;
 }
 
 /* A slider in a row takes the whole width the row has left, so the two of
@@ -1823,11 +1861,17 @@ button.stats-row:hover .stats-label {
 .export-row .slider {
   flex: 1;
   gap: 10px;
+  padding: 0;
 }
 
+/* A fixed column, not a minimum. Sized to content, "full size · 6048 px" is
+   wider than "90 · high", and the difference comes out of the track beside
+   it — so the two sliders end up with tracks of different lengths and thumbs
+   that mean different things at the same distance along. Right-aligned, so
+   the numbers themselves line up too. */
 .export-row .slider-value {
-  flex: 0 0 auto;
-  min-width: 76px;
+  flex: 0 0 132px;
+  text-align: right;
   font-size: 11px;
 }
 

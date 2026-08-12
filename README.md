@@ -34,8 +34,10 @@ straighten from dragging in corners that were never photographed.
 `Export…` (⇧⌘E) writes the selection into a folder you pick: JPEG or PNG, a
 quality, and a longest edge, with a line that says what it will do before it
 does it. Quality and size are sliders — continuous quantities get continuous
-controls, with dots at the values people actually use rather than a short list
-that refuses everything else.
+controls, with dots on the track at the values people actually use rather than
+a short list that refuses everything else. The size track is logarithmic and
+ends at the largest photograph selected, since an export never upscales, and
+"full size" says which size that is.
 
 The interesting option is what happens to a photograph nobody edited. In a
 raw + JPEG shoot that is most of them, and rendering those from the sensor is

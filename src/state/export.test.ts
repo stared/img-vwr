@@ -10,12 +10,15 @@ import {
   QUALITY_MARKS,
   QUALITY_MAX,
   QUALITY_MIN,
+  nativeSizeOf,
   sameSize,
-  SIZE_MARKS,
   sizeFromSlider,
   sizeLabel,
+  sizeMarksFor,
+  sizeScaleFor,
   sliderFromSize,
   summaryOf,
+  UNKNOWN_SIZE,
   type Candidate,
 } from "./export";
 
@@ -167,61 +170,116 @@ describe("sameSize", () => {
 });
 
 describe("the size scale", () => {
+  /** A 24 MP frame from a 3:2 body — 6048 px on its long edge. */
+  const shoot = sizeScaleFor(6048);
+  const mine = { longest: 6048, mixed: false };
+
   it("puts a size back where it came from", () => {
     // The thumb has to sit on the value the readout claims, or the control is
     // lying about what it will export.
-    for (const pixels of [512, 1024, 1600, 2048, 4096, 8192]) {
+    for (const pixels of [512, 1024, 1600, 2048, 4096, 6048]) {
       const size = { kind: "longest", pixels } as const;
-      expect(sizeFromSlider(sliderFromSize(size))).toEqual(size);
+      expect(sizeFromSlider(sliderFromSize(size, shoot), shoot)).toEqual(size);
     }
-    expect(sizeFromSlider(sliderFromSize({ kind: "full" }))).toEqual({ kind: "full" });
+    expect(sizeFromSlider(sliderFromSize({ kind: "full" }, shoot), shoot)).toEqual({
+      kind: "full",
+    });
   });
 
   it("spends its track on sizes people pick", () => {
     // Logarithmic: doubling the size is the same distance wherever you are,
     // so half the track is not wasted on the very large end.
-    const a = sliderFromSize({ kind: "longest", pixels: 1024 });
-    const b = sliderFromSize({ kind: "longest", pixels: 2048 });
-    const c = sliderFromSize({ kind: "longest", pixels: 4096 });
+    const a = sliderFromSize({ kind: "longest", pixels: 1024 }, shoot);
+    const b = sliderFromSize({ kind: "longest", pixels: 2048 }, shoot);
+    const c = sliderFromSize({ kind: "longest", pixels: 4096 }, shoot);
     expect(b - a).toBeCloseTo(c - b, 6);
   });
 
-  it("only means full size at the very end of the travel", () => {
-    expect(sizeFromSlider(1)).toEqual({ kind: "full" });
-    // ...and the largest pixel size on the track is still reachable.
-    expect(sizeFromSlider(0.99)).toEqual({ kind: "longest", pixels: 8192 });
-    expect(sizeFromSlider(0.9)).toEqual({ kind: "longest", pixels: 6368 });
-    expect(sizeFromSlider(0)).toEqual({ kind: "longest", pixels: 512 });
+  it("ends at the largest photograph rather than at some fixed ceiling", () => {
+    // An export never upscales, so a track that ran past the real maximum
+    // would have a stretch where every position meant the same thing.
+    expect(shoot.max).toBe(6048);
+    expect(sizeFromSlider(0.97, shoot)).toEqual({ kind: "longest", pixels: 6048 });
+    expect(sizeFromSlider(1, shoot)).toEqual({ kind: "full" });
+    // ...and a small collection gets a small track.
+    const small = sizeScaleFor(1600);
+    expect(sizeFromSlider(0.97, small)).toEqual({ kind: "longest", pixels: 1600 });
+  });
+
+  it("falls back to a sensible range before any file has been measured", () => {
+    const unknown = sizeScaleFor(null);
+    expect(unknown.max).toBe(8192);
+    expect(sizeFromSlider(0, unknown)).toEqual({ kind: "longest", pixels: 512 });
   });
 
   it("reads out a number a person would say", () => {
     // Rounded to 16 px, so a hair of thumb movement is not a different export.
     for (const at of [0.13, 0.37, 0.62, 0.88]) {
-      const size = sizeFromSlider(at);
+      const size = sizeFromSlider(at, shoot);
       expect(size.kind === "longest" && size.pixels % 16).toBe(0);
     }
-    expect(sizeLabel({ kind: "full" })).toBe("full size");
-    expect(sizeLabel({ kind: "longest", pixels: 2048 })).toBe("2048 px");
+    expect(sizeLabel({ kind: "longest", pixels: 2048 }, mine)).toBe("2048 px");
+  });
+
+  it("says which size 'full size' means", () => {
+    // "full size" alone is a question, not an answer.
+    expect(sizeLabel({ kind: "full" }, mine)).toBe("full size · 6048 px");
+    expect(sizeLabel({ kind: "full" }, { longest: 6048, mixed: true })).toBe(
+      "full size · up to 6048 px",
+    );
+    // ...and says nothing it does not know.
+    expect(sizeLabel({ kind: "full" }, UNKNOWN_SIZE)).toBe("full size");
   });
 
   it("survives a slider that has gone wrong", () => {
-    expect(sizeFromSlider(Number.NaN)).toEqual({ kind: "full" });
-    expect(sizeFromSlider(-1)).toEqual({ kind: "longest", pixels: 512 });
+    expect(sizeFromSlider(Number.NaN, shoot)).toEqual({ kind: "full" });
+    expect(sizeFromSlider(-1, shoot)).toEqual({ kind: "longest", pixels: 512 });
   });
 
-  it("marks the sizes worth landing on, without limiting the answer to them", () => {
-    expect(SIZE_MARKS.map((m) => sizeLabel(m.size))).toEqual([
+  it("marks the sizes worth landing on, and only ones it could produce", () => {
+    expect(sizeMarksFor(shoot).map((m) => sizeLabel(m.size, mine))).toEqual([
       "1024 px",
       "2048 px",
       "4096 px",
-      "full size",
+      "full size · 6048 px",
     ]);
-    // Every mark sits somewhere on the track it marks.
-    for (const mark of SIZE_MARKS) {
-      const at = sliderFromSize(mark.size);
+    // A collection of small photographs has no business offering 4096.
+    expect(sizeMarksFor(sizeScaleFor(1600)).map((m) => m.size.kind)).toEqual([
+      "longest",
+      "full",
+    ]);
+    for (const mark of sizeMarksFor(shoot)) {
+      const at = sliderFromSize(mark.size, shoot);
       expect(at).toBeGreaterThanOrEqual(0);
       expect(at).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe("nativeSizeOf", () => {
+  const dims: Record<string, { width: number; height: number }> = {
+    "/shoot/DSC_0001.NEF": { width: 6048, height: 4024 },
+    "/shoot/DSC_0001.JPG": { width: 6048, height: 4024 },
+    "/shoot/DSC_0002.JPG": { width: 3000, height: 2000 },
+  };
+  const lookup = (path: string) => dims[path] ?? null;
+
+  it("takes the longest edge in the selection", () => {
+    const files = Object.keys(dims).map((path) => ({ path }));
+    expect(nativeSizeOf(files, lookup)).toEqual({ longest: 6048, mixed: true });
+  });
+
+  it("says so when they all agree", () => {
+    const pair = [{ path: "/shoot/DSC_0001.NEF" }, { path: "/shoot/DSC_0001.JPG" }];
+    expect(nativeSizeOf(pair, lookup)).toEqual({ longest: 6048, mixed: false });
+  });
+
+  it("does not wait for metadata that has not arrived", () => {
+    // The number labels a control. Waiting for the slowest file in a folder of
+    // two thousand would mean it never appeared at all.
+    expect(nativeSizeOf([{ path: "/nothing/known.JPG" }], lookup)).toEqual(UNKNOWN_SIZE);
+    const partial = [{ path: "/nothing/known.JPG" }, { path: "/shoot/DSC_0002.JPG" }];
+    expect(nativeSizeOf(partial, lookup)).toEqual({ longest: 3000, mixed: false });
   });
 });
 

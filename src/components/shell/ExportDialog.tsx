@@ -7,18 +7,21 @@ import {
   candidatesOf,
   DEFAULT_OPTIONS,
   planAll,
+  nativeSizeOf,
   QUALITY_MARKS,
   QUALITY_MAX,
   QUALITY_MIN,
   qualityLabel,
-  SIZE_MARKS,
   sizeFromSlider,
   sizeLabel,
+  sizeMarksFor,
+  sizeScaleFor,
   sliderFromSize,
   summaryOf,
   type Candidate,
   type ExportOptions,
 } from "../../state/export";
+import { effectiveDims } from "../../state/derived";
 import { chosenEntries, useAppStore } from "../../state/store";
 import { Slider } from "./Slider";
 
@@ -119,6 +122,27 @@ export function ExportDialog() {
     [candidates, options],
   );
 
+  /*
+   * How big the photographs actually are, which is what makes "full size" an
+   * answer instead of a question — and what the size slider's track ends at,
+   * since an export never upscales and a track whose last third does nothing
+   * is a track that is lying.
+   *
+   * Measured over every file of every stack: the raw is what a rendered export
+   * comes out of, and it is usually the larger of the pair.
+   */
+  const meta = useAppStore((s) => s.meta);
+  const native = useMemo(
+    () =>
+      nativeSizeOf(candidates?.flatMap((c) => c.stack) ?? [], (path) => {
+        const entry = meta[path];
+        return entry ? effectiveDims(entry) : null;
+      }),
+    [candidates, meta],
+  );
+  const scale = useMemo(() => sizeScaleFor(native.longest), [native.longest]);
+  const sizeMarks = useMemo(() => sizeMarksFor(scale), [scale]);
+
   if (!exportOpen) return null;
 
   const close = () => setExportOpen(false);
@@ -211,19 +235,21 @@ export function ExportDialog() {
             <Row label="longest edge">
               <Slider
                 label=""
-                value={sliderFromSize(options.size)}
+                value={sliderFromSize(options.size, scale)}
                 neutral={0}
                 min={0}
                 max={1}
                 step={0.001}
-                display={sizeLabel(options.size)}
-                ticks={SIZE_MARKS.map((mark) => ({
-                  at: sliderFromSize(mark.size),
+                display={sizeLabel(options.size, native)}
+                ticks={sizeMarks.map((mark) => ({
+                  at: sliderFromSize(mark.size, scale),
                   title: mark.note,
                 }))}
                 layout="inline"
-                title="The longest edge of the exported file. Logarithmic, because that is how these numbers are spaced; the top of the track is full size."
-                onChange={(position) => setOptions({ ...options, size: sizeFromSlider(position) })}
+                title="The longest edge of the exported file. Logarithmic, because that is how these numbers are spaced; the track ends at the largest photograph selected, and the last stop is full size."
+                onChange={(position) =>
+                  setOptions({ ...options, size: sizeFromSlider(position, scale) })
+                }
               />
             </Row>
 

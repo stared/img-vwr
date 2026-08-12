@@ -152,51 +152,119 @@ export function candidatesOf(
  * nobody picks. Rounded to a multiple of 16, so the readout is a number a
  * person would say and a hair of thumb movement is not a different export.
  *
- * The far end is "full size" rather than 8192: the top of the track means "do
- * not resize at all", which is a different statement from any pixel count and
- * the one people reach for most.
+ * The track ends at the largest photograph in the selection rather than at
+ * some fixed ceiling, because an export never upscales: past that point every
+ * position would mean the same thing, and a control whose last third does
+ * nothing is a control that is lying about its range.
  */
-const SIZE_MIN = 512;
-const SIZE_MAX = 8192;
+const SIZE_FLOOR = 512;
+/** Where the track ends when nothing is known about the photographs yet. */
+const SIZE_CEILING = 8192;
+
+/** The pixel range this selection's slider actually spans. */
+export interface SizeScale {
+  min: number;
+  max: number;
+}
+
 /**
- * Where the pixel range ends and "full size" begins.
+ * Past this the track means "full size".
  *
- * Strictly past it, so the largest pixel size on the track is reachable — at
- * exactly this position the slider still means 8192 px, and only beyond it
- * does it mean "do not resize". A control with a value you cannot land on is
- * a control that is lying about its range.
+ * Strictly past it, so the largest pixel size is still reachable — at exactly
+ * this position the slider means the full pixel count, and only beyond it does
+ * it mean "do not resize at all". Those two are the same number of pixels and
+ * a different instruction: one bakes today's dimensions into the export, the
+ * other says the export is whatever the photograph is.
  */
-const FULL_FROM = 0.99;
+const FULL_FROM = 0.97;
+
+export function sizeScaleFor(longestEdge: number | null): SizeScale {
+  const max = longestEdge === null ? SIZE_CEILING : longestEdge;
+  return { min: SIZE_FLOOR, max: Math.max(SIZE_FLOOR * 2, Math.round(max)) };
+}
 
 /** The size a slider position means. */
-export function sizeFromSlider(position: number): ExportSize {
+export function sizeFromSlider(position: number, scale: SizeScale): ExportSize {
   if (!Number.isFinite(position) || position > FULL_FROM) return { kind: "full" };
   const at = Math.min(1, Math.max(0, position) / FULL_FROM);
-  const edge = SIZE_MIN * (SIZE_MAX / SIZE_MIN) ** at;
-  return { kind: "longest", pixels: Math.max(SIZE_MIN, Math.round(edge / 16) * 16) };
+  const edge = scale.min * (scale.max / scale.min) ** at;
+  return {
+    kind: "longest",
+    pixels: Math.min(scale.max, Math.max(scale.min, Math.round(edge / 16) * 16)),
+  };
 }
 
 /** ...and the position that means a size, so the thumb sits where it should. */
-export function sliderFromSize(size: ExportSize): number {
+export function sliderFromSize(size: ExportSize, scale: SizeScale): number {
   if (size.kind === "full") return 1;
-  const clamped = Math.min(SIZE_MAX, Math.max(SIZE_MIN, size.pixels));
-  return (Math.log(clamped / SIZE_MIN) / Math.log(SIZE_MAX / SIZE_MIN)) * FULL_FROM;
+  const clamped = Math.min(scale.max, Math.max(scale.min, size.pixels));
+  return (Math.log(clamped / scale.min) / Math.log(scale.max / scale.min)) * FULL_FROM;
 }
 
-export function sizeLabel(size: ExportSize): string {
-  return size.kind === "full" ? "full size" : `${size.pixels} px`;
+/**
+ * What the export will be, in words.
+ *
+ * "full size" on its own is a question rather than an answer — full size of
+ * *what*? So it says the number too, and says "up to" when the selection is a
+ * mix of sizes, which is the honest reading of one instruction covering
+ * photographs that are not all the same.
+ */
+export function sizeLabel(size: ExportSize, native: NativeSize): string {
+  if (size.kind === "longest") return `${size.pixels} px`;
+  if (native.longest === null) return "full size";
+  return native.mixed ? `full size · up to ${native.longest} px` : `full size · ${native.longest} px`;
+}
+
+/** The longest edge in the selection, and whether they all agree on it. */
+export interface NativeSize {
+  longest: number | null;
+  mixed: boolean;
+}
+
+export const UNKNOWN_SIZE: NativeSize = { longest: null, mixed: false };
+
+/**
+ * The longest edge among these photographs, from whatever the scan has
+ * measured so far.
+ *
+ * Nulls where the metadata has not arrived are simply not counted: the number
+ * is a label on a control, and a label that waits for the slowest file in a
+ * folder of two thousand would never appear.
+ */
+export function nativeSizeOf(
+  entries: readonly { path: string }[],
+  dimensions: (path: string) => { width: number; height: number } | null,
+): NativeSize {
+  const edges: number[] = [];
+  for (const entry of entries) {
+    const dims = dimensions(entry.path);
+    if (dims) edges.push(Math.max(dims.width, dims.height));
+  }
+  if (edges.length === 0) return UNKNOWN_SIZE;
+  const longest = Math.max(...edges);
+  return { longest, mixed: edges.some((e) => e !== longest) };
 }
 
 /**
  * The sizes worth a mark on the track: what a print wants, what a site wants,
- * what an e-mail wants. Marks, not options — you can stop between them.
+ * what an e-mail wants. Marks, not options — you can stop between them, and
+ * the ones a selection is already smaller than are left off rather than
+ * pointing at a size no export could produce.
  */
-export const SIZE_MARKS: readonly { size: ExportSize; note: string }[] = [
-  { size: { kind: "longest", pixels: 1024 }, note: "1024 px — e-mail and messages" },
-  { size: { kind: "longest", pixels: 2048 }, note: "2048 px — sharing and social" },
-  { size: { kind: "longest", pixels: 4096 }, note: "4096 px — prints and large screens" },
-  { size: { kind: "full" }, note: "full size — every pixel the crop holds" },
-];
+export function sizeMarksFor(scale: SizeScale): { size: ExportSize; note: string }[] {
+  const marks = [
+    { pixels: 1024, note: "1024 px — e-mail and messages" },
+    { pixels: 2048, note: "2048 px — sharing and social" },
+    { pixels: 4096, note: "4096 px — prints and large screens" },
+  ].filter((mark) => mark.pixels < scale.max);
+  return [
+    ...marks.map((mark) => ({
+      size: { kind: "longest", pixels: mark.pixels } as ExportSize,
+      note: mark.note,
+    })),
+    { size: { kind: "full" } as ExportSize, note: "full size — every pixel the crop holds" },
+  ];
+}
 
 /** The lowest quality worth offering. Below this the codec is what you are
  * looking at, and nobody exports a photograph to look at the codec. */
