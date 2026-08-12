@@ -37,6 +37,43 @@ export function registerDevelopCommands(): void {
   });
 
   registerCommand({
+    id: "develop.crop",
+    title: "Crop & Straighten",
+    keywords: ["crop", "straighten", "rotate", "aspect", "trim"],
+    menus: [{ menu: "image", submenu: null, label: "Crop & straighten" }],
+    when: hasSession,
+    run: () => {
+      const s = useDevelopStore.getState();
+      s.setCropping(!s.cropping);
+    },
+  });
+
+  // Lightroom's contract for leaving the tool, and the one hands expect:
+  // Enter keeps the crop on screen, Escape puts back the one it found. Both
+  // are bound ahead of the keys' ordinary meanings and apply only mid-crop.
+  registerCommand({
+    id: "develop.cropDone",
+    title: "Crop: Done",
+    keywords: ["apply", "commit", "finish crop"],
+    menus: [],
+    when: () => useDevelopStore.getState().cropping,
+    run: () => {
+      useDevelopStore.getState().setCropping(false);
+    },
+  });
+
+  registerCommand({
+    id: "develop.cropCancel",
+    title: "Crop: Cancel",
+    keywords: ["revert crop", "undo crop", "abandon"],
+    menus: [],
+    when: () => useDevelopStore.getState().cropping,
+    run: () => {
+      useDevelopStore.getState().cancelCrop();
+    },
+  });
+
+  registerCommand({
     id: "develop.reset",
     title: "Reset Develop Settings",
     keywords: ["revert", "neutral", "undo edit"],

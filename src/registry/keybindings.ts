@@ -66,6 +66,10 @@ export const defaultKeybindings: readonly Keybinding[] = [
   // Inapplicable (scenes off) they fall through and the chord does nothing.
   ["mod+arrowright", "scene.next"],
   ["mod+arrowleft", "scene.prev"],
+  // Mid-crop, the keys mean what Lightroom taught: Enter keeps the crop,
+  // Escape puts back the one the tool found. Otherwise they fall through.
+  ["enter", "develop.cropDone"],
+  ["escape", "develop.cropCancel"],
   ["enter", "viewer.open"],
   // Lightroom's chord, and the one every photographer's hands already know.
   ["mod+shift+e", "develop.export"],

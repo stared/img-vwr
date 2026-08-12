@@ -222,7 +222,7 @@ pub fn write_rendered(
             let rgb = DynamicImage::ImageRgba8(image).into_rgb8();
             let encoded = encode_jpeg(&rgb, quality)?;
             let out = match exif_bytes(exif).as_deref().and_then(app1_of) {
-                Some(app1) => with_app1(&encoded, &app1),
+                Some(app1) => with_app1(&encoded, &app1_upright(&app1)),
                 None => encoded,
             };
             std::fs::write(destination, out).map_err(|e| e.to_string())
@@ -280,6 +280,54 @@ pub fn app1_of(jpeg: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
+/// The APP1 segment with its Orientation tag set back to upright (1).
+///
+/// Rendered pixels are already upright — the scene applies the camera's
+/// orientation before the pipeline ever sees them. Carrying the tag across
+/// unchanged asks every viewer to rotate the photograph a second time, which
+/// is how a portrait export lands on its side. Only that one word is touched,
+/// in place; every other byte still moves verbatim. Anything unexpected in
+/// the structure leaves the segment as it was.
+pub fn app1_upright(app1: &[u8]) -> Vec<u8> {
+    let mut out = app1.to_vec();
+    // FF E1, length, "Exif\0\0" — then the TIFF header all offsets count from.
+    const TIFF: usize = 10;
+    if out.len() < TIFF + 8 || !out[4..TIFF].starts_with(b"Exif\0") {
+        return out;
+    }
+    let le = match &out[TIFF..TIFF + 2] {
+        b"II" => true,
+        b"MM" => false,
+        _ => return out,
+    };
+    let word = |b: &[u8]| u16::from_be_bytes([b[0], b[1]]);
+    let read16 = |b: &[u8]| if le { word(b).swap_bytes() } else { word(b) };
+    let ifd0 = {
+        let b = &out[TIFF + 4..TIFF + 8];
+        let raw = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+        TIFF + (if le { raw.swap_bytes() } else { raw }) as usize
+    };
+    if ifd0 + 2 > out.len() {
+        return out;
+    }
+    let entries = read16(&out[ifd0..ifd0 + 2]) as usize;
+    for i in 0..entries {
+        let at = ifd0 + 2 + i * 12;
+        if at + 12 > out.len() {
+            return out;
+        }
+        // Tag 0x0112, Orientation: a SHORT with count 1, so the value lives
+        // in the entry's own value field — nothing outside it moves.
+        if read16(&out[at..at + 2]) == 0x0112 {
+            let upright = if le { 1u16.to_le_bytes() } else { 1u16.to_be_bytes() };
+            out[at + 8] = upright[0];
+            out[at + 9] = upright[1];
+            return out;
+        }
+    }
+    out
+}
+
 /// The same JPEG with an APP1 segment placed where it belongs: immediately
 /// after the SOI, before any segment the encoder wrote.
 pub fn with_app1(jpeg: &[u8], app1: &[u8]) -> Vec<u8> {
@@ -306,6 +354,33 @@ mod tests {
         }
     }
 
+    /// An APP1 segment with a real IFD0 in it: an ImageDescription entry and
+    /// an Orientation entry — enough structure that a patch has to actually
+    /// walk the directory rather than pattern-match.
+    fn app1_with_orientation(orientation: u16, le: bool) -> Vec<u8> {
+        let w16 = |v: u16| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let w32 = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let mut tiff: Vec<u8> = Vec::new();
+        tiff.extend_from_slice(if le { b"II" } else { b"MM" });
+        tiff.extend_from_slice(&w16(42));
+        tiff.extend_from_slice(&w32(8)); // IFD0 follows immediately
+        tiff.extend_from_slice(&w16(2)); // two entries
+        for (tag, value) in [(0x010e_u16, 99_u16), (0x0112, orientation)] {
+            tiff.extend_from_slice(&w16(tag));
+            tiff.extend_from_slice(&w16(3)); // SHORT
+            tiff.extend_from_slice(&w32(1));
+            tiff.extend_from_slice(&w16(value));
+            tiff.extend_from_slice(&w16(0)); // value field padding
+        }
+        tiff.extend_from_slice(&w32(0)); // no next IFD
+
+        let mut app1 = vec![0xFF, 0xE1];
+        app1.extend_from_slice(&((tiff.len() + 6 + 2) as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&tiff);
+        app1
+    }
+
     /// A JPEG with a plausible APP1 segment in it — enough structure that the
     /// walker has to actually parse rather than pattern-match.
     fn jpeg_with_exif(width: u32, height: u32) -> Vec<u8> {
@@ -313,11 +388,7 @@ mod tests {
             image::Rgb([(x % 256) as u8, 128, 64])
         });
         let encoded = encode_jpeg(&img, 90).unwrap();
-        let payload = b"Exif\0\0MM\0\x2a\0\0\0\x08";
-        let mut app1 = vec![0xFF, 0xE1];
-        app1.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
-        app1.extend_from_slice(payload);
-        with_app1(&encoded, &app1)
+        with_app1(&encoded, &app1_with_orientation(6, false))
     }
 
     #[test]
@@ -325,12 +396,39 @@ mod tests {
         let jpeg = jpeg_with_exif(32, 16);
         let app1 = app1_of(&jpeg).expect("the segment we just wrote");
         assert_eq!(&app1[..2], &[0xFF, 0xE1]);
-        assert!(app1.ends_with(b"MM\0\x2a\0\0\0\x08"));
+        assert_eq!(app1, app1_with_orientation(6, false));
 
         // And putting it onto another JPEG makes that one carry it too.
         let plain = encode_jpeg(&RgbImage::new(4, 4), 90).unwrap();
         assert!(app1_of(&plain).is_none());
         assert_eq!(app1_of(&with_app1(&plain, &app1)), Some(app1));
+    }
+
+    #[test]
+    fn rendered_pixels_are_upright_so_the_orientation_tag_must_not_turn_them_again() {
+        // Both byte orders, every rotated orientation: the tag comes out 1 and
+        // nothing else in the segment moves.
+        for le in [false, true] {
+            for orientation in [2u16, 3, 5, 6, 8] {
+                let before = app1_with_orientation(orientation, le);
+                let after = app1_upright(&before);
+                assert_eq!(after, app1_with_orientation(1, le), "orientation {orientation}, le {le}");
+                assert_eq!(after.len(), before.len());
+            }
+        }
+    }
+
+    #[test]
+    fn a_segment_that_is_not_understood_is_left_exactly_as_it_was() {
+        // No Exif marker, unknown byte order, truncated mid-directory: each
+        // comes back byte-for-byte, never half-patched.
+        let odd = vec![0xFF, 0xE1, 0x00, 0x04, 0x58, 0x58];
+        assert_eq!(app1_upright(&odd), odd);
+        let mut wrong_order = app1_with_orientation(6, false);
+        wrong_order[10..12].copy_from_slice(b"XX");
+        assert_eq!(app1_upright(&wrong_order), wrong_order);
+        let truncated = app1_with_orientation(6, false)[..20].to_vec();
+        assert_eq!(app1_upright(&truncated), truncated);
     }
 
     #[test]
@@ -420,7 +518,10 @@ mod tests {
         .unwrap();
 
         let written = std::fs::read(&dest).unwrap();
-        assert!(app1_of(&written).is_some());
+        let app1 = app1_of(&written).expect("the sibling JPG's EXIF must ride along");
+        // ...with its orientation reset: the source frame said "rotate 90°"
+        // (orientation 6), but rendered pixels are already upright.
+        assert_eq!(app1, app1_with_orientation(1, false));
         let img = image::load_from_memory(&written).unwrap();
         assert_eq!((img.width(), img.height()), (20, 10));
     }

@@ -287,10 +287,10 @@ export function DevelopPanel() {
         <h4>Crop</h4>
         <button
           className={cropping ? "develop-toggle armed" : "develop-toggle"}
-          title="Drag the handles to trim, the inside to move it, the outside to draw a new one."
+          title="Drag the handles to trim, the inside to move it, the outside to draw a new one. Enter keeps the crop, Escape puts back the one you started with."
           onClick={() => setCropping(!cropping)}
         >
-          {cropping ? "cropping: drag the rectangle" : "crop"}
+          {cropping ? "cropping: Enter when done" : "crop"}
         </button>
         {/* The shapes, as a row: there are seven of them, they are a closed
             set, and which one is on is a fact worth being able to read

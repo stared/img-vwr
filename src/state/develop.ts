@@ -351,6 +351,13 @@ export interface DevelopStore {
    */
   cropping: boolean;
   setCropping: (cropping: boolean) => void;
+  /**
+   * The crop as it stood when the tool was entered — what Escape puts back.
+   * Null exactly when `cropping` is false.
+   */
+  cropWas: Crop | null;
+  /** Leave crop mode with the crop as it was when the tool was entered. */
+  cancelCrop: () => void;
   setCrop: (crop: Crop) => void;
   /**
    * The shape a crop is held to, by the id of a choice in `ASPECT_CHOICES`.
@@ -777,6 +784,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     copied: null,
     comparing: false,
     cropping: false,
+    cropWas: null,
     cropChoice: "free",
     cropPortrait: false,
     opening: null,
@@ -787,7 +795,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       if (get().session?.path === path) return;
       // Crop is about one photograph, and arriving at the next one already in
       // crop mode would mean a drag across it meant something unexpected.
-      if (get().cropping) set({ cropping: false });
+      if (get().cropping) set({ cropping: false, cropWas: null });
       // And where the sharpest place is moves with the photograph — the eyes
       // are not where they were in the previous take. Back to "wherever this
       // frame is sharpest" until the user aims it themselves.
@@ -951,9 +959,22 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     },
 
     setCropping: (cropping) => {
-      set({ cropping });
+      // Entering remembers the crop as it stands, so Escape has something to
+      // put back; leaving by any route (Enter, the button, a click outside a
+      // drag) keeps what is on screen and forgets the remembered one.
+      set({ cropping, cropWas: cropping ? (get().session?.settings.crop ?? null) : null });
       // Entering shows the whole frame and leaving shows the crop again, so
       // both directions are a different picture and need a render.
+      void pump();
+    },
+
+    cancelCrop: () => {
+      const { cropping, cropWas, session } = get();
+      if (!cropping) return;
+      if (cropWas !== null && session !== null) {
+        change({ ...session.settings, crop: cropWas });
+      }
+      set({ cropping: false, cropWas: null });
       void pump();
     },
 

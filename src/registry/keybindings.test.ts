@@ -88,15 +88,22 @@ describe("the shipped table", () => {
   });
 
   it("binds no chord to two commands that could both be applicable at once", () => {
-    // Two bindings on one chord is deliberate (Escape), but only where the
-    // `when` clauses are exclusive. A duplicate added by accident would make
-    // one of them unreachable and nothing would say so.
+    // Several bindings on one chord is deliberate (Enter and Escape both mean
+    // something else mid-crop), but only where the `when` clauses are
+    // exclusive. A duplicate added by accident would make one of them
+    // unreachable and nothing would say so.
     const seen = new Map<string, string[]>();
     for (const [chord, id] of defaultKeybindings) {
       seen.set(chord, [...(seen.get(chord) ?? []), id]);
     }
     const shared = [...seen.entries()].filter(([, ids]) => ids.length > 1);
-    expect(shared.map(([chord]) => chord)).toEqual(["escape"]);
+    expect(shared.map(([chord]) => chord)).toEqual(["enter", "escape"]);
+    expect(seen.get("enter")).toEqual(["develop.cropDone", "viewer.open"]);
+    expect(seen.get("escape")).toEqual([
+      "develop.cropCancel",
+      "viewer.close",
+      "selection.clear",
+    ]);
   });
 });
 
