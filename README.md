@@ -35,7 +35,9 @@ straighten from dragging in corners that were never photographed.
 quality, and a longest edge, with a line that says what it will do before it
 does it. Quality and size are sliders — continuous quantities get continuous
 controls, with dots on the track at the values people actually use rather than
-a short list that refuses everything else. The size track is logarithmic and
+a short list that refuses everything else. Every slider in the app works the
+same way: drag (shift for fine), click a dot (hover says what it is for), or
+type the number into the readout. The size track is logarithmic and
 ends at the largest photograph selected, since an export never upscales, and
 "full size" says which size that is.
 

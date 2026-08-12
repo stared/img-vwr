@@ -1,11 +1,10 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { developEditedPaths, developExport, type Exported } from "../../ipc";
 import {
   candidatesOf,
-  DEFAULT_OPTIONS,
   planAll,
   nativeSizeOf,
   QUALITY_MARKS,
@@ -19,11 +18,10 @@ import {
   sliderFromSize,
   summaryOf,
   type Candidate,
-  type ExportOptions,
 } from "../../state/export";
 import { effectiveDims } from "../../state/derived";
 import { chosenEntries, useAppStore } from "../../state/store";
-import { Slider } from "./Slider";
+import { parseNumber, Slider } from "./Slider";
 
 /**
  * The export sheet: what is about to be written, said before anything is.
@@ -43,7 +41,7 @@ import { Slider } from "./Slider";
 type Phase =
   | { kind: "setting-up" }
   | { kind: "running"; done: number; total: number; now: string }
-  | { kind: "done"; written: Exported[]; failed: { path: string; error: string }[] };
+  | { kind: "done"; written: Exported[]; failed: { path: string; error: string }[]; stopped: boolean };
 
 function Row({
   label,
@@ -88,10 +86,17 @@ export function ExportDialog() {
   const setExportOpen = useAppStore((s) => s.setExportOpen);
   const entries = useAppStore((s) => s.entries);
 
-  const [options, setOptions] = useState<ExportOptions>(DEFAULT_OPTIONS);
-  const [folder, setFolder] = useState<string | null>(null);
+  // Held in the store rather than here, so an export is set up once and not
+  // once per photograph: the same shoot goes to the same folder at the same
+  // size all afternoon.
+  const options = useAppStore((s) => s.exportOptions);
+  const setOptions = useAppStore((s) => s.setExportOptions);
+  const folder = useAppStore((s) => s.exportFolder);
+  const setFolder = useAppStore((s) => s.setExportFolder);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "setting-up" });
+  /** Set by the Stop button; the loop reads it between files. */
+  const stopped = useRef(false);
 
   // Which of the chosen photographs have an edit — the one fact the plan
   // needs that only the database knows. Asked once per opening, over the
@@ -123,6 +128,30 @@ export function ExportDialog() {
   );
 
   /*
+   * The two keys a dialog owes you: Escape to leave and Enter to do the thing.
+   * On the window and in the capture phase, because the gallery's own bare
+   * keys are global and Escape otherwise closes the viewer behind this sheet
+   * instead of the sheet in front of it.
+   *
+   * Enter only once there is somewhere to write, so it can never be a
+   * surprise; while the export is running neither key applies, because
+   * stopping half way is a decision worth clicking.
+   */
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const editing = document.activeElement?.tagName === "INPUT";
+      if (e.key === "Escape" && !editing) {
+        e.preventDefault();
+        e.stopPropagation();
+        setExportOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [exportOpen, setExportOpen]);
+
+  /*
    * How big the photographs actually are, which is what makes "full size" an
    * answer instead of a question — and what the size slider's track ends at,
    * since an export never upscales and a track whose last third does nothing
@@ -148,7 +177,13 @@ export function ExportDialog() {
   const close = () => setExportOpen(false);
 
   const chooseFolder = async () => {
-    const picked = await open({ directory: true, title: "Export to" });
+    const picked = await open({
+      directory: true,
+      title: "Export to",
+      // Opens where the last export went, which is where the next one
+      // usually goes too.
+      defaultPath: folder ?? undefined,
+    });
     if (typeof picked === "string") setFolder(picked);
   };
 
@@ -162,9 +197,13 @@ export function ExportDialog() {
    */
   const run = async () => {
     if (folder === null || planned.length === 0) return;
+    stopped.current = false;
     const written: Exported[] = [];
     const failed: { path: string; error: string }[] = [];
     for (const [at, item] of planned.entries()) {
+      // Between files, not during one: a half-written JPEG is worse than one
+      // more JPEG, and one file is a fraction of a second anyway.
+      if (stopped.current) break;
       setPhase({ kind: "running", done: at, total: planned.length, now: item.entry.name });
       try {
         written.push(
@@ -178,7 +217,7 @@ export function ExportDialog() {
         failed.push({ path: item.entry.name, error: String(error) });
       }
     }
-    setPhase({ kind: "done", written, failed });
+    setPhase({ kind: "done", written, failed, stopped: stopped.current });
   };
 
   const quality = options.format.kind === "jpeg" ? options.format.quality : null;
@@ -222,6 +261,7 @@ export function ExportDialog() {
                   max={QUALITY_MAX}
                   step={1}
                   display={qualityLabel(quality ?? 90)}
+                  parse={parseNumber}
                   ticks={QUALITY_MARKS.map((mark) => ({ at: mark.at, title: mark.note }))}
                   layout="inline"
                   title="How hard the JPEG encoder squeezes. The marks are the qualities people actually use; anything between them is a real answer too."
@@ -241,6 +281,15 @@ export function ExportDialog() {
                 max={1}
                 step={0.001}
                 display={sizeLabel(options.size, native)}
+                // Typed in pixels, which is what the readout says and what
+                // anybody asked for a size means — the track's 0..1 position
+                // is an implementation detail of the log scale.
+                parse={(text) => {
+                  const pixels = parseNumber(text);
+                  return pixels === null
+                    ? null
+                    : sliderFromSize({ kind: "longest", pixels }, scale);
+                }}
                 ticks={sizeMarks.map((mark) => ({
                   at: sliderFromSize(mark.size, scale),
                   title: mark.note,
@@ -303,6 +352,20 @@ export function ExportDialog() {
             <div className="export-progress">
               <span style={{ width: `${(phase.done / Math.max(1, phase.total)) * 100}%` }} />
             </div>
+            <div className="export-actions">
+              <span className="export-note">writing to {folder}</span>
+              {/* A long export is a thing you can change your mind about. It
+                  stops between files, so what has been written stays. */}
+              <button
+                type="button"
+                className="export-folder stop"
+                onClick={() => {
+                  stopped.current = true;
+                }}
+              >
+                stop after this one
+              </button>
+            </div>
           </>
         )}
 
@@ -311,6 +374,7 @@ export function ExportDialog() {
             <p className="export-summary">
               {phase.written.length} exported
               {phase.failed.length > 0 ? `, ${phase.failed.length} could not be` : ""}
+              {phase.stopped ? " — stopped" : ""}
             </p>
             {phase.failed.length > 0 && (
               <ul className="export-failed">
@@ -322,15 +386,27 @@ export function ExportDialog() {
               </ul>
             )}
             <div className="export-actions">
-              {folder !== null && (
+              {phase.written[0] !== undefined && (
                 <button
                   type="button"
                   className="export-folder"
-                  onClick={() => void revealItemInDir(folder)}
+                  title={folder ?? ""}
+                  /* The file, not the folder: the Finder opens with it
+                     selected, which is what "did that work" wants to see. */
+                  onClick={() => void revealItemInDir(phase.written[0]?.path ?? "")}
                 >
-                  show the folder
+                  show in the Finder
                 </button>
               )}
+              {/* Back to the settings rather than only out: the commonest
+                  thing after an export is another one, at a different size. */}
+              <button
+                type="button"
+                className="export-folder"
+                onClick={() => setPhase({ kind: "setting-up" })}
+              >
+                export again
+              </button>
               <button type="button" className="export-go" onClick={close}>
                 Done
               </button>

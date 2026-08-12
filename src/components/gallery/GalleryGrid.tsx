@@ -11,7 +11,7 @@ import {
   type Scene,
 } from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
-import { Slider } from "../shell/Slider";
+import { parseNumber, Slider } from "../shell/Slider";
 import { ThumbCell } from "./ThumbCell";
 
 const CELL_GAP = 8;
@@ -206,6 +206,12 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
             max={1}
             step={0.005}
             display={sceneGapLabel(sceneGapMin)}
+            // The track is a log scale, so a typed "5" is five minutes, not
+            // five along the track.
+            parse={(text) => {
+              const minutes = parseNumber(text);
+              return minutes === null ? null : sliderFromTau(minutes);
+            }}
             ticks={[1, 5, 30, 60].map((minutes) => ({
               at: sliderFromTau(minutes),
               title: minutes < 60 ? `${minutes} min` : "an hour",
@@ -224,6 +230,10 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
             max={1}
             step={0.01}
             display={`${Math.round(contentWeight * 100)}%`}
+            parse={(text) => {
+              const percent = parseNumber(text);
+              return percent === null ? null : percent / 100;
+            }}
             ticks={[{ at: 0.5, title: "the clock and the pictures, evenly" }]}
             layout="inline"
             title="how much the pictures outvote the clock: at 0% a pause over the time splits and nothing else does; at 100% the content decides how a pause reads"
@@ -238,6 +248,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
           max={maxColumns}
           step={1}
           display={`${columns}`}
+          parse={parseNumber}
           ticks={[]}
           layout="inline"
           title="how many photos fill a row"

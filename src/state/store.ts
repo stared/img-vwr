@@ -32,6 +32,7 @@ import {
   type FolderStatus,
   type Scope,
 } from "./collection";
+import { DEFAULT_OPTIONS, type ExportOptions } from "./export";
 import type { Query, Sort } from "./query";
 import {
   collapseStacks,
@@ -206,6 +207,17 @@ export interface AppState {
    * so the sheet is a decision about a set the user has already made.
    */
   exportOpen: boolean;
+  /**
+   * What the last export was set to, and where it went.
+   *
+   * Kept between openings, because an export is a habit rather than a
+   * decision: the same shoot goes to the same folder at the same size all
+   * afternoon, and a dialog that forgets makes you say so every time. It is
+   * session state rather than a stored preference — reopening the app is a
+   * fair moment to start from the defaults again.
+   */
+  exportOptions: ExportOptions;
+  exportFolder: string | null;
   /** Right-click menu position over the selected image; null = closed. */
   imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
@@ -304,6 +316,8 @@ interface AppActions {
   setActivePanel: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setExportOpen: (open: boolean) => void;
+  setExportOptions: (options: ExportOptions) => void;
+  setExportFolder: (folder: string) => void;
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
   setImageMenu: (pos: { x: number; y: number } | null) => void;
@@ -357,6 +371,8 @@ export const initialState: AppState = {
   paletteOpen: false,
   palettePrompt: null,
   exportOpen: false,
+  exportOptions: DEFAULT_OPTIONS,
+  exportFolder: null,
   imageMenu: null,
   similarity: null,
   people: null,
@@ -1029,6 +1045,10 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
 
   setExportOpen: (open) => set({ exportOpen: open }),
+
+  setExportOptions: (exportOptions) => set({ exportOptions }),
+
+  setExportFolder: (exportFolder) => set({ exportFolder }),
 
   promptCommand: (commandId) => set({ paletteOpen: true, palettePrompt: commandId }),
 

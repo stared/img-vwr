@@ -1505,6 +1505,11 @@ button.stats-row:hover .stats-label {
   align-items: center;
   gap: 8px;
   padding: 0;
+  /* The readout is an <input>, and an input's minimum content width is its
+     default twenty characters — far wider than the 54px column it is given.
+     Without this the whole slider refuses to shrink below that phantom and
+     slides out of a narrow toolbar, over whatever is beside it. */
+  min-width: 0;
 }
 
 .slider-head {
@@ -1519,24 +1524,110 @@ button.stats-row:hover .stats-label {
   white-space: nowrap;
 }
 
-/* The current value is the point of the control, so it reads as text and
-   turns bright the moment it stops being the neutral one. Tabular figures so
-   the number does not jitter the layout as it counts up. */
+/* The current value is the point of the control, so it reads as text — and it
+   is a field, because a number you can read but not state is half a control.
+   Tabular figures, so it does not jitter the layout as it counts. */
 .slider-value {
+  min-width: 0;
+  padding: 0 2px;
   color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  font: inherit;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
+  cursor: text;
+}
+
+/* It only looks like a field once you are near it — a panel of a dozen boxes
+   would read as a form, and this is a readout that happens to be editable. */
+.slider:hover .slider-value {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.slider-value:focus {
+  color: var(--text);
+  background: var(--bg);
+  outline: 1px solid var(--accent);
 }
 
 .slider-value.changed {
   color: var(--text);
 }
 
-/* The track, and the marks over it. Positioned so a tick can be placed by
-   percentage against exactly the run the thumb travels. */
+/* The track: a rail, a fill from the neutral value, the marks, and the thumb
+   — in that order, so the thumb is in front of a mark it is sitting on, and
+   the marks are in front of the rail.
+
+   Taller than the hairline it draws, because the whole of it is the grab
+   target and a 1 px target is a target you miss.
+
+   A slider should be a line and a mark on it, not a widget: the value stated
+   quietly, with the least ink that still supports a drag. The thumb is two
+   pixels wide because it points at a value — a circle implies a thing you
+   grab, a bar implies a position you read. */
 .slider-track {
   position: relative;
   display: block;
+  height: 14px;
+  cursor: ew-resize;
+  /* Or the webview pans the panel instead of moving the thumb. */
+  touch-action: none;
+}
+
+.slider-rail,
+.slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.slider-rail {
+  left: 0;
+  right: 0;
+  background: var(--border);
+}
+
+/* Drawn from the *neutral* value to the current one rather than from the left
+   edge. On a bipolar control that is the honest picture: the bar shows how far
+   the setting has been moved and in which direction, and vanishes entirely
+   when nothing has been changed. */
+.slider-fill {
+  background: var(--accent-muted);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 11px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-dim);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: background 120ms ease, height 120ms ease;
+}
+
+.slider-track:hover .slider-thumb {
+  background: var(--text);
+}
+
+/* Dragging: the mark grows a little so it stays findable under the cursor. */
+.slider-track:active .slider-thumb {
+  height: 13px;
+  background: var(--text);
+}
+
+.slider-track:focus-visible {
+  outline: none;
+}
+
+.slider-track:focus-visible .slider-thumb {
+  background: var(--accent-text);
 }
 
 .slider.inline .slider-track {
@@ -1545,38 +1636,52 @@ button.stats-row:hover .stats-label {
 }
 
 /* A value worth landing on — the quality people use, the size a site wants.
-   Drawn ON the track, because that is where the value it names is, and big
-   enough to aim at.
+   Drawn ON the track, because that is where the value it names is; big enough
+   to aim at; hoverable, so it can say what it is for.
 
-   Under the input, never over it: the input keeps every pointer event, so a
-   press that lands on a mark can still become a drag, and the thumb passes in
-   front of a mark instead of vanishing behind it. Landing on one is a snap in
-   the component rather than a button here — see `snapped`. */
-.slider-track input[type="range"] {
-  position: relative;
-  z-index: 1;
-}
+   Pressing one begins a drag from that mark rather than being a button that
+   ends there — which is why the track owns the pointer instead of a native
+   range input, where a clickable mark and a draggable track cannot both be
+   had.
 
+   A mark is part of the line, so it is the colour of the line it sits on:
+   the rail's where the rail runs, the fill's where the fill has reached. A
+   grey dot on a lit bar reads as a hole in the bar. */
 .slider-tick {
   position: absolute;
   top: 50%;
   width: 7px;
   height: 7px;
+  padding: 0;
+  margin-left: -3.5px;
+  border: none;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
   background: var(--border);
-  pointer-events: none;
-  transition: background 120ms ease;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
 }
 
-.slider:hover .slider-tick {
-  background: var(--text-faint);
+.slider-tick.filled {
+  background: var(--accent-muted);
+}
+
+/* The hit area, invisible and generous. */
+.slider-tick::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+
+.slider-tick:hover {
+  background: var(--text);
+  transform: translateY(-50%) scale(1.3);
 }
 
 /* Sitting exactly on a mark: the mark says so, so "2048 px" and "some number
    near 2048" are not the same picture. */
 .slider-tick.on,
-.slider:hover .slider-tick.on {
+.slider-tick.on.filled {
   background: var(--accent-text);
 }
 
@@ -2212,69 +2317,6 @@ button.stats-row:hover .stats-label {
  * WebKit only, deliberately: this is a macOS-first app in a WKWebView, and
  * carrying a parallel set of -moz- rules nothing renders would be dead weight.
  */
-
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  display: block;
-  width: 100%;
-  height: 14px;
-  margin: 0;
-  background: transparent;
-  cursor: ew-resize;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 1px;
-  border-radius: 0;
-  background-color: var(--border);
-  /*
-   * Where a slider declares a fill (`--fill-a`..`--fill-b`), it is drawn
-   * from the *neutral* value to the current one rather than from the left
-   * edge. On a bipolar control that is the honest picture: the bar shows how
-   * far the setting has been moved and in which direction, and vanishes
-   * entirely when nothing has been changed.
-   */
-  background-image: linear-gradient(
-    to right,
-    transparent var(--fill-a, 0%),
-    var(--accent-muted) var(--fill-a, 0%),
-    var(--accent-muted) var(--fill-b, 0%),
-    transparent var(--fill-b, 0%)
-  );
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 2px;
-  height: 11px;
-  /* Centre the mark on a 1px track: (11 - 1) / 2. */
-  margin-top: -5px;
-  border: none;
-  border-radius: 1px;
-  background: var(--text-dim);
-  transition: background 120ms ease, height 120ms ease;
-}
-
-input[type="range"]:hover::-webkit-slider-thumb {
-  background: var(--text);
-}
-
-/* Dragging: the mark grows a little so it stays findable under the cursor. */
-input[type="range"]:active::-webkit-slider-thumb {
-  height: 13px;
-  margin-top: -6px;
-  background: var(--text);
-}
-
-input[type="range"]:focus-visible {
-  outline: none;
-}
-
-input[type="range"]:focus-visible::-webkit-slider-thumb {
-  background: var(--accent-text);
-}
 
 /* People panel: one chip per person the face pass found. */
 .people-panel {

@@ -1,16 +1,34 @@
+import { useRef, useState } from "react";
+
 /**
  * The one slider.
  *
  * A continuous quantity gets a continuous control. Offering three sizes as
  * three buttons is not a simplification of "how big" — it is a different,
  * smaller question, and it silently refuses the answer somebody actually
- * wanted. So anything that varies smoothly is dragged, and the value is
- * always written out beside the label, because a handle on a track without a
- * number is a control you can operate but not read.
+ * wanted.
  *
- * Where a few values *are* special — a quality everyone uses, the size a site
- * wants — they are marks on the track rather than the only options. You can
- * land on them, and you can land between them.
+ * But dragging is only one of the three ways people give a number, and a
+ * control that supports only that one is as narrow as the buttons were:
+ *
+ * - **Drag it** — for "a bit more than that", which is most of the time.
+ *   Holding shift makes the drag five times finer, because the last few
+ *   percent of an exposure is a different gesture from the first fifty.
+ * - **Click a mark** — for the value you were going to pick anyway. The marks
+ *   sit on the track, say what they are for on hover, and a press that lands
+ *   on one can still become a drag.
+ * - **Type it** — for "1600", which no amount of dragging hits reliably and
+ *   which is the only sane way to ask for an exact number. The readout is the
+ *   field: click it, type, Enter. Escape puts it back.
+ *
+ * Plus the two things every slider should have and most do not: double-click
+ * returns it to its own neutral, and the keyboard drives it once it has focus.
+ *
+ * The track is ours rather than an `<input type="range">`. Not for looks — the
+ * native one is fine — but because a mark drawn on a native track has to
+ * choose between being clickable and letting a drag begin on top of it, and
+ * that choice should not exist. Owning the pointer means a press on a mark
+ * *is* the start of a drag from that mark.
  *
  * Every slider in the app comes through here, which is what keeps them
  * aligned: one track height, one thumb, one place the number sits, one origin
@@ -18,45 +36,11 @@
  * toolbar lays them along a line, and nothing else differs between them.
  */
 
-/**
- * A value worth marking on the track, in the slider's own units.
- *
- * A mark is a shortcut, not a stop: land on it by clicking it or by dragging
- * onto it, and nothing prevents the thumb sitting between two.
- *
- * The mark is drawn *on* the track — that is where the value it names is —
- * and the interaction is a snap rather than a button, which is what lets it be
- * both. A button on the track would take the pointer, and a press that landed
- * on a mark would then be a press that could not become a drag.
- */
+/** A value worth marking on the track, in the slider's own units. */
 export interface SliderTick {
   at: number;
-  /** What this value is for; named in the control's own tooltip. */
+  /** What this value is for. Shown on hover, and read out to assistive tech. */
   title: string;
-}
-
-/**
- * How close counts as landed on a mark, as a share of the whole track.
- *
- * Small enough that the value beside a mark is still reachable — at 1.5% of a
- * 40–100 quality scale that is a hair under one point, so 89 and 91 are both
- * yours — and large enough that letting go anywhere near 2048 px gives you
- * 2048 px rather than 2032.
- */
-const SNAP = 0.015;
-
-/** The value a raw slider position becomes, once the marks have had their
- * say. Exported for the test that pins the behaviour down. */
-export function snapped(value: number, ticks: readonly SliderTick[], span: number): number {
-  if (span <= 0) return value;
-  let best: SliderTick | null = null;
-  for (const tick of ticks) {
-    const distance = Math.abs(tick.at - value);
-    if (distance <= span * SNAP && (best === null || distance < Math.abs(best.at - value))) {
-      best = tick;
-    }
-  }
-  return best === null ? value : best.at;
 }
 
 export interface SliderProps {
@@ -66,7 +50,8 @@ export interface SliderProps {
    * The value the fill grows from — zero for a bipolar control, the minimum
    * for one that only goes up, the camera's own reading for temperature.
    * Everything about the slider's appearance is relative to it: the bar fills
-   * from here, and the number brightens only once the value has left it.
+   * from here, the number brightens only once the value has left it, and a
+   * double-click comes back to it.
    */
   neutral: number;
   min: number;
@@ -74,6 +59,14 @@ export interface SliderProps {
   step: number;
   /** The value in words, as the user would say it. */
   display: string;
+  /**
+   * What somebody typed, as a value — or null if it is not one.
+   *
+   * Required rather than optional, because a number you cannot type is a
+   * number you cannot state exactly, and every quantity here is one somebody
+   * eventually wants to state exactly. `parseNumber` covers the ordinary case.
+   */
+  parse: (text: string) => number | null;
   /** Values worth a mark. Empty is the ordinary case. */
   ticks: readonly SliderTick[];
   /** `stacked` for a panel, `inline` for a toolbar. */
@@ -88,6 +81,34 @@ export function positionOf(value: number, min: number, max: number): number {
   return ((Math.min(max, Math.max(min, value)) - min) / (max - min)) * 100;
 }
 
+/**
+ * The first number in a piece of text, or null.
+ *
+ * Lenient on purpose: the readout says "2048 px" and "+0.50 EV", and somebody
+ * editing one of those in place will leave the unit behind as often as not.
+ * Refusing that would be pedantry about a value that was never ambiguous.
+ */
+export function parseNumber(text: string): number | null {
+  const match = /-?\d+(\.\d+)?/.exec(text.replace(/,/g, "."));
+  if (match === null) return null;
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** A value rounded onto the control's own steps, and kept in range. */
+export function onStep(value: number, min: number, max: number, step: number): number {
+  if (!Number.isFinite(value)) return min;
+  const stepped = step > 0 ? Math.round((value - min) / step) * step + min : value;
+  // Steps are decimal (0.1°, 0.01 EV) and the arithmetic above is binary, so
+  // without this a tenth of a degree reads as 8.100000000000001.
+  const decimals = step > 0 && step < 1 ? Math.ceil(-Math.log10(step)) : 0;
+  const clean = decimals > 0 ? Number(stepped.toFixed(decimals)) : stepped;
+  return Math.min(max, Math.max(min, clean));
+}
+
+/** How much finer a shift-held drag is. Enough to be a different gesture. */
+const FINE = 0.2;
+
 export function Slider({
   label,
   value,
@@ -96,74 +117,199 @@ export function Slider({
   max,
   step,
   display,
+  parse,
   ticks,
   layout,
   title,
   onChange,
 }: SliderProps) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  /* Where the drag began, and what the value was there. A ref because a
+   * pointer handler has to know it *now*, and React state is whatever the last
+   * render saw — events that arrive in one batch would all read the value
+   * from before the drag started. */
+  const drag = useRef<{ x: number; from: number } | null>(null);
+  /** The readout while it is being typed into. Null when it is a readout. */
+  const [typing, setTyping] = useState<string | null>(null);
+
   const changed = value !== neutral;
   const here = positionOf(value, min, max);
   const origin = positionOf(neutral, min, max);
-  // An empty label means the control already sits under one — the export
-  // sheet's rows name their own. The span is dropped rather than left blank so
-  // it cannot push the value out of line with the row above.
-  const named = label !== "";
-  const head = (
-    <>
-      {named && <span className="slider-label">{label}</span>}
-      <span className={changed ? "slider-value changed" : "slider-value"}>{display}</span>
-    </>
-  );
-  const track = (
-    <span className="slider-track">
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        style={
-          {
-            "--fill-a": `${Math.min(here, origin)}%`,
-            "--fill-b": `${Math.max(here, origin)}%`,
-          } as React.CSSProperties
+
+  const begin = (e: React.PointerEvent, from: number) => {
+    e.preventDefault();
+    drag.current = { x: e.clientX, from };
+    trackRef.current?.setPointerCapture(e.pointerId);
+    trackRef.current?.focus();
+    if (from !== value) onChange(from);
+  };
+
+  const valueAtX = (clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return value;
+    const at = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return onStep(min + at * (max - min), min, max, step);
+  };
+
+  const handleTrackDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    begin(e, valueAtX(e.clientX));
+  };
+
+  /* A mark is where a drag starts from, not a button that ends it: pressing
+   * one goes there, and carrying on moving carries on from there. */
+  const handleTickDown = (tick: SliderTick) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    begin(e, onStep(tick.at, min, max, step));
+  };
+
+  const handleMove = (e: React.PointerEvent) => {
+    const held = drag.current;
+    if (held === null) return;
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    // Measured from where the press landed, so a drag begun on a mark starts
+    // from that mark — and so holding shift makes the rest of the gesture
+    // finer without the thumb jumping away from the pointer.
+    const moved = ((e.clientX - held.x) / rect.width) * (max - min);
+    onChange(onStep(held.from + moved * (e.shiftKey ? FINE : 1), min, max, step));
+  };
+
+  const handleUp = (e: React.PointerEvent) => {
+    if (drag.current === null) return;
+    drag.current = null;
+    if (trackRef.current?.hasPointerCapture(e.pointerId) === true) {
+      trackRef.current.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    // Ten steps on shift, so crossing a hundred-point scale is not a hundred
+    // keystrokes; the two ends are one key each.
+    const jump = e.shiftKey ? step * 10 : step;
+    const to =
+      e.key === "ArrowLeft" || e.key === "ArrowDown"
+        ? value - jump
+        : e.key === "ArrowRight" || e.key === "ArrowUp"
+          ? value + jump
+          : e.key === "Home"
+            ? min
+            : e.key === "End"
+              ? max
+              : null;
+    if (to === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onChange(onStep(to, min, max, step));
+  };
+
+  /** Commit what was typed, or put the readout back if it was not a number. */
+  const commit = () => {
+    if (typing === null) return;
+    const parsed = parse(typing);
+    setTyping(null);
+    if (parsed !== null) onChange(onStep(parsed, min, max, step));
+  };
+
+  const readout = (
+    <input
+      className={changed ? "slider-value changed" : "slider-value"}
+      value={typing ?? display}
+      title="Type a value"
+      spellCheck={false}
+      onChange={(e) => setTyping(e.currentTarget.value)}
+      // Selected on arrival: the point of clicking a readout is to replace it,
+      // and sweeping the old value out first is a tax on every single use.
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setTyping(null);
+          e.currentTarget.blur();
         }
-        onChange={(e) => onChange(snapped(Number(e.currentTarget.value), ticks, max - min))}
-        // Double-clicking returns the control to its own neutral — the
-        // camera's temperature, not the bottom of the scale.
-        onDoubleClick={() => onChange(neutral)}
-      />
-      {/* Drawn under the input rather than over it: the input keeps every
-          pointer event, so a press that lands on a mark is still a press that
-          can become a drag, and the thumb passes in front of a mark instead
-          of disappearing behind it. */}
-      {ticks.map((tick) => (
-        <span
-          key={tick.at}
-          className={
-            Math.abs(tick.at - value) < (max - min) * 1e-6 ? "slider-tick on" : "slider-tick"
-          }
-          style={{ left: `${positionOf(tick.at, min, max)}%` }}
-        />
-      ))}
-    </span>
+        // Typing into a field is not a shortcut: the gallery's bare keys rate
+        // photographs, and "5" in here is a five.
+        e.stopPropagation();
+      }}
+    />
   );
 
   const marks = ticks.length === 0 ? "" : `\n\nMarks: ${ticks.map((t) => t.title).join("; ")}`;
+  const track = (
+    <div
+      ref={trackRef}
+      className="slider-track"
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      aria-valuetext={display}
+      title={`${title}${marks}\n\nDrag, or shift-drag for finer. Double-click to reset.`}
+      onPointerDown={handleTrackDown}
+      onPointerMove={handleMove}
+      onPointerUp={handleUp}
+      onPointerCancel={handleUp}
+      onKeyDown={handleKey}
+      onDoubleClick={() => onChange(neutral)}
+    >
+      <span className="slider-rail" />
+      <span
+        className="slider-fill"
+        style={{ left: `${Math.min(here, origin)}%`, right: `${100 - Math.max(here, origin)}%` }}
+      />
+      {ticks.map((tick) => (
+        <button
+          key={tick.at}
+          type="button"
+          /* A mark is part of the line, so it wears the line's colour where it
+             sits: the fill's inside the bar, the rail's outside it, and the
+             live one's when the value is exactly here. A grey dot on a lit bar
+             reads as a hole in the bar. */
+          className={[
+            "slider-tick",
+            tick.at >= Math.min(value, neutral) && tick.at <= Math.max(value, neutral)
+              ? "filled"
+              : "",
+            Math.abs(tick.at - value) < step / 2 ? "on" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          style={{ left: `${positionOf(tick.at, min, max)}%` }}
+          title={tick.title}
+          aria-label={tick.title}
+          tabIndex={-1}
+          onPointerDown={handleTickDown(tick)}
+        />
+      ))}
+      <span className="slider-thumb" style={{ left: `${here}%` }} />
+    </div>
+  );
+
   return (
-    <label className={`slider ${layout}`} title={`${title}${marks}`}>
+    <div className={`slider ${layout}`}>
       {layout === "stacked" ? (
         <>
-          <span className="slider-head">{head}</span>
+          <div className="slider-head">
+            {label !== "" && <span className="slider-label">{label}</span>}
+            {readout}
+          </div>
           {track}
         </>
       ) : (
         <>
-          {named && <span className="slider-label">{label}</span>}
+          {label !== "" && <span className="slider-label">{label}</span>}
           {track}
-          <span className={changed ? "slider-value changed" : "slider-value"}>{display}</span>
+          {readout}
         </>
       )}
-    </label>
+    </div>
   );
 }

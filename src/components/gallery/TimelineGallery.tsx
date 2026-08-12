@@ -4,7 +4,7 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl, requestThumbnails } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { Slider } from "../shell/Slider";
+import { parseNumber, Slider } from "../shell/Slider";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
@@ -217,6 +217,7 @@ export function TimelineGallery() {
           max={thumbMax}
           step={1}
           display={`${thumb} px`}
+          parse={parseNumber}
           ticks={[]}
           layout="inline"
           title="photo size — the time scale stays put"

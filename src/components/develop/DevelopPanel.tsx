@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 
-import { Slider } from "../shell/Slider";
+import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
 import { groupStacks, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
@@ -193,6 +193,7 @@ export function DevelopPanel() {
           max={TEMPERATURE_RANGE.max}
           step={TEMPERATURE_RANGE.step}
           display={`${Math.round(settings.whiteBalance.temperature)} K`}
+          parse={parseNumber}
           ticks={[{ at: info.asShot.temperature, title: "as the camera measured it" }]}
           layout="stacked"
           title="Warm to the right, cool to the left. The mark is the camera's own reading."
@@ -208,6 +209,7 @@ export function DevelopPanel() {
           display={`${settings.whiteBalance.tint > 0 ? "+" : ""}${Math.round(
             settings.whiteBalance.tint,
           )}`}
+          parse={parseNumber}
           ticks={[{ at: info.asShot.tint, title: "as the camera measured it" }]}
           layout="stacked"
           title="Green to the left, magenta to the right. The mark is the camera's own reading."
@@ -260,6 +262,13 @@ export function DevelopPanel() {
               max={spec.max}
               step={spec.step}
               display={showDeviation ? spec.format(value - from) : spec.format(value)}
+              // Typed values are read the way the panel is currently showing
+              // them, or "+12" would mean two different edits depending on a
+              // switch somewhere else on the panel.
+              parse={(text) => {
+                const typed = parseNumber(text);
+                return typed === null ? null : showDeviation ? from + typed : typed;
+              }}
               ticks={from === 0 ? [] : [{ at: from, title: `${baseline?.label ?? "flat"}` }]}
               layout="stacked"
               title={`Double-click to put it back to ${baseline?.label ?? "flat"}.`}
@@ -325,6 +334,7 @@ export function DevelopPanel() {
           max={45}
           step={0.1}
           display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
+          parse={parseNumber}
           ticks={[{ at: 0, title: "as shot" }]}
           layout="stacked"
           title="Turns the photograph under the rectangle. The crop shrinks to stay inside the frame, so straightening costs edges."
