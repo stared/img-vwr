@@ -4,6 +4,8 @@ An extensible image viewer. VS Code / Obsidian-style architecture (commands,
 registries, a future plugin API), Linear-style UI. Rust core, strict-TypeScript
 React frontend, glued by Tauri v2 with fully typed IPC.
 
+Design rationale lives in [DESIGN.md](DESIGN.md).
+
 ## Status: v1
 
 - Fast folder browsing: virtualized thumbnail grid, thumbnails generated on a
