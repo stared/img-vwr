@@ -4,6 +4,7 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl, requestThumbnails } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { Slider } from "../shell/Slider";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
@@ -208,17 +209,19 @@ export function TimelineGallery() {
         >
           {vertical ? "vertical" : "horizontal"}
         </button>
-        <label className="tl-size" title="photo size — the time scale stays put">
-          size
-          <input
-            type="range"
-            min={THUMB_MIN}
-            max={thumbMax}
-            step={4}
-            value={thumb}
-            onChange={(e) => setTimelineThumbPx(Number(e.target.value))}
-          />
-        </label>
+        <Slider
+          label="size"
+          value={thumb}
+          neutral={THUMB_MIN}
+          min={THUMB_MIN}
+          max={thumbMax}
+          step={1}
+          display={`${thumb} px`}
+          ticks={[]}
+          layout="inline"
+          title="photo size — the time scale stays put"
+          onChange={setTimelineThumbPx}
+        />
         <button className="tl-fit" title="zoom out to the whole time range" onClick={() => setWin(null)}>
           show all
         </button>

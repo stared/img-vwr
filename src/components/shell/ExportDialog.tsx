@@ -7,14 +7,20 @@ import {
   candidatesOf,
   DEFAULT_OPTIONS,
   planAll,
-  QUALITY_CHOICES,
-  sameSize,
-  SIZE_CHOICES,
+  QUALITY_MARKS,
+  QUALITY_MAX,
+  QUALITY_MIN,
+  qualityLabel,
+  SIZE_MARKS,
+  sizeFromSlider,
+  sizeLabel,
+  sliderFromSize,
   summaryOf,
   type Candidate,
   type ExportOptions,
 } from "../../state/export";
 import { chosenEntries, useAppStore } from "../../state/store";
+import { Slider } from "./Slider";
 
 /**
  * The export sheet: what is about to be written, said before anything is.
@@ -181,35 +187,44 @@ export function ExportDialog() {
 
             {options.format.kind === "jpeg" && (
               <Row label="quality">
-                {QUALITY_CHOICES.map((choice) => (
-                  <Choice
-                    key={choice.quality}
-                    on={quality === choice.quality}
-                    title={`JPEG quality ${choice.quality}`}
-                    onClick={() =>
-                      setOptions({
-                        ...options,
-                        format: { kind: "jpeg", quality: choice.quality },
-                      })
-                    }
-                  >
-                    {choice.label} ({choice.quality})
-                  </Choice>
-                ))}
+                <Slider
+                  label=""
+                  value={quality ?? 90}
+                  /* The bar grows from the bottom of the scale, so its length
+                     reads as "how much quality", the way a volume control
+                     does — not as how much has been given up. */
+                  neutral={QUALITY_MIN}
+                  min={QUALITY_MIN}
+                  max={QUALITY_MAX}
+                  step={1}
+                  display={qualityLabel(quality ?? 90)}
+                  ticks={QUALITY_MARKS.map((mark) => ({ at: mark.at, title: mark.note }))}
+                  layout="inline"
+                  title="How hard the JPEG encoder squeezes. The marks are the qualities people actually use; anything between them is a real answer too."
+                  onChange={(next) =>
+                    setOptions({ ...options, format: { kind: "jpeg", quality: next } })
+                  }
+                />
               </Row>
             )}
 
             <Row label="longest edge">
-              {SIZE_CHOICES.map((choice) => (
-                <Choice
-                  key={choice.label}
-                  on={sameSize(options.size, choice.size)}
-                  title={choice.note}
-                  onClick={() => setOptions({ ...options, size: choice.size })}
-                >
-                  {choice.label}
-                </Choice>
-              ))}
+              <Slider
+                label=""
+                value={sliderFromSize(options.size)}
+                neutral={0}
+                min={0}
+                max={1}
+                step={0.001}
+                display={sizeLabel(options.size)}
+                ticks={SIZE_MARKS.map((mark) => ({
+                  at: sliderFromSize(mark.size),
+                  title: mark.note,
+                }))}
+                layout="inline"
+                title="The longest edge of the exported file. Logarithmic, because that is how these numbers are spaced; the top of the track is full size."
+                onChange={(position) => setOptions({ ...options, size: sizeFromSlider(position) })}
+              />
             </Row>
 
             {/* The decision this dialog exists for. */}

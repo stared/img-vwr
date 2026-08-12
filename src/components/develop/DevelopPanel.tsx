@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 
+import { Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
 import { groupStacks, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry } from "../../state/store";
@@ -46,69 +47,6 @@ export function zoomLabel(view: { scale: number } | null, fitted: boolean): stri
   if (fitted || !view) return "fit";
   const percent = Math.round(view.scale * 100);
   return percent === 100 ? "100%" : `${percent}%`;
-}
-
-/** Where along the track a value sits, as a percentage. */
-function positionOf(value: number, min: number, max: number): number {
-  if (max <= min) return 0;
-  return ((Math.min(max, Math.max(min, value)) - min) / (max - min)) * 100;
-}
-
-function Slider({
-  label,
-  value,
-  neutral,
-  min,
-  max,
-  step,
-  display,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  /**
-   * The untouched value for this control — zero for the tone sliders, the
-   * camera's own reading for temperature and tint. Everything about a
-   * slider's appearance is relative to it: the track fills from here, and
-   * the number brightens only once the value has left it.
-   */
-  neutral: number;
-  min: number;
-  max: number;
-  step: number;
-  display: string;
-  onChange: (value: number) => void;
-}) {
-  const changed = value !== neutral;
-  const here = positionOf(value, min, max);
-  const origin = positionOf(neutral, min, max);
-  return (
-    <label className="develop-slider">
-      <span className="develop-slider-head">
-        <span className="develop-slider-label">{label}</span>
-        <span className={changed ? "develop-slider-value changed" : "develop-slider-value"}>
-          {display}
-        </span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        style={
-          {
-            "--fill-a": `${Math.min(here, origin)}%`,
-            "--fill-b": `${Math.max(here, origin)}%`,
-          } as React.CSSProperties
-        }
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-        // Double-clicking returns the control to its own neutral — the
-        // camera's temperature, not the bottom of the scale.
-        onDoubleClick={() => onChange(neutral)}
-      />
-    </label>
-  );
 }
 
 export function DevelopPanel() {
@@ -255,6 +193,9 @@ export function DevelopPanel() {
           max={TEMPERATURE_RANGE.max}
           step={TEMPERATURE_RANGE.step}
           display={`${Math.round(settings.whiteBalance.temperature)} K`}
+          ticks={[{ at: info.asShot.temperature, title: "as the camera measured it" }]}
+          layout="stacked"
+          title="Warm to the right, cool to the left. The mark is the camera's own reading."
           onChange={setTemperature}
         />
         <Slider
@@ -267,6 +208,9 @@ export function DevelopPanel() {
           display={`${settings.whiteBalance.tint > 0 ? "+" : ""}${Math.round(
             settings.whiteBalance.tint,
           )}`}
+          ticks={[{ at: info.asShot.tint, title: "as the camera measured it" }]}
+          layout="stacked"
+          title="Green to the left, magenta to the right. The mark is the camera's own reading."
           onChange={setTint}
         />
         {/* One button saying what state it is in; clicking arms or disarms. */}
@@ -316,6 +260,9 @@ export function DevelopPanel() {
               max={spec.max}
               step={spec.step}
               display={showDeviation ? spec.format(value - from) : spec.format(value)}
+              ticks={from === 0 ? [] : [{ at: from, title: `${baseline?.label ?? "flat"}` }]}
+              layout="stacked"
+              title={`Double-click to put it back to ${baseline?.label ?? "flat"}.`}
               onChange={(next) => setParam(spec.key, next)}
             />
           );
@@ -378,6 +325,9 @@ export function DevelopPanel() {
           max={45}
           step={0.1}
           display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
+          ticks={[{ at: 0, title: "as shot" }]}
+          layout="stacked"
+          title="Turns the photograph under the rectangle. The crop shrinks to stay inside the frame, so straightening costs edges."
           onChange={straighten}
         />
         <p className="develop-note">

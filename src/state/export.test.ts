@@ -6,7 +6,15 @@ import {
   DEFAULT_OPTIONS,
   planAll,
   planFor,
+  qualityLabel,
+  QUALITY_MARKS,
+  QUALITY_MAX,
+  QUALITY_MIN,
   sameSize,
+  SIZE_MARKS,
+  sizeFromSlider,
+  sizeLabel,
+  sliderFromSize,
   summaryOf,
   type Candidate,
 } from "./export";
@@ -146,7 +154,7 @@ describe("summaryOf", () => {
 });
 
 describe("sameSize", () => {
-  it("tells the sizes apart so a row can say which one is on", () => {
+  it("tells the sizes apart so a mark can say which one is on", () => {
     expect(sameSize({ kind: "full" }, { kind: "full" })).toBe(true);
     expect(sameSize({ kind: "full" }, { kind: "longest", pixels: 2048 })).toBe(false);
     expect(
@@ -155,6 +163,83 @@ describe("sameSize", () => {
     expect(
       sameSize({ kind: "longest", pixels: 2048 }, { kind: "longest", pixels: 1024 }),
     ).toBe(false);
+  });
+});
+
+describe("the size scale", () => {
+  it("puts a size back where it came from", () => {
+    // The thumb has to sit on the value the readout claims, or the control is
+    // lying about what it will export.
+    for (const pixels of [512, 1024, 1600, 2048, 4096, 8192]) {
+      const size = { kind: "longest", pixels } as const;
+      expect(sizeFromSlider(sliderFromSize(size))).toEqual(size);
+    }
+    expect(sizeFromSlider(sliderFromSize({ kind: "full" }))).toEqual({ kind: "full" });
+  });
+
+  it("spends its track on sizes people pick", () => {
+    // Logarithmic: doubling the size is the same distance wherever you are,
+    // so half the track is not wasted on the very large end.
+    const a = sliderFromSize({ kind: "longest", pixels: 1024 });
+    const b = sliderFromSize({ kind: "longest", pixels: 2048 });
+    const c = sliderFromSize({ kind: "longest", pixels: 4096 });
+    expect(b - a).toBeCloseTo(c - b, 6);
+  });
+
+  it("only means full size at the very end of the travel", () => {
+    expect(sizeFromSlider(1)).toEqual({ kind: "full" });
+    // ...and the largest pixel size on the track is still reachable.
+    expect(sizeFromSlider(0.99)).toEqual({ kind: "longest", pixels: 8192 });
+    expect(sizeFromSlider(0.9)).toEqual({ kind: "longest", pixels: 6368 });
+    expect(sizeFromSlider(0)).toEqual({ kind: "longest", pixels: 512 });
+  });
+
+  it("reads out a number a person would say", () => {
+    // Rounded to 16 px, so a hair of thumb movement is not a different export.
+    for (const at of [0.13, 0.37, 0.62, 0.88]) {
+      const size = sizeFromSlider(at);
+      expect(size.kind === "longest" && size.pixels % 16).toBe(0);
+    }
+    expect(sizeLabel({ kind: "full" })).toBe("full size");
+    expect(sizeLabel({ kind: "longest", pixels: 2048 })).toBe("2048 px");
+  });
+
+  it("survives a slider that has gone wrong", () => {
+    expect(sizeFromSlider(Number.NaN)).toEqual({ kind: "full" });
+    expect(sizeFromSlider(-1)).toEqual({ kind: "longest", pixels: 512 });
+  });
+
+  it("marks the sizes worth landing on, without limiting the answer to them", () => {
+    expect(SIZE_MARKS.map((m) => sizeLabel(m.size))).toEqual([
+      "1024 px",
+      "2048 px",
+      "4096 px",
+      "full size",
+    ]);
+    // Every mark sits somewhere on the track it marks.
+    for (const mark of SIZE_MARKS) {
+      const at = sliderFromSize(mark.size);
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect(at).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("qualityLabel", () => {
+  it("says which neighbourhood a number is in", () => {
+    // "90" means nothing to somebody who has not encoded a JPEG by hand.
+    expect(qualityLabel(100)).toBe("100 · maximum");
+    expect(qualityLabel(90)).toBe("90 · high");
+    expect(qualityLabel(80)).toBe("80 · web");
+    expect(qualityLabel(50)).toBe("50 · small");
+  });
+
+  it("marks the qualities people use", () => {
+    expect(QUALITY_MARKS.map((m) => m.at)).toEqual([80, 90, 100]);
+    for (const mark of QUALITY_MARKS) {
+      expect(mark.at).toBeGreaterThanOrEqual(QUALITY_MIN);
+      expect(mark.at).toBeLessThanOrEqual(QUALITY_MAX);
+    }
   });
 });
 

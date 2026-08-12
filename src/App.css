@@ -1223,7 +1223,11 @@ button.stats-row:hover .stats-label {
 .gallery-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  /* Wraps rather than overflowing: the scenes view puts three sliders on this
+     row, and a sidebar can take the width for a fourth of it at any moment.
+     A control that has slid off the edge is a control that is gone. */
+  flex-wrap: wrap;
+  gap: 4px 4px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border);
 }
@@ -1252,20 +1256,42 @@ button.stats-row:hover .stats-label {
   color: var(--accent-text);
 }
 
-/* Photo size: presentation only — sliding never moves the time window. */
-.tl-size,
-.gallery-size {
+/* Toolbar sliders are a fixed width so several in a row line up with each
+   other rather than each taking whatever its label left over. */
+.gallery-toolbar .slider,
+.tl-toolbar .slider {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-left: 8px;
+  padding: 0;
   color: var(--text-dim);
   font-size: 12px;
 }
 
-.tl-size input[type="range"],
-.gallery-size input[type="range"] {
-  width: 110px;
+/* And a label column, so the tracks start together as well as ending
+   together once the row has wrapped and the sliders are stacked. */
+.gallery-toolbar .slider-label {
+  flex: 0 0 auto;
+  min-width: 68px;
+}
+
+/* Equal basis, equal growth: several sliders sharing a row end up with tracks
+   of the same length whatever their labels weigh, which is the only way the
+   thumbs mean the same thing at the same distance along. */
+.gallery-toolbar .slider-track,
+.tl-toolbar .slider-track {
+  flex: 1 1 96px;
+  min-width: 64px;
+  max-width: 140px;
+}
+
+/* ...and the value gets a column of its own, so a label does not slide left
+   and right as the number beside it changes width. */
+.gallery-toolbar .slider-value,
+.tl-toolbar .slider-value {
+  flex: 0 0 auto;
+  min-width: 54px;
 }
 
 .tl-fit {
@@ -1449,29 +1475,77 @@ button.stats-row:hover .stats-label {
   line-height: 1.4;
 }
 
-.develop-slider {
+/* ---- Sliders ----
+   One control for every continuous quantity in the app, so they line up
+   wherever two of them sit together: one track height, one thumb, one place
+   the number goes. Two layouts and nothing else differs — a panel stacks the
+   label over the track, a toolbar lays them along a line. */
+
+.slider {
   display: block;
   padding: 2px 8px 4px;
 }
 
-.develop-slider-head {
+.slider.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+
+.slider-head {
   display: flex;
   justify-content: space-between;
 }
 
-.develop-slider-label {
+.slider-label {
   color: var(--text-dim);
+  /* Toolbar labels do not wrap; a slider that grew a second line would push
+     the whole row out of alignment with the one beside it. */
+  white-space: nowrap;
 }
 
 /* The current value is the point of the control, so it reads as text and
-   turns bright the moment it stops being the neutral one. */
-.develop-slider-value {
+   turns bright the moment it stops being the neutral one. Tabular figures so
+   the number does not jitter the layout as it counts up. */
+.slider-value {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.develop-slider-value.changed {
+.slider-value.changed {
   color: var(--text);
+}
+
+/* The track, and the marks over it. Positioned so a tick can be placed by
+   percentage against exactly the run the thumb travels. */
+.slider-track {
+  position: relative;
+  display: block;
+}
+
+.slider.inline .slider-track {
+  flex: 1;
+  min-width: 96px;
+}
+
+/* A value worth landing on — the quality people use, the size a site wants.
+   A mark under the track rather than a stop on it: you can sit on one, and
+   you can sit between two, and the control never says otherwise. */
+.slider-tick {
+  position: absolute;
+  top: 9px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.slider:hover .slider-tick {
+  background: var(--text-faint);
 }
 
 .develop-reset,
@@ -1740,6 +1814,21 @@ button.stats-row:hover .stats-label {
 .export-row-choices {
   flex: 1;
   margin-left: 0;
+  margin-right: 12px;
+}
+
+/* A slider in a row takes the whole width the row has left, so the two of
+   them have tracks of exactly the same length and their values line up in a
+   column with each other — and with the buttons in the rows above. */
+.export-row .slider {
+  flex: 1;
+  gap: 10px;
+}
+
+.export-row .slider-value {
+  flex: 0 0 auto;
+  min-width: 76px;
+  font-size: 11px;
 }
 
 /* What the export will actually do, counted. The one line worth reading. */
@@ -1989,15 +2078,15 @@ button.stats-row:hover .stats-label {
   border-bottom: 1px solid var(--border-faint);
 }
 
-.develop-slider {
+.sidebar.right .slider {
   padding: 3px 10px 5px;
 }
 
-.develop-slider-head {
+.sidebar.right .slider-head {
   padding-bottom: 2px;
 }
 
-.develop-slider-label,
+.sidebar.right .slider-label,
 .develop-note,
 .develop-clipping {
   color: var(--text-faint);
@@ -2005,13 +2094,12 @@ button.stats-row:hover .stats-label {
 
 /* A slider at its neutral position should look inert; the moment it is not,
    the number brightens. That contrast is the whole readout. */
-.develop-slider-value {
+.sidebar.right .slider-value {
   color: var(--text-faint);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
 }
 
-.develop-slider-value.changed {
+.sidebar.right .slider-value.changed {
   color: var(--text);
 }
 

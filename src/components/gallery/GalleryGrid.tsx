@@ -11,6 +11,7 @@ import {
   type Scene,
 } from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
+import { Slider } from "../shell/Slider";
 import { ThumbCell } from "./ThumbCell";
 
 const CELL_GAP = 8;
@@ -197,48 +198,51 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     <>
       <div className="gallery-toolbar">
         {grouped && (
-          <label
-            className="gallery-size"
+          <Slider
+            label="scene break"
+            value={sliderFromTau(sceneGapMin)}
+            neutral={0}
+            min={0}
+            max={1}
+            step={0.005}
+            display={sceneGapLabel(sceneGapMin)}
+            ticks={[1, 5, 30, 60].map((minutes) => ({
+              at: sliderFromTau(minutes),
+              title: minutes < 60 ? `${minutes} min` : "an hour",
+            }))}
+            layout="inline"
             title="the feel of a scene break: the longer a pause, the less the pictures need to change — log scale, 30 s to an hour"
-          >
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={sliderFromTau(sceneGapMin)}
-              onChange={(e) => setSceneGap(tauFromSlider(Number(e.currentTarget.value)))}
-            />
-            {sceneGapLabel(sceneGapMin)}
-          </label>
+            onChange={(x) => setSceneGap(tauFromSlider(x))}
+          />
         )}
         {grouped && (
-          <label
-            className="gallery-size"
+          <Slider
+            label="content"
+            value={contentWeight}
+            neutral={0}
+            min={0}
+            max={1}
+            step={0.01}
+            display={`${Math.round(contentWeight * 100)}%`}
+            ticks={[{ at: 0.5, title: "the clock and the pictures, evenly" }]}
+            layout="inline"
             title="how much the pictures outvote the clock: at 0% a pause over the time splits and nothing else does; at 100% the content decides how a pause reads"
-          >
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={contentWeight}
-              onChange={(e) => setContentWeight(Number(e.currentTarget.value))}
-            />
-            content: {Math.round(contentWeight * 100)}%
-          </label>
-        )}
-        <label className="gallery-size" title="how many photos fill a row">
-          <input
-            type="range"
-            min={MIN_COLUMNS}
-            max={maxColumns}
-            step={1}
-            value={columns}
-            onChange={(e) => setGridColumns(Number(e.currentTarget.value))}
+            onChange={setContentWeight}
           />
-          {columns} per row
-        </label>
+        )}
+        <Slider
+          label="per row"
+          value={columns}
+          neutral={MIN_COLUMNS}
+          min={MIN_COLUMNS}
+          max={maxColumns}
+          step={1}
+          display={`${columns}`}
+          ticks={[]}
+          layout="inline"
+          title="how many photos fill a row"
+          onChange={setGridColumns}
+        />
       </div>
       {entries.length === 0 && <p className="hint">Nothing matches these filters.</p>}
       <div

@@ -142,19 +142,81 @@ export function candidatesOf(
   });
 }
 
-/** The sizes worth offering, longest edge in pixels. */
-export const SIZE_CHOICES: readonly { size: ExportSize; label: string; note: string }[] = [
-  { size: { kind: "full" }, label: "full size", note: "every pixel the crop holds" },
-  { size: { kind: "longest", pixels: 4096 }, label: "4096 px", note: "prints and large screens" },
-  { size: { kind: "longest", pixels: 2048 }, label: "2048 px", note: "sharing and social" },
-  { size: { kind: "longest", pixels: 1024 }, label: "1024 px", note: "e-mail and messages" },
+/*
+ * Size is a continuous quantity, so it is dragged rather than chosen from a
+ * short list — somebody who wants 1600 px should not have to take 2048.
+ *
+ * Logarithmic, because that is how the numbers are spaced in practice: the
+ * step from 512 to 1024 is the same *kind* of step as the one from 4096 to
+ * 8192, and a linear track would spend three quarters of its length on sizes
+ * nobody picks. Rounded to a multiple of 16, so the readout is a number a
+ * person would say and a hair of thumb movement is not a different export.
+ *
+ * The far end is "full size" rather than 8192: the top of the track means "do
+ * not resize at all", which is a different statement from any pixel count and
+ * the one people reach for most.
+ */
+const SIZE_MIN = 512;
+const SIZE_MAX = 8192;
+/**
+ * Where the pixel range ends and "full size" begins.
+ *
+ * Strictly past it, so the largest pixel size on the track is reachable — at
+ * exactly this position the slider still means 8192 px, and only beyond it
+ * does it mean "do not resize". A control with a value you cannot land on is
+ * a control that is lying about its range.
+ */
+const FULL_FROM = 0.99;
+
+/** The size a slider position means. */
+export function sizeFromSlider(position: number): ExportSize {
+  if (!Number.isFinite(position) || position > FULL_FROM) return { kind: "full" };
+  const at = Math.min(1, Math.max(0, position) / FULL_FROM);
+  const edge = SIZE_MIN * (SIZE_MAX / SIZE_MIN) ** at;
+  return { kind: "longest", pixels: Math.max(SIZE_MIN, Math.round(edge / 16) * 16) };
+}
+
+/** ...and the position that means a size, so the thumb sits where it should. */
+export function sliderFromSize(size: ExportSize): number {
+  if (size.kind === "full") return 1;
+  const clamped = Math.min(SIZE_MAX, Math.max(SIZE_MIN, size.pixels));
+  return (Math.log(clamped / SIZE_MIN) / Math.log(SIZE_MAX / SIZE_MIN)) * FULL_FROM;
+}
+
+export function sizeLabel(size: ExportSize): string {
+  return size.kind === "full" ? "full size" : `${size.pixels} px`;
+}
+
+/**
+ * The sizes worth a mark on the track: what a print wants, what a site wants,
+ * what an e-mail wants. Marks, not options — you can stop between them.
+ */
+export const SIZE_MARKS: readonly { size: ExportSize; note: string }[] = [
+  { size: { kind: "longest", pixels: 1024 }, note: "1024 px — e-mail and messages" },
+  { size: { kind: "longest", pixels: 2048 }, note: "2048 px — sharing and social" },
+  { size: { kind: "longest", pixels: 4096 }, note: "4096 px — prints and large screens" },
+  { size: { kind: "full" }, note: "full size — every pixel the crop holds" },
 ];
 
-export const QUALITY_CHOICES: readonly { quality: number; label: string }[] = [
-  { quality: 100, label: "maximum" },
-  { quality: 90, label: "high" },
-  { quality: 80, label: "web" },
+/** The lowest quality worth offering. Below this the codec is what you are
+ * looking at, and nobody exports a photograph to look at the codec. */
+export const QUALITY_MIN = 40;
+export const QUALITY_MAX = 100;
+
+export const QUALITY_MARKS: readonly { at: number; note: string }[] = [
+  { at: 80, note: "80 — small files, for the web" },
+  { at: 90, note: "90 — the usual compromise" },
+  { at: 100, note: "100 — as much as JPEG will hold" },
 ];
+
+/** The quality, with the name of the neighbourhood it is in. The number alone
+ * is meaningless to anyone who has not encoded a JPEG by hand. */
+export function qualityLabel(quality: number): string {
+  if (quality >= 100) return "100 · maximum";
+  if (quality >= 88) return `${quality} · high`;
+  if (quality >= 72) return `${quality} · web`;
+  return `${quality} · small`;
+}
 
 export function sameSize(a: ExportSize, b: ExportSize): boolean {
   if (a.kind === "full" || b.kind === "full") return a.kind === b.kind;
