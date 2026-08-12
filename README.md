@@ -22,33 +22,17 @@ and saturation, with a live histogram of the developed result and a focus-map
 overlay that marks which regions resolve fine detail. Edits are stored
 app-locally in `develop.db`, never beside the originals.
 
-Crop is Lightroom's model: the rectangle stays square on screen and the
-photograph turns underneath it, so a horizon can be judged without tilting
-your head. Handles trim it, the inside moves it, the outside draws a new one,
-and a row of shapes (as shot, 1:1, 5:4, 4:3, 3:2, 16:9) holds it to one. The
-crop is always shrunk to stay inside the frame, which is what stops a
-straighten from dragging in corners that were never photographed.
+Crop and straighten (Lightroom-style: the crop stays axis-aligned, the image
+rotates under it and never shows past the frame), with aspect-ratio presets:
+as shot, 1:1, 5:4, 4:3, 3:2, 16:9.
 
 ## Export
 
-`Export…` (⇧⌘E) writes the selection into a folder you pick: JPEG or PNG, a
-quality, and a longest edge, with a line that says what it will do before it
-does it. Quality and size are sliders — continuous quantities get continuous
-controls, with dots on the track at the values people actually use rather than
-a short list that refuses everything else. Every slider in the app works the
-same way: drag (shift for fine), click a dot (hover says what it is for), or
-type the number into the readout. The size track is logarithmic and
-ends at the largest photograph selected, since an export never upscales, and
-"full size" says which size that is.
-
-The interesting option is what happens to a photograph nobody edited. In a
-raw + JPEG shoot that is most of them, and rendering those from the sensor is
-both slow and a *different* picture from the one the camera made. So by
-default an untouched frame exports as the JPG beside the raw — copied byte for
-byte at full size, with its metadata intact. Edited frames are developed, and
-are given their sibling JPG's EXIF, so a developed export still says when and
-how it was taken. The other reading is a click away: "developed like the rest"
-puts every frame through the same pipeline.
+`Export…` (⇧⌘E) writes the selection into a folder you pick: JPEG or PNG,
+quality, longest edge (never upscaled), and a summary of what will be written.
+By default an unedited photograph exports as the camera JPG beside its raw,
+copied byte for byte; edited frames are rendered, with EXIF taken from the
+sibling JPG. "developed like the rest" renders everything instead.
 
 Camera raw (NEF and friends) decodes through the raw plugin. On macOS that is
 Core Image, because recent Nikon bodies write High Efficiency / HE\* NEFs — a
