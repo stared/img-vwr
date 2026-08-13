@@ -235,6 +235,17 @@ export function Filmstrip({ height }: { height: number }) {
             {hdrSet === null && siblings.length > 0 && !spread && (
               <span className="filmstrip-count">×{siblings.length + 1}</span>
             )}
+            {/* The pile is the photograph itself, repeated: one print behind
+                for a pair, two for anything deeper. No painted card — the
+                deck is made of the picture, and its depth is honest. */}
+            {thumb !== undefined && siblings.length > 0 && !spread && (
+              <>
+                {siblings.length >= 2 && (
+                  <img className="filmstrip-card deep" src={fileUrl(thumb)} alt="" draggable={false} />
+                )}
+                <img className="filmstrip-card" src={fileUrl(thumb)} alt="" draggable={false} />
+              </>
+            )}
             {thumb === undefined ? (
               <span className="filmstrip-placeholder" />
             ) : (
