@@ -68,6 +68,9 @@ export function ImageCanvas() {
   const entry = useSelectedEntry();
 
   const session = useDevelopStore((s) => s.session);
+  // The HDR panel's "check the frame the camera wrote": show the file at
+  // this path rather than the fusion the path opens as.
+  const original = useDevelopStore((s) => s.original);
   const requestRender = useDevelopStore((s) => s.requestRender);
   const requestDetail = useDevelopStore((s) => s.requestDetail);
   const clearDetail = useDevelopStore((s) => s.clearDetail);
@@ -396,8 +399,14 @@ export function ImageCanvas() {
 
   // Show the developed frame when the file cannot be displayed directly (raw)
   // or when an edit is applied; otherwise the original, which the webview
-  // decodes itself and can zoom to full resolution.
-  const developed = session !== null && session.path === entry.path && needsDevelopedFrame(session);
+  // decodes itself and can zoom to full resolution. The "check the frame
+  // the camera wrote" look overrides towards the file: the path opens as a
+  // fusion, but the file at it is a real JPEG worth looking at.
+  const developed =
+    session !== null &&
+    session.path === entry.path &&
+    needsDevelopedFrame(session) &&
+    original !== entry.path;
   const frame = developed ? session.frame : null;
   const src = frame !== null ? developFrameUrl(frame.token) : developed ? null : fileUrl(entry.path);
 

@@ -55,6 +55,8 @@ export function DevelopPanel() {
 
   const session = useDevelopStore((s) => s.session);
   const opening = useDevelopStore((s) => s.opening);
+  const original = useDevelopStore((s) => s.original);
+  const setOriginal = useDevelopStore((s) => s.setOriginal);
   const open = useDevelopStore((s) => s.open);
   const close = useDevelopStore((s) => s.close);
   const setParam = useDevelopStore((s) => s.setParam);
@@ -170,13 +172,15 @@ export function DevelopPanel() {
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
 
-      {/* The HDR set as its files, not as a footnote over the sliders. One
-          row per frame with its exposure step and its fate — fused, or
-          misaligned and left out — because alignment is per frame and the
-          panel must say which, not round the set up. Clicking a row shows
-          that frame alone; clicking the face's row is the way back to the
-          fused photograph. The outcome is the backend's word: it ran the
-          alignment, this panel only repeats the measurement. */}
+      {/* The HDR set as its files, not as a footnote over the sliders. The
+          merge is a row of its own — it is a different photograph from any
+          frame — and every original stays checkable, the middle one
+          included: its row shows the file the camera wrote even though its
+          path opens as the fusion. Fates are per frame because alignment
+          is per frame, and every verdict is measured *against the middle
+          frame* — two frames can align with each other and still fail
+          here. The outcome is the backend's word: it ran the alignment,
+          this panel only repeats the measurement. */}
       {hdrSet !== null && (() => {
         const face = hdrSet.face;
         const onFace = entry.path === face.path;
@@ -195,7 +199,7 @@ export function DevelopPanel() {
                 ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused — the misaligned are left out, not ghosted in`
                 : `${hdrLabel(hdrSet)} — every frame aligned to the pixel and fused`
               : outcome.kind === "refused"
-                ? "no two frames align to the pixel — no merge, this frame stands alone"
+                ? "nothing verifies against the middle frame — no merge"
                 : "opening the fusion…";
         return (
           <section className="develop-group">
@@ -204,20 +208,46 @@ export function DevelopPanel() {
               className="develop-note"
               title={
                 outcome?.kind === "refused"
-                  ? outcome.reason
+                  ? `${outcome.reason} — frames may align with each other and still fail against the middle one`
                   : "the merge is virtual — nothing is written beside the originals; export renders it"
               }
             >
               {note}
             </p>
+            <button
+              className={
+                onFace && original !== face.path
+                  ? "develop-toggle hdr-frame current"
+                  : "develop-toggle hdr-frame"
+              }
+              title="the fused photograph — virtual, edits and export apply to it"
+              onClick={() => {
+                preferMember(face.path);
+                setOriginal(null);
+              }}
+            >
+              <span className="hdr-frame-name">the merge</span>
+              <span className="hdr-frame-ev" />
+              <span className="hdr-frame-fate">
+                {outcome === null
+                  ? `HDR ×${hdrSet.frames.length}`
+                  : outcome.kind === "fused"
+                    ? leftOut !== null && leftOut.size > 0
+                      ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length}`
+                      : "fused"
+                    : outcome.kind === "refused"
+                      ? "refused"
+                      : "opening…"}
+              </span>
+            </button>
             {hdrSet.frames.map((frame) => {
               const isFace = frame.path === face.path;
               const ev = evOf(frame.path);
               const step = faceEv === null || ev === null ? null : faceEv - ev;
               const fate = isFace
                 ? outcome?.kind === "refused"
-                  ? "shown alone"
-                  : "the merge"
+                  ? "the anchor"
+                  : "fused"
                 : leftOut !== null
                   ? leftOut.has(frame.path)
                     ? "misaligned"
@@ -225,20 +255,23 @@ export function DevelopPanel() {
                   : outcome?.kind === "refused"
                     ? "misaligned"
                     : "one exposure";
+              const current =
+                entry.path === frame.path && (!isFace || original === face.path);
               return (
                 <button
                   key={frame.path}
                   className={
-                    entry.path === frame.path
-                      ? "develop-toggle hdr-frame current"
-                      : "develop-toggle hdr-frame"
+                    current ? "develop-toggle hdr-frame current" : "develop-toggle hdr-frame"
                   }
                   title={
                     isFace
-                      ? "the middle exposure; its path is where the fusion lives — click to look at the merge"
-                      : "click to look at this frame alone"
+                      ? "the frame the camera wrote at the merge's own path — click to check it"
+                      : "click to check this frame alone"
                   }
-                  onClick={() => preferMember(frame.path)}
+                  onClick={() => {
+                    preferMember(frame.path);
+                    setOriginal(isFace ? face.path : null);
+                  }}
                 >
                   <span className="hdr-frame-name">{frame.name}</span>
                   <span className="hdr-frame-ev">

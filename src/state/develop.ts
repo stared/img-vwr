@@ -267,6 +267,17 @@ export interface DevelopStore {
   caption: CaptionMode;
   setCaption: (mode: CaptionMode) => void;
 
+  /**
+   * The path whose *file* the canvas should show, even though the path
+   * opens as a fusion: the HDR panel's "check the frame the camera wrote".
+   *
+   * A look, not a mode — cleared by navigating anywhere. Only the canvas
+   * consults it; edits, export and the session all keep meaning the fused
+   * photograph, which is what the path is.
+   */
+  original: string | null;
+  setOriginal: (path: string | null) => void;
+
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -795,12 +806,17 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     cropWas: null,
     cropChoice: "free",
     cropPortrait: false,
+    original: null,
+    setOriginal: (original) => set({ original }),
     opening: null,
 
     warm: {},
 
     open: async (path) => {
       if (get().session?.path === path) return;
+      // A different photograph: the "show me the file" look was about the
+      // previous one.
+      if (get().original !== null) set({ original: null });
       // Crop is about one photograph, and arriving at the next one already in
       // crop mode would mean a drag across it meant something unexpected.
       if (get().cropping) set({ cropping: false, cropWas: null });
