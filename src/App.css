@@ -1823,11 +1823,13 @@ button.stats-row:hover .stats-label {
   min-height: 0;
 }
 
-/* The zoom, on its own line above the photograph. */
+/* The zoom, compact at the right end of the top bar: a line of its own
+   would cost the photograph height for one slider. */
 .zoom-bar {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--border);
+  flex: 1;
+  min-width: 150px;
+  max-width: 260px;
+  margin-left: auto;
 }
 
 /* The canvas takes whatever the filmstrip leaves. */
@@ -1836,6 +1838,8 @@ button.stats-row:hover .stats-label {
   min-height: 0;
 }
 
+/* No rule above the strip: the photograph ends where the thumbnails
+   begin, and a line between them is ink spent saying so. */
 .filmstrip {
   display: flex;
   align-items: center;
@@ -1844,7 +1848,6 @@ button.stats-row:hover .stats-label {
   padding: 6px 8px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-top: 1px solid var(--border);
 }
 
 .filmstrip-cell {

@@ -1,6 +1,5 @@
 import { useAppStore } from "../../state/store";
 import { ImageCanvas } from "../viewer/ImageCanvas";
-import { ZoomBar } from "../viewer/ZoomBar";
 import { Filmstrip } from "./Filmstrip";
 
 /**
@@ -30,7 +29,6 @@ export function DarkroomGallery() {
 
   return (
     <div className="darkroom">
-      <ZoomBar />
       <ImageCanvas />
       <Filmstrip height={height} />
     </div>

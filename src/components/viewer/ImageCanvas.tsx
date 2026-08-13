@@ -23,7 +23,6 @@ import {
 } from "../../state/develop";
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 import { ImageCaption } from "./ImageCaption";
-import { zoomLabel } from "./viewport";
 
 /**
  * The zoomable image surface: one photograph, panned and zoomed, showing the
@@ -45,7 +44,6 @@ export function ImageCanvas() {
   const entries = useVisibleEntries();
   const index = useAppStore((s) => s.selectedIndex);
   const view = useAppStore((s) => s.viewerView);
-  const fitted = useAppStore((s) => s.viewerFitted);
   const imageLoaded = useAppStore((s) => s.viewerImageLoaded);
   const winResized = useAppStore((s) => s.viewerWinResized);
   const zoom = useAppStore((s) => s.viewerZoom);
@@ -527,21 +525,11 @@ export function ImageCanvas() {
           <span className="across" style={{ top: "66.667%" }} />
         </div>
       )}
-      {/* What the view is doing, in the corner of the picture: the
-          magnification — "fit" said outright, never implied by absence —
-          and the word "rendering" while pixels are on their way. On the
-          canvas rather than only in the panel, because zooming is done
-          looking at the picture: the number should be where the eyes
-          already are. */}
-      {view !== null && (
-        <span className="canvas-marker">
-          {[
-            zoomLabel(view, fitted),
-            ...(developed && session !== null && (session.rendering || session.detailing)
-              ? ["rendering…"]
-              : []),
-          ].join(" · ")}
-        </span>
+      {/* Pixels on their way, said in the corner of the picture. Only that:
+          the magnification is the zoom slider's readout, and a second copy
+          of the number would be one more thing saying the same thing. */}
+      {developed && session !== null && (session.rendering || session.detailing) && (
+        <span className="canvas-marker">rendering…</span>
       )}
       <ImageCaption entry={entry} />
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.

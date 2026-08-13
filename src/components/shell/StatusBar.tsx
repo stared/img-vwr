@@ -1,5 +1,4 @@
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
-import { zoomLabel } from "../viewer/viewport";
 
 export function StatusBar() {
   const scope = useAppStore((s) => s.scope);
@@ -9,8 +8,6 @@ export function StatusBar() {
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const index = useAppStore((s) => s.selectedIndex);
   const chosen = useAppStore((s) => s.selection.length);
-  const view = useAppStore((s) => s.viewerView);
-  const fitted = useAppStore((s) => s.viewerFitted);
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
   const entry = useSelectedEntry();
@@ -60,9 +57,8 @@ export function StatusBar() {
             {img.width}×{img.height}
           </span>
         )}
-        {/* In the same words as the zoom bar and the corner marker: "fit"
-            is a named state, not a percentage that happens to equal it. */}
-        {looking && view && <span>{zoomLabel(view, fitted)}</span>}
+        {/* No zoom here: the slider in the top bar is the one place the
+            magnification is stated. */}
         {!entry && total > 0 && <span>{countText}</span>}
       </span>
     </footer>

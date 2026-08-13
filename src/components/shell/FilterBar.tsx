@@ -8,6 +8,7 @@ import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
 import type { GalleryLayout, Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
+import { ZoomBar } from "../viewer/ZoomBar";
 import { FormatMenuItems } from "./filterMenus";
 
 /**
@@ -536,6 +537,11 @@ export function FilterBar() {
       />
 
       <SortChip scope={scope} sort={query.sort} />
+
+      {/* The darkroom's magnification, compact at the row's end — the bar
+          is already there, and a line of its own for one slider is not
+          worth the height it costs the photograph. */}
+      {galleryLayout === "darkroom" && <ZoomBar />}
     </div>
   );
 }
