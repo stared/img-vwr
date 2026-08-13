@@ -103,3 +103,17 @@ export function clampPan(view: Viewport, img: Size, win: Size): Viewport {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * The magnification, as the user would say it.
+ *
+ * "fit" and "100%" are names, not numbers — a photographer asks for the whole
+ * frame or for actual pixels, and the percentage that happens to correspond
+ * to "the whole frame" in this window is not information. Anything else was
+ * arrived at by pinching, and there the number is the only honest answer.
+ */
+export function zoomLabel(view: { scale: number } | null, fitted: boolean): string {
+  if (fitted || !view) return "fit";
+  const percent = Math.round(view.scale * 100);
+  return percent === 100 ? "100%" : `${percent}%`;
+}

@@ -26,6 +26,7 @@ import {
   useDevelopStore,
   type ParamSpec,
 } from "../../state/develop";
+import { zoomLabel } from "../viewer/viewport";
 import { DevelopHistogram } from "./DevelopHistogram";
 import { DevelopLoupe } from "./DevelopLoupe";
 
@@ -58,20 +59,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  * Every control states its current value in words beside its name, so the
  * panel reads as a description of the edit rather than a wall of handles.
  */
-
-/**
- * The magnification, as the user would say it.
- *
- * "fit" and "100%" are names, not numbers — a photographer asks for the whole
- * frame or for actual pixels, and the percentage that happens to correspond
- * to "the whole frame" in this window is not information. Anything else was
- * arrived at by pinching, and there the number is the only honest answer.
- */
-export function zoomLabel(view: { scale: number } | null, fitted: boolean): string {
-  if (fitted || !view) return "fit";
-  const percent = Math.round(view.scale * 100);
-  return percent === 100 ? "100%" : `${percent}%`;
-}
 
 export function DevelopPanel() {
   const entry = useSelectedEntry();
@@ -175,7 +162,19 @@ export function DevelopPanel() {
 
   return (
     <div className="develop-panel">
-      <DevelopLoupe />
+      {/* First, because it is the one part of the panel that is picture
+          rather than controls: pixels you glance at while working. */}
+      <Group title="Loupe">
+        <button
+          className={loupe ? "develop-toggle armed" : "develop-toggle"}
+          title="actual pixels of one small region; drag the photograph to aim it"
+          onClick={toggleLoupe}
+        >
+          loupe: {loupe ? "on" : "off"}
+        </button>
+        <DevelopLoupe />
+      </Group>
+
       <DevelopHistogram histogram={session.frame?.histogram ?? null} />
 
       <div className="develop-status">
@@ -562,13 +561,6 @@ export function DevelopPanel() {
             to by pinching, and the button says so rather than pretending. */}
         <button className="develop-toggle" onClick={toggleZoom}>
           zoom: {zoomLabel(view, fitted)}
-        </button>
-        <button
-          className={loupe ? "develop-toggle armed" : "develop-toggle"}
-          title="actual pixels of the marked region — drag the photograph to move it"
-          onClick={toggleLoupe}
-        >
-          loupe: {loupe ? "on" : "off"}
         </button>
         {/* Facts over the photograph. Three states, so the useful middle one
             — say it on arrival, then get out of the way — is reachable. */}

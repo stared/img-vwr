@@ -13,10 +13,10 @@ import {
  * column.
  *
  * In the column rather than floating over the photograph, because an inset
- * covers the very picture it is meant to help you judge — and the column has
- * a top that stays put. Sticky, so however far the panel is scrolled the
- * pixels are still there; aiming stays a drag on the photograph itself, and
- * the mark on the canvas says which patch these pixels are.
+ * covers the very picture it is meant to help you judge — nothing is drawn
+ * on the canvas at all. Aiming stays a drag on the photograph itself: the
+ * pixels here follow the pointer, which is its own answer to "where is it
+ * looking".
  */
 export function DevelopLoupe() {
   const loupe = useDevelopStore((s) => s.loupe);

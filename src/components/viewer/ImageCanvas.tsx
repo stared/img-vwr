@@ -14,7 +14,6 @@ import {
   displayedSize,
   frameAspect,
   FULL_CROP,
-  loupeRegion,
   needsDetail,
   needsDevelopedFrame,
   previewEdge,
@@ -24,6 +23,7 @@ import {
 } from "../../state/develop";
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 import { ImageCaption } from "./ImageCaption";
+import { zoomLabel } from "./viewport";
 
 /**
  * The zoomable image surface: one photograph, panned and zoomed, showing the
@@ -45,6 +45,7 @@ export function ImageCanvas() {
   const entries = useVisibleEntries();
   const index = useAppStore((s) => s.selectedIndex);
   const view = useAppStore((s) => s.viewerView);
+  const fitted = useAppStore((s) => s.viewerFitted);
   const imageLoaded = useAppStore((s) => s.viewerImageLoaded);
   const winResized = useAppStore((s) => s.viewerWinResized);
   const zoom = useAppStore((s) => s.viewerZoom);
@@ -115,16 +116,9 @@ export function ImageCanvas() {
   }, [entries, index]);
 
   // The loupe itself lives at the top of the develop column (DevelopLoupe);
-  // the canvas keeps the aiming gesture and the mark saying where it is
-  // looking. The side is whatever the column measured, so the mark outlines
-  // exactly the region the loupe is showing.
-  const loupeAimed = useDevelopStore((s) => s.loupeAt);
-  const loupeSide = useDevelopStore((s) => s.loupeSide);
-  const loupeShown = session ? displayedSize(session.info, session.settings.crop) : null;
-  const loupeWindow =
-    loupeAimed && loupeShown
-      ? loupeRegion(loupeAimed, loupeShown, Math.round(loupeSide * devicePixelRatio))
-      : null;
+  // the canvas keeps only the aiming gesture — a drag on the photograph is
+  // where "show me this bit" belongs, and the loupe's pixels following the
+  // pointer are their own answer to where it is looking.
 
   // And develop the neighbours ahead, which is the expensive half. Only once
   // this image's own frame has arrived: the user is waiting on that one, and
@@ -244,7 +238,6 @@ export function ImageCanvas() {
    * store rather than local state because the loupe brightening with the drag
    * sits in the develop column, not on this canvas. */
   const aimingRef = useRef(false);
-  const aiming = useDevelopStore((s) => s.loupeAiming);
   const setLoupeAiming = useDevelopStore((s) => s.setLoupeAiming);
   const setAimingNow = (on: boolean) => {
     aimingRef.current = on;
@@ -534,22 +527,22 @@ export function ImageCanvas() {
           <span className="across" style={{ top: "66.667%" }} />
         </div>
       )}
-      {/* Where on the photograph the loupe (top of the develop column) is
-          looking. Without it the loupe is detail from nowhere in particular:
-          you can see that something is sharp without being able to see what.
-          It marks the window, not the wider patch developed around it — the
-          window is what you are looking at. */}
-      {loupe && loupeWindow !== null && loupeShown !== null && view !== null && (
-        <div
-          className={aiming ? "viewer-loupe-mark aiming" : "viewer-loupe-mark"}
-          style={{
-            left: view.tx + loupeWindow.x * loupeShown.width * view.scale,
-            top: view.ty + loupeWindow.y * loupeShown.height * view.scale,
-            width: loupeWindow.width * loupeShown.width * view.scale,
-            height: loupeWindow.height * loupeShown.height * view.scale,
-          }}
-        />
-      )}
+      {/* What the view is doing, in the corner of the picture: the
+          magnification whenever it is anything other than fit, and the word
+          "rendering" while pixels are on their way. On the canvas rather
+          than only in the panel, because zooming is done looking at the
+          picture — the number should be where the eyes already are. */}
+      {(() => {
+        if (view === null) return null;
+        const busy =
+          developed && session !== null && (session.rendering || session.detailing);
+        const parts = [
+          ...(fitted ? [] : [zoomLabel(view, fitted)]),
+          ...(busy ? ["rendering…"] : []),
+        ];
+        if (parts.length === 0) return null;
+        return <span className="canvas-marker">{parts.join(" · ")}</span>;
+      })()}
       <ImageCaption entry={entry} />
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.
           Drawn on top rather than instead of, so panning never blanks. */}

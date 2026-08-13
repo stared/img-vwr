@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { zoomLabel } from "./DevelopPanel";
+import { zoomLabel } from "../viewer/viewport";
 
 describe("zoomLabel", () => {
   it("names the two magnifications a photographer asks for", () => {

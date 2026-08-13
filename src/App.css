@@ -2224,13 +2224,9 @@ button.stats-row:hover .stats-label {
 /* ---- Loupe: 1:1 pixels at the top of the develop column ---- */
 
 /* In the column rather than floating over the canvas — an inset covers the
-   photograph it is meant to help you judge. Sticky, so the pixels ride the
-   top of the column however far the panel is scrolled; the panel's content
-   slides beneath it, which is what the opaque background is for. */
+   photograph it is meant to help you judge. */
 .develop-loupe {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   overflow: hidden;
@@ -2253,21 +2249,6 @@ button.stats-row:hover .stats-label {
   image-rendering: pixelated;
 }
 
-/* Where on the photograph the loupe is looking. Two strokes, because one is
-   invisible against half the pictures it has to sit on. */
-.viewer-loupe-mark {
-  position: absolute;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.6),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}
-
-.viewer-loupe-mark.aiming {
-  border-color: var(--accent);
-}
-
 .develop-loupe-waiting {
   display: block;
   width: 100%;
@@ -2283,6 +2264,24 @@ button.stats-row:hover .stats-label {
   color: rgba(255, 255, 255, 0.75);
   font-size: 10px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* ---- Corner marker: what the view is doing ---- */
+
+/* Top-right of the picture: the magnification when it is anything other
+   than fit, and "rendering…" while pixels are on their way. Quiet enough
+   to live there, because it only appears when there is something to say. */
+.canvas-marker {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* ---- Caption: what you are looking at, over the photograph ---- */
