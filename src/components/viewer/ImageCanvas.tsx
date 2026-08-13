@@ -528,21 +528,21 @@ export function ImageCanvas() {
         </div>
       )}
       {/* What the view is doing, in the corner of the picture: the
-          magnification whenever it is anything other than fit, and the word
-          "rendering" while pixels are on their way. On the canvas rather
-          than only in the panel, because zooming is done looking at the
-          picture — the number should be where the eyes already are. */}
-      {(() => {
-        if (view === null) return null;
-        const busy =
-          developed && session !== null && (session.rendering || session.detailing);
-        const parts = [
-          ...(fitted ? [] : [zoomLabel(view, fitted)]),
-          ...(busy ? ["rendering…"] : []),
-        ];
-        if (parts.length === 0) return null;
-        return <span className="canvas-marker">{parts.join(" · ")}</span>;
-      })()}
+          magnification — "fit" said outright, never implied by absence —
+          and the word "rendering" while pixels are on their way. On the
+          canvas rather than only in the panel, because zooming is done
+          looking at the picture: the number should be where the eyes
+          already are. */}
+      {view !== null && (
+        <span className="canvas-marker">
+          {[
+            zoomLabel(view, fitted),
+            ...(developed && session !== null && (session.rendering || session.detailing)
+              ? ["rendering…"]
+              : []),
+          ].join(" · ")}
+        </span>
+      )}
       <ImageCaption entry={entry} />
       {/* The 1:1 crop, laid exactly over the part of the preview it replaces.
           Drawn on top rather than instead of, so panning never blanks. */}

@@ -1777,6 +1777,9 @@ button.stats-row:hover .stats-label {
 .develop-switch {
   display: flex;
   align-items: center;
+  /* Rows with many options (presets) fold onto the next line rather than
+     clipping — every option stays visible, which is the point of the row. */
+  flex-wrap: wrap;
   gap: 4px;
   margin: 2px 8px 4px;
 }
@@ -1818,6 +1821,13 @@ button.stats-row:hover .stats-label {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
+
+/* The zoom, on its own line above the photograph. */
+.zoom-bar {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 /* The canvas takes whatever the filmstrip leaves. */

@@ -7,18 +7,17 @@ import { groupStacks, siblingsOf, stackKeyOf } from "../../state/stacks";
 import { hdrOf, useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
+  CAPTION_CYCLE,
   CAPTION_LABELS,
   CAPTION_NOTES,
   displayedSize,
   frameAspect,
   FULL_CROP,
   isCropped,
-  nextCaption,
-  nextOverlay,
+  OVERLAY_CYCLE,
   OVERLAY_LABELS,
   OVERLAY_NOTES,
   isAtOpening,
-  nextPreset,
   PARAM_SPECS,
   presetOf,
   TEMPERATURE_RANGE,
@@ -26,7 +25,6 @@ import {
   useDevelopStore,
   type ParamSpec,
 } from "../../state/develop";
-import { zoomLabel } from "../viewer/viewport";
 import { DevelopHistogram } from "./DevelopHistogram";
 import { DevelopLoupe } from "./DevelopLoupe";
 
@@ -113,14 +111,6 @@ export function DevelopPanel() {
   const allMeta = useAppStore((s) => s.meta);
   const hdrMethods = useAppStore((s) => s.hdrMethod);
   const setHdrMethod = useAppStore((s) => s.setHdrMethod);
-  const view = useAppStore((s) => s.viewerView);
-  const fitted = useAppStore((s) => s.viewerFitted);
-  const zoomFit = useAppStore((s) => s.viewerZoomFit);
-  const zoomActual = useAppStore((s) => s.viewerZoomActual);
-  // Fit and 100% are the two magnifications worth a control; the button
-  // swings between them, and reports anything else you pinched your way to.
-  const toggleZoom = () => (fitted ? zoomActual() : zoomFit());
-
   // Whether stacking has anything to do in this collection at all. A switch
   // for something that never happens is noise, so a folder of single files
   // never shows it.
@@ -165,13 +155,24 @@ export function DevelopPanel() {
       {/* First, because it is the one part of the panel that is picture
           rather than controls: pixels you glance at while working. */}
       <Group title="Loupe">
-        <button
-          className={loupe ? "develop-toggle armed" : "develop-toggle"}
+        <div
+          className="develop-switch"
           title="actual pixels of one small region; drag the photograph to aim it"
-          onClick={toggleLoupe}
         >
-          loupe: {loupe ? "on" : "off"}
-        </button>
+          <span className="develop-switch-label">loupe</span>
+          <button
+            className={loupe ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => !loupe && toggleLoupe()}
+          >
+            on
+          </button>
+          <button
+            className={loupe ? "develop-toggle" : "develop-toggle on"}
+            onClick={() => loupe && toggleLoupe()}
+          >
+            off
+          </button>
+        </div>
         <DevelopLoupe />
       </Group>
 
@@ -434,20 +435,27 @@ export function DevelopPanel() {
       </Group>
 
       <Group title="Tone">
-        {/* One button saying which look is in effect; clicking moves to the
-            next. Every preset is only a set of slider positions, so the
-            sliders below always show exactly what it did. */}
+        {/* Every look on show, the one in effect marked. An edited state
+            marks nothing — the sliders are nobody's preset — and clicking
+            the look the edit was built on puts every slider back to it.
+            Every preset is only a set of slider positions, so the sliders
+            below always show exactly what it did. */}
         {presets.length > 0 && (
-          <button
-            className="develop-toggle"
-            title={active ? active.note : `put every slider back to ${baseline?.label ?? "flat"}`}
-            onClick={() => {
-              const following = nextPreset(active, baseline, presets);
-              if (following) applyPreset(following.id);
-            }}
-          >
-            preset: {active ? active.label : `${baseline?.label ?? "flat"}, edited`}
-          </button>
+          <div className="develop-switch">
+            <span className="develop-switch-label">preset</span>
+            {presets.map((preset) => (
+              <button
+                key={preset.id}
+                className={
+                  active?.id === preset.id ? "develop-toggle on" : "develop-toggle"
+                }
+                title={preset.note}
+                onClick={() => applyPreset(preset.id)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         )}
         {PARAM_SPECS.map((spec: ParamSpec) => {
           const value = settings.params[spec.key];
@@ -482,9 +490,21 @@ export function DevelopPanel() {
         })}
         {/* The numbers can read either way; the bars always show the
             deviation, because that is what there is to see. */}
-        <button className="develop-toggle" onClick={toggleDeviation}>
-          values: {showDeviation ? `from ${baseline?.label ?? "flat"}` : "absolute"}
-        </button>
+        <div className="develop-switch">
+          <span className="develop-switch-label">values</span>
+          <button
+            className={showDeviation ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => !showDeviation && toggleDeviation()}
+          >
+            from {baseline?.label ?? "flat"}
+          </button>
+          <button
+            className={showDeviation ? "develop-toggle" : "develop-toggle on"}
+            onClick={() => showDeviation && toggleDeviation()}
+          >
+            absolute
+          </button>
+        </div>
       </Group>
 
       <Group title="Crop">
@@ -518,13 +538,29 @@ export function DevelopPanel() {
             </button>
           ))}
         </div>
-        <button
-          className="develop-toggle"
-          title="Stand the shape on end. A free crop swaps the extents it has."
-          onClick={toggleCropOrientation}
-        >
-          standing: {isPortrait(settings.crop, frameAspect(info)) ? "portrait" : "landscape"}
-        </button>
+        {(() => {
+          const portrait = isPortrait(settings.crop, frameAspect(info));
+          return (
+            <div
+              className="develop-switch"
+              title="Stand the shape on end. A free crop swaps the extents it has."
+            >
+              <span className="develop-switch-label">standing</span>
+              <button
+                className={portrait ? "develop-toggle" : "develop-toggle on"}
+                onClick={() => portrait && toggleCropOrientation()}
+              >
+                landscape
+              </button>
+              <button
+                className={portrait ? "develop-toggle on" : "develop-toggle"}
+                onClick={() => !portrait && toggleCropOrientation()}
+              >
+                portrait
+              </button>
+            </div>
+          );
+        })()}
         {/* Straightening turns the photograph under the rectangle and gives
             back as much of it as still fits inside the frame — so the crop
             gets smaller as the angle grows, and never contains a corner that
@@ -555,41 +591,58 @@ export function DevelopPanel() {
       </Group>
 
       <Group title="View">
-        {/* The magnification, in words, on a button that changes it — the
-            same shape as every other state control here. Fit and 100% are the
-            two a photographer actually asks for; anything in between you got
-            to by pinching, and the button says so rather than pretending. */}
-        <button className="develop-toggle" onClick={toggleZoom}>
-          zoom: {zoomLabel(view, fitted)}
-        </button>
         {/* Facts over the photograph. Three states, so the useful middle one
-            — say it on arrival, then get out of the way — is reachable. */}
-        <button
-          className="develop-toggle"
-          title={CAPTION_NOTES[caption]}
-          onClick={() => setCaption(nextCaption(caption))}
-        >
-          caption: {CAPTION_LABELS[caption]}
-        </button>
+            — say it on arrival, then get out of the way — is reachable. The
+            zoom lives on the bar above the picture, where the zooming is. */}
+        <div className="develop-switch">
+          <span className="develop-switch-label">caption</span>
+          {CAPTION_CYCLE.map((mode) => (
+            <button
+              key={mode}
+              className={caption === mode ? "develop-toggle on" : "develop-toggle"}
+              title={CAPTION_NOTES[mode]}
+              onClick={() => setCaption(mode)}
+            >
+              {CAPTION_LABELS[mode]}
+            </button>
+          ))}
+        </div>
       </Group>
 
       <Group title="Analysis">
-        {/* One button labelled with the state it is in; clicking moves to the
-            next. These replace what the photograph looks like, so only one can
-            be on — which is why they share a control rather than having one
+        {/* The overlays replace what the photograph looks like, so only one
+            can be on — which is why they share one row rather than having a
             switch each. */}
-        <button
-          className="develop-toggle"
-          title={OVERLAY_NOTES[overlay]}
-          onClick={() => setOverlay(nextOverlay(overlay))}
-        >
-          overlay: {OVERLAY_LABELS[overlay]}
-        </button>
+        <div className="develop-switch">
+          <span className="develop-switch-label">overlay</span>
+          {OVERLAY_CYCLE.map((mode) => (
+            <button
+              key={mode}
+              className={overlay === mode ? "develop-toggle on" : "develop-toggle"}
+              title={OVERLAY_NOTES[mode]}
+              onClick={() => setOverlay(mode)}
+            >
+              {OVERLAY_LABELS[mode]}
+            </button>
+          ))}
+        </div>
         {/* Guides are geometry, not pixels: independent of the above, and free
             to leave on while you work. */}
-        <button className="develop-toggle" onClick={toggleGridlines}>
-          guides: {gridlines ? "thirds" : "off"}
-        </button>
+        <div className="develop-switch">
+          <span className="develop-switch-label">guides</span>
+          <button
+            className={gridlines ? "develop-toggle" : "develop-toggle on"}
+            onClick={() => gridlines && toggleGridlines()}
+          >
+            off
+          </button>
+          <button
+            className={gridlines ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => !gridlines && toggleGridlines()}
+          >
+            thirds
+          </button>
+        </div>
       </Group>
     </div>
   );
