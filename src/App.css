@@ -1755,6 +1755,30 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
+/* An enumerable choice shows its options: each one is its own button and
+   the active one is marked. A click means the word on it, never "whatever
+   comes next" — cycling buttons are a surprise with no menu. */
+.develop-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 8px 4px;
+}
+
+.develop-switch .develop-toggle {
+  margin: 0;
+}
+
+.develop-switch-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.develop-toggle.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .develop-reset:disabled {
   color: var(--text-dim);
   cursor: default;

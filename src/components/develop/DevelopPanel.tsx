@@ -199,10 +199,10 @@ export function DevelopPanel() {
             ? "showing one frame of the set alone"
             : outcome.kind === "fused"
               ? leftOut !== null && leftOut.size > 0
-                ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused — the misaligned are left out, not ghosted in`
-                : `${hdrLabel(hdrSet)} — every frame aligned to the pixel and fused`
+                ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused; the misaligned are left out, not ghosted in`
+                : `${hdrLabel(hdrSet)} · every frame aligned to the pixel and fused`
               : outcome.kind === "refused"
-                ? "no two exposures align with each other — no merge"
+                ? "no two exposures align with each other; no merge"
                 : "opening the fusion…";
         return (
           <section className="develop-group">
@@ -217,30 +217,31 @@ export function DevelopPanel() {
             >
               {note}
             </p>
-            {/* How the frames become one photograph. Fusion is the camera's
-                look and deliberately has no knobs; radiance keeps the whole
-                measured range, and the tone sliders below ARE the knobs.
-                One button cycling the (short) list, like every other
-                enumerable choice in this panel. */}
-            <button
-              className="develop-toggle"
-              title={
-                (hdrMethods[face.path] ?? "fusion") === "fusion"
-                  ? "a blend of each frame's best-exposed pixels — finished, no knobs. Click for radiance."
-                  : "the light itself, linear, with the dark frames' highlight headroom kept — exposure, highlights and shadows below are the HDR knobs. Click for exposure fusion."
-              }
-              onClick={() =>
-                setHdrMethod(
-                  face.path,
-                  (hdrMethods[face.path] ?? "fusion") === "fusion" ? "radiance" : "fusion",
-                )
-              }
-            >
-              merge by:{" "}
-              {(hdrMethods[face.path] ?? "fusion") === "fusion"
-                ? "exposure fusion"
-                : "radiance — sliders are the knobs"}
-            </button>
+            {/* How the frames become one photograph. Every option is its
+                own button with the active one marked — a click means the
+                word on it, never "whatever comes next". */}
+            {(() => {
+              const method = hdrMethods[face.path] ?? "fusion";
+              return (
+                <div className="develop-switch">
+                  <span className="develop-switch-label">merge by</span>
+                  <button
+                    className={method === "fusion" ? "develop-toggle on" : "develop-toggle"}
+                    title="a blend of each frame's best-exposed pixels: finished, the camera's look, no knobs"
+                    onClick={() => setHdrMethod(face.path, "fusion")}
+                  >
+                    exposure fusion
+                  </button>
+                  <button
+                    className={method === "radiance" ? "develop-toggle on" : "develop-toggle"}
+                    title="the light itself, linear, with the dark frames' highlight headroom kept; exposure, highlights and shadows become the HDR knobs"
+                    onClick={() => setHdrMethod(face.path, "radiance")}
+                  >
+                    radiance
+                  </button>
+                </div>
+              );
+            })()}
             <button
               className={
                 onFace && original !== face.path
@@ -326,20 +327,44 @@ export function DevelopPanel() {
       )}
       {/* And whether a pair is one photograph or two files at all. It lives
           here rather than over the grid because it is a darkroom rule: the
-          grid always lists every file the camera wrote. */}
+          grid always lists every file the camera wrote. Both options on
+          show, the active one marked — no mystery cycling. */}
       {hasStacks && (
-        <button className="develop-toggle" onClick={toggleStacking}>
-          raw + JPG: {stacking ? "one photograph" : "two files"}
-        </button>
+        <div className="develop-switch">
+          <span className="develop-switch-label">raw + JPG</span>
+          <button
+            className={stacking ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => !stacking && toggleStacking()}
+          >
+            one photograph
+          </button>
+          <button
+            className={stacking ? "develop-toggle" : "develop-toggle on"}
+            onClick={() => stacking && toggleStacking()}
+          >
+            two files
+          </button>
+        </div>
       )}
       {hasStacks && stacking && (
-        <button
-          className="develop-toggle"
-          onClick={toggleStackLead}
+        <div
+          className="develop-switch"
           title="which of a pair stands for the photograph when you haven't picked one"
         >
-          stack shows: {stackLead === "jpg" ? "JPG" : "raw"}
-        </button>
+          <span className="develop-switch-label">stack shows</span>
+          <button
+            className={stackLead === "jpg" ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => stackLead !== "jpg" && toggleStackLead()}
+          >
+            JPG
+          </button>
+          <button
+            className={stackLead === "raw" ? "develop-toggle on" : "develop-toggle"}
+            onClick={() => stackLead !== "raw" && toggleStackLead()}
+          >
+            raw
+          </button>
+        </div>
       )}
 
       <section className="develop-group">
