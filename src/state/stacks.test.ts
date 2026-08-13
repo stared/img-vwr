@@ -7,6 +7,7 @@ import {
   leadOf,
   siblingsOf,
   stackCaption,
+  stackFormats,
   stackKeyOf,
 } from "./stacks";
 
@@ -138,5 +139,11 @@ describe("siblingsOf and stackCaption", () => {
       "DSC_0001.NEF +JPG",
     );
     expect(stackCaption(file("/p/DSC_0002.JPG"), [])).toBe("DSC_0002.JPG");
+  });
+
+  it("badges a pile by its formats, the shown one first", () => {
+    expect(stackFormats(file("/p/DSC_0001.JPG"), [file("/p/DSC_0001.NEF")])).toBe("JPG+NEF");
+    expect(stackFormats(file("/p/DSC_0001.NEF"), [file("/p/DSC_0001.JPG")])).toBe("NEF+JPG");
+    expect(stackFormats(file("/p/DSC_0002.JPG"), [])).toBe("JPG");
   });
 });

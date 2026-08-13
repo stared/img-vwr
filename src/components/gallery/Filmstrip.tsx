@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
 import { hdrLabel } from "../../state/hdr";
-import { photographKeyOf, siblingsOf, stackCaption } from "../../state/stacks";
+import { photographKeyOf, siblingsOf, stackCaption, stackFormats } from "../../state/stacks";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 
 /**
@@ -232,8 +232,10 @@ export function Filmstrip({ height }: { height: number }) {
                 working through a sequence may as well not exist. */}
             {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
             {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
+            {/* An ordinary pile says which kinds of files it holds — for a
+                raw+JPEG pair, "JPG+NEF" is both the count and the point. */}
             {hdrSet === null && siblings.length > 0 && !spread && (
-              <span className="filmstrip-count">×{siblings.length + 1}</span>
+              <span className="filmstrip-count">{stackFormats(entry, siblings)}</span>
             )}
             {/* The pile is the photograph itself, repeated: one print behind
                 for a pair, two for anything deeper. No painted card — the

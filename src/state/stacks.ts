@@ -192,3 +192,18 @@ export function stackCaption(entry: FileEntry, siblings: FileEntry[]): string {
   const others = [...new Set(siblings.map((s) => s.formatHint.toUpperCase()))].sort();
   return `${entry.name} +${others.join("+")}`;
 }
+
+/**
+ * The pile's formats, the shown one first: "JPG+NEF".
+ *
+ * What a badge on a stacked cell says instead of a count — for the
+ * ordinary pair the interesting fact is not that there are two files but
+ * which kinds they are, and the formats say both at once.
+ */
+export function stackFormats(entry: FileEntry, siblings: FileEntry[]): string {
+  const shown = entry.formatHint.toUpperCase();
+  const others = [...new Set(siblings.map((s) => s.formatHint.toUpperCase()))]
+    .filter((f) => f !== shown)
+    .sort();
+  return [shown, ...others].join("+");
+}
