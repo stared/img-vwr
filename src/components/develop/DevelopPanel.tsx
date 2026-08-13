@@ -101,6 +101,8 @@ export function DevelopPanel() {
     return facePath === undefined ? null : (hdr.byFace.get(facePath) ?? null);
   });
   const allMeta = useAppStore((s) => s.meta);
+  const hdrMethods = useAppStore((s) => s.hdrMethod);
+  const setHdrMethod = useAppStore((s) => s.setHdrMethod);
   const view = useAppStore((s) => s.viewerView);
   const fitted = useAppStore((s) => s.viewerFitted);
   const zoomFit = useAppStore((s) => s.viewerZoomFit);
@@ -215,6 +217,30 @@ export function DevelopPanel() {
             >
               {note}
             </p>
+            {/* How the frames become one photograph. Fusion is the camera's
+                look and deliberately has no knobs; radiance keeps the whole
+                measured range, and the tone sliders below ARE the knobs.
+                One button cycling the (short) list, like every other
+                enumerable choice in this panel. */}
+            <button
+              className="develop-toggle"
+              title={
+                (hdrMethods[face.path] ?? "fusion") === "fusion"
+                  ? "a blend of each frame's best-exposed pixels — finished, no knobs. Click for radiance."
+                  : "the light itself, linear, with the dark frames' highlight headroom kept — exposure, highlights and shadows below are the HDR knobs. Click for exposure fusion."
+              }
+              onClick={() =>
+                setHdrMethod(
+                  face.path,
+                  (hdrMethods[face.path] ?? "fusion") === "fusion" ? "radiance" : "fusion",
+                )
+              }
+            >
+              merge by:{" "}
+              {(hdrMethods[face.path] ?? "fusion") === "fusion"
+                ? "exposure fusion"
+                : "radiance — sliders are the knobs"}
+            </button>
             <button
               className={
                 onFace && original !== face.path

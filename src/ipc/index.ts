@@ -15,6 +15,8 @@ import type {
   ExportPlan,
   ExportSize,
   FileEntry,
+  FusionRecipe,
+  HdrMethod,
   Histogram,
   ImageLabels,
   ImageMeta,
@@ -46,6 +48,8 @@ export type {
   ExportPlan,
   ExportSize,
   FileEntry,
+  FusionRecipe,
+  HdrMethod,
   Histogram,
   ImageLabels,
   ImageMeta,
@@ -290,7 +294,9 @@ export async function developExport(job: ExportJob, plan: ExportPlan): Promise<E
 
 /** Tell the develop service which paths open as fused HDR sets — the face
  * frame's path mapped to every frame of its set, the whole folder at once. */
-export async function developSetFusions(fusions: Record<string, string[]>): Promise<void> {
+export async function developSetFusions(
+  fusions: Record<string, FusionRecipe>,
+): Promise<void> {
   return commands.developSetFusions(fusions);
 }
 

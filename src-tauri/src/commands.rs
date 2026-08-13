@@ -602,7 +602,7 @@ pub async fn develop_edited_paths(
 #[specta::specta]
 pub fn develop_set_fusions(
     service: State<'_, Arc<DevelopService>>,
-    fusions: HashMap<String, Vec<String>>,
+    fusions: HashMap<String, crate::services::develop::FusionRecipe>,
 ) {
     service.set_fusions(fusions);
 }

@@ -13,6 +13,7 @@ import {
 import type {
   EmbedModelInfo,
   FileEntry,
+  HdrMethod,
   ImageLabels,
   ImageMeta,
   MetaEntry,
@@ -172,6 +173,12 @@ export interface AppState {
    */
   expandedStacks: Record<string, true>;
   /**
+   * face path → how that HDR set merges. Absent means exposure fusion,
+   * the zero-knob default that looks like the camera; "radiance" merges
+   * the light itself and hands the develop sliders the full range.
+   */
+  hdrMethod: Record<string, HdrMethod>;
+  /**
    * Index into the VISIBLE (query-applied) list of the LEAD photograph, or
    * null when nothing is selected.
    *
@@ -297,6 +304,7 @@ interface AppActions {
   /** Show `path` in place of whatever its stack was showing. */
   preferMember: (path: string) => void;
   toggleStackExpanded: (key: string) => void;
+  setHdrMethod: (face: string, method: HdrMethod) => void;
   /** Select one image, or nothing (null) — clicking empty space, or Esc. */
   select: (index: number | null) => void;
   /** Click on an image with modifiers held; see `selectMode`. */
@@ -376,6 +384,7 @@ export const initialState: AppState = {
   stackLead: "jpg",
   preferredMember: {},
   expandedStacks: {},
+  hdrMethod: {},
   selectedIndex: null,
   selection: [],
   selectionAnchor: null,
@@ -974,6 +983,9 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
       const { [key]: open, ...rest } = s.expandedStacks;
       return { expandedStacks: open ? rest : { ...rest, [key]: true } };
     }),
+
+  setHdrMethod: (face, method) =>
+    set((s) => ({ hdrMethod: { ...s.hdrMethod, [face]: method } })),
 
   select: (index) => set((s) => withSelection(s, index)),
 

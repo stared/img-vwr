@@ -39,8 +39,9 @@ export function scopeLoading(scope: Scope, epoch: number) {
     selection: [] as string[],
     selectionAnchor: null,
     // The new folder's stacks are new; a spread left open would be keyed to
-    // photographs that no longer exist.
+    // photographs that no longer exist, and so would a merge-method choice.
     expandedStacks: {} as Record<string, true>,
+    hdrMethod: {} as Record<string, import("../ipc").HdrMethod>,
     similarity: null,
     embedProgress: null,
     // People are of the previous folder; a finished detection left standing

@@ -14,7 +14,7 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
-import { developSetFusions, events, requestMeta } from "./ipc";
+import { developSetFusions, events, requestMeta, type FusionRecipe } from "./ipc";
 import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
@@ -37,6 +37,7 @@ function useHdrDetection() {
   const epoch = useAppStore((s) => s.epoch);
   // Identity-stable: a meta batch that changed no set keeps the old array.
   const sets = useAppStore((s) => (s.scope?.kind === "folder" ? hdrOf(s).sets : null));
+  const methods = useAppStore((s) => s.hdrMethod);
 
   // Detection wants every file's exposure, not only the EXIF the panels on
   // screen happen to have asked about. Once per folder, in the background.
@@ -52,9 +53,14 @@ function useHdrDetection() {
   // What was last told to the develop service, so an unchanged answer costs
   // nothing and a changed one replaces the whole map at once.
   const registered = useRef("");
-  const previous = useRef<Record<string, string[]>>({});
+  const previous = useRef<Record<string, FusionRecipe>>({});
   useEffect(() => {
-    const fusions = sets === null ? {} : fusionMap(sets);
+    const fusions = Object.fromEntries(
+      Object.entries(sets === null ? {} : fusionMap(sets)).map(([face, frames]) => [
+        face,
+        { frames, method: methods[face] ?? ("fusion" as const) },
+      ]),
+    );
     const signature = JSON.stringify(fusions);
     if (signature === registered.current) return;
     registered.current = signature;
@@ -69,7 +75,7 @@ function useHdrDetection() {
       );
       if (changed.length > 0) useDevelopStore.getState().dropStale(changed);
     });
-  }, [sets]);
+  }, [sets, methods]);
 }
 
 function App() {

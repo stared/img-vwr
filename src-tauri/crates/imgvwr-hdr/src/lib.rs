@@ -18,6 +18,7 @@
 
 mod align;
 mod fuse;
+mod radiance;
 
 pub use align::Rigid;
 
@@ -40,7 +41,7 @@ pub struct Merged {
 /// fraction of their extent per axis are different pictures, not a bracket.
 const MIN_OVERLAP: f64 = 0.75;
 
-pub fn merge(frames: &[image::RgbImage]) -> Result<Merged, String> {
+fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
     if frames.len() < 2 {
         return Err("a merge needs at least two frames".to_string());
     }
@@ -200,8 +201,44 @@ pub fn merge(frames: &[image::RgbImage]) -> Result<Merged, String> {
         return Err("the frames do not align: the aligned frames do not show one picture".to_string());
     }
 
-    let fusible: Vec<image::RgbImage> = aligned.into_iter().map(|(_, image)| image).collect();
-    Ok(Merged { image: fuse::exposure_fusion(&fusible), reference, motions })
+    Ok(Aligned { frames: aligned, reference, motions })
+}
+
+/// The bracket after alignment: the surviving frames warped into reference
+/// coordinates, ready for whichever merge the caller wants.
+struct Aligned {
+    /// (original index, warped pixels), in the order alignment kept them.
+    frames: Vec<(usize, image::RgbImage)>,
+    reference: usize,
+    motions: Vec<Option<Rigid>>,
+}
+
+/// A merge of the light itself: scene-linear radiance, not a finished
+/// picture.
+///
+/// `1.0` is the reference frame's diffuse white; values above it are the
+/// headroom the darker exposures actually measured. Handed to the develop
+/// pipeline as a scene-referred image, the ordinary tone controls become
+/// real HDR knobs — highlights pulls detail down from above 1.0 instead of
+/// stretching an 8-bit blend.
+pub struct MergedRadiance {
+    pub width: u32,
+    pub height: u32,
+    /// `width * height * 3` scene-linear samples, row-major.
+    pub rgb: Vec<f32>,
+    pub reference: usize,
+    pub motions: Vec<Option<Rigid>>,
+}
+
+pub fn merge(frames: &[image::RgbImage]) -> Result<Merged, String> {
+    let a = aligned_bracket(frames)?;
+    let fusible: Vec<image::RgbImage> = a.frames.into_iter().map(|(_, image)| image).collect();
+    Ok(Merged { image: fuse::exposure_fusion(&fusible), reference: a.reference, motions: a.motions })
+}
+
+pub fn merge_radiance(frames: &[image::RgbImage]) -> Result<MergedRadiance, String> {
+    let a = aligned_bracket(frames)?;
+    Ok(radiance::radiance_of(a))
 }
 
 /// The frame resampled into reference coordinates: output (x, y) reads the

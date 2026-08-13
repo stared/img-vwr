@@ -361,7 +361,7 @@ async developPickWhiteBalance(path: string, x: number, y: number, settings: Deve
  * the fusion, edits store against the face path, and export renders it.
  * Nothing is written anywhere by this — the merge is virtual until Export.
  */
-async developSetFusions(fusions: Partial<{ [key in string]: string[] }>) : Promise<void> {
+async developSetFusions(fusions: Partial<{ [key in string]: FusionRecipe }>) : Promise<void> {
     await TAURI_INVOKE("develop_set_fusions", { fusions });
 }
 }
@@ -643,6 +643,27 @@ formatHint: string }
  * separately, and would get wrong whenever events were coalesced or dropped.
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
+/**
+ * Everything a path needs to open as a merge: which frames, and how they
+ * become one photograph.
+ */
+export type FusionRecipe = { frames: string[]; method: HdrMethod }
+/**
+ * How a bracket becomes one photograph. An enum, because the choices are
+ * few and each is a different *kind* of result — not a parameter sweep.
+ */
+export type HdrMethod = 
+/**
+ * Mertens exposure fusion: a blend of the best-exposed pixels. Looks
+ * like the camera's pictures; deliberately has no knobs.
+ */
+"fusion" | 
+/**
+ * Scene-linear radiance: the light itself, with the darker exposures'
+ * headroom kept above 1.0. The develop pipeline's tone controls are
+ * the knobs — this is the "professional HDR" path.
+ */
+"radiance"
 /**
  * Whether the scene behind a path is a fused bracket, and if not, why not.
  * 

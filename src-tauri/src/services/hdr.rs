@@ -9,6 +9,21 @@
 
 use imgvwr_core::{SceneError, SceneImage};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+
+/// How a bracket becomes one photograph. An enum, because the choices are
+/// few and each is a different *kind* of result — not a parameter sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum HdrMethod {
+    /// Mertens exposure fusion: a blend of the best-exposed pixels. Looks
+    /// like the camera's pictures; deliberately has no knobs.
+    Fusion,
+    /// Scene-linear radiance: the light itself, with the darker exposures'
+    /// headroom kept above 1.0. The develop pipeline's tone controls are
+    /// the knobs — this is the "professional HDR" path.
+    Radiance,
+}
 
 /// What a fusion produced: the scene, and how much of the bracket is in it.
 pub struct Fusion {
@@ -19,13 +34,13 @@ pub struct Fusion {
     pub left_out: Vec<String>,
 }
 
-/// Decode these frames — one bracket, the caller decided — align them, fuse
-/// them, and hand back the result as a scene.
+/// Decode these frames — one bracket, the caller decided — align them,
+/// merge them by `method`, and hand back the result as a scene.
 ///
 /// Each frame is turned upright before the merge: orientation is a property
 /// of the files, and the fused photograph is not a file — it has no EXIF of
 /// its own to carry the tag, so its pixels must already be the right way up.
-pub fn fused_scene(paths: &[String]) -> Result<Fusion, SceneError> {
+pub fn fused_scene(paths: &[String], method: HdrMethod) -> Result<Fusion, SceneError> {
     let frames: Vec<image::RgbImage> = paths
         .par_iter()
         .map(|path| {
@@ -40,20 +55,27 @@ pub fn fused_scene(paths: &[String]) -> Result<Fusion, SceneError> {
         })
         .collect::<Result<_, SceneError>>()?;
 
-    let merged = imgvwr_hdr::merge(&frames).map_err(SceneError::Open)?;
-    let left_out = merged
-        .motions
+    let (scene, motions) = match method {
+        HdrMethod::Fusion => {
+            let merged = imgvwr_hdr::merge(&frames).map_err(SceneError::Open)?;
+            let scene = imgvwr_core::scene_from_rgba(
+                image::DynamicImage::ImageRgb8(merged.image).into_rgba8(),
+            );
+            (scene, merged.motions)
+        }
+        HdrMethod::Radiance => {
+            let merged = imgvwr_hdr::merge_radiance(&frames).map_err(SceneError::Open)?;
+            let scene = imgvwr_core::scene_from_radiance(merged.width, merged.height, merged.rgb);
+            (scene, merged.motions)
+        }
+    };
+    let left_out = motions
         .iter()
         .zip(paths)
         .filter(|(motion, _)| motion.is_none())
         .map(|(_, path)| path.clone())
         .collect();
-    Ok(Fusion {
-        scene: imgvwr_core::scene_from_rgba(
-            image::DynamicImage::ImageRgb8(merged.image).into_rgba8(),
-        ),
-        left_out,
-    })
+    Ok(Fusion { scene, left_out })
 }
 
 #[cfg(test)]
@@ -98,10 +120,20 @@ mod tests {
             paths.push(path.display().to_string());
         }
 
-        let fusion = fused_scene(&paths).unwrap();
+        let fusion = fused_scene(&paths, HdrMethod::Fusion).unwrap();
         // Every frame made it in, and the caller is told so.
         assert_eq!(fusion.left_out, Vec::<String>::new());
         let scene = fusion.scene;
+
+        // The same bracket as radiance: a scene-referred image the develop
+        // pipeline will choose a look for — the sliders become HDR knobs.
+        let radiant = fused_scene(&paths, HdrMethod::Radiance).unwrap();
+        assert_eq!(radiant.scene.native_size(), (96, 64));
+        assert_eq!(
+            radiant.scene.rendering(),
+            imgvwr_core::Rendering::SceneReferred,
+            "radiance is light, not a finished picture"
+        );
         // Identical framing in, identical framing out — nothing was cropped.
         assert_eq!(scene.native_size(), (96, 64));
         let rendered = scene
@@ -125,7 +157,10 @@ mod tests {
         std::fs::write(&real, frame_jpeg(1000)).unwrap();
         let missing = dir.path().join("DSC_0021.JPG");
 
-        let result = fused_scene(&[real.display().to_string(), missing.display().to_string()]);
+        let result = fused_scene(
+            &[real.display().to_string(), missing.display().to_string()],
+            HdrMethod::Fusion,
+        );
         let error = format!("{:?}", result.err().expect("must fail"));
         assert!(error.contains("DSC_0021"), "{error}");
     }

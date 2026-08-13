@@ -49,6 +49,124 @@ pub fn scene_from_rgba(img: image::RgbaImage) -> Box<dyn SceneImage> {
     })
 }
 
+/// A scene over scene-linear float pixels synthesised elsewhere — the HDR
+/// radiance merge.
+///
+/// Scene-referred on purpose: this is measured light, not a finished
+/// picture, so the develop pipeline chooses a look for it and the ordinary
+/// tone controls work the full measured range. `1.0` is diffuse white and
+/// the headroom above it is real — which is precisely what makes the
+/// sliders HDR knobs rather than curve-benders over an 8-bit blend.
+pub fn scene_from_radiance(width: u32, height: u32, rgb: Vec<f32>) -> Box<dyn SceneImage> {
+    Box::new(RadianceScene { width, height, rgb })
+}
+
+struct RadianceScene {
+    width: u32,
+    height: u32,
+    rgb: Vec<f32>,
+}
+
+impl SceneImage for RadianceScene {
+    fn native_size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    fn rendering(&self) -> Rendering {
+        Rendering::SceneReferred
+    }
+
+    fn as_shot(&self) -> WhiteBalance {
+        // The radiance came from delivery files that were already
+        // white-balanced against D65; the merge does not change that.
+        WhiteBalance::D65
+    }
+
+    fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
+        let (rx, ry, rw, rh) = req.region.to_pixels(self.width, self.height);
+        let (dst_w, dst_h) = thumb_dimensions(rw, rh, req.max_edge.max(1));
+        if dst_w == 0 || dst_h == 0 {
+            return Err(SceneError::Render("empty image".into()));
+        }
+        let mut rgb = resample_area_f32(
+            &self.rgb,
+            self.width,
+            (rx, ry, rw, rh),
+            dst_w,
+            dst_h,
+        );
+
+        let gains = white_balance_gains(self.as_shot(), req.white_balance);
+        if gains != [1.0, 1.0, 1.0] {
+            for px in rgb.chunks_exact_mut(3) {
+                px[0] *= gains[0];
+                px[1] *= gains[1];
+                px[2] *= gains[2];
+            }
+        }
+
+        Ok(LinearImage {
+            width: dst_w,
+            height: dst_h,
+            rgb,
+        })
+    }
+
+    fn neutral_at(
+        &self,
+        x: f32,
+        y: f32,
+        current: WhiteBalance,
+    ) -> Result<WhiteBalance, SceneError> {
+        crate::scene::neutral_by_measurement(self, x, y, current)
+    }
+}
+
+/// Area-average downscale of already-linear samples: the float sibling of
+/// [`resample_to_linear`], with no transfer function to undo.
+fn resample_area_f32(
+    rgb: &[f32],
+    src_w: u32,
+    region: (u32, u32, u32, u32),
+    dst_w: u32,
+    dst_h: u32,
+) -> Vec<f32> {
+    let stride = src_w as usize;
+    let (rx, ry, rw, rh) = (
+        region.0 as usize,
+        region.1 as usize,
+        region.2 as usize,
+        region.3 as usize,
+    );
+    let (dw, dh) = (dst_w as usize, dst_h as usize);
+    let mut out = vec![0f32; dw * dh * 3];
+
+    for dy in 0..dh {
+        let y0 = dy * rh / dh;
+        let y1 = (((dy + 1) * rh).div_ceil(dh)).min(rh).max(y0 + 1);
+        for dx in 0..dw {
+            let x0 = dx * rw / dw;
+            let x1 = (((dx + 1) * rw).div_ceil(dw)).min(rw).max(x0 + 1);
+            let (mut r, mut g, mut b) = (0f32, 0f32, 0f32);
+            for y in y0..y1 {
+                let row = ((ry + y) * stride + rx) * 3;
+                for x in x0..x1 {
+                    let px = row + x * 3;
+                    r += rgb[px];
+                    g += rgb[px + 1];
+                    b += rgb[px + 2];
+                }
+            }
+            let n = ((y1 - y0) * (x1 - x0)) as f32;
+            let o = (dy * dw + dx) * 3;
+            out[o] = r / n;
+            out[o + 1] = g / n;
+            out[o + 2] = b / n;
+        }
+    }
+    out
+}
+
 impl SceneFormat for ImageCrateFormat {
     fn id(&self) -> &'static str {
         "image-crate"

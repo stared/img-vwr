@@ -117,11 +117,20 @@ pub struct DevelopService {
     next_token: AtomicU64,
     conn: Mutex<Connection>,
     /// Paths that open as a fused exposure bracket rather than as the file:
-    /// the face frame's path → every frame of its bracket. The frontend
-    /// detects the brackets (it has the EXIF) and registers them here; from
-    /// then on the fused photograph is what this path *is* — viewing,
-    /// editing and export all pass through `scene_for` and never know.
-    fusions: Mutex<HashMap<String, Vec<String>>>,
+    /// the face frame's path → its recipe. The frontend detects the
+    /// brackets (it has the EXIF) and registers them here; from then on the
+    /// fused photograph is what this path *is* — viewing, editing and
+    /// export all pass through `scene_for` and never know.
+    fusions: Mutex<HashMap<String, FusionRecipe>>,
+}
+
+/// Everything a path needs to open as a merge: which frames, and how they
+/// become one photograph.
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FusionRecipe {
+    pub frames: Vec<String>,
+    pub method: crate::services::hdr::HdrMethod,
 }
 
 impl DevelopService {
@@ -183,7 +192,7 @@ impl DevelopService {
     /// Any open scene whose recipe changed is dropped, so a path that
     /// stopped (or started, or changed) being a bracket can never serve
     /// stale pixels.
-    pub fn set_fusions(&self, fusions: HashMap<String, Vec<String>>) {
+    pub fn set_fusions(&self, fusions: HashMap<String, FusionRecipe>) {
         let old = {
             let mut lock = self.fusions.lock().unwrap();
             std::mem::replace(&mut *lock, fusions.clone())
@@ -218,17 +227,17 @@ impl DevelopService {
         // error where a photograph should be.
         let fused = self.fusions.lock().unwrap().get(path).cloned();
         let (scene, hdr) = match fused {
-            Some(frames) => match crate::services::hdr::fused_scene(&frames) {
+            Some(recipe) => match crate::services::hdr::fused_scene(&recipe.frames, recipe.method) {
                 Ok(fusion) => {
                     let outcome = HdrOutcome::Fused {
-                        frames: frames.len() as u32,
+                        frames: recipe.frames.len() as u32,
                         left_out: fusion.left_out,
                     };
                     (fusion.scene, outcome)
                 }
                 Err(refusal) => {
                     let outcome = HdrOutcome::Refused {
-                        frames: frames.len() as u32,
+                        frames: recipe.frames.len() as u32,
                         reason: refusal.to_string(),
                     };
                     (self.registry.open(Path::new(path))?, outcome)
@@ -853,7 +862,11 @@ mod tests {
         assert!(!before.needs_render);
         assert_eq!(before.hdr, HdrOutcome::Plain);
 
-        svc.set_fusions(HashMap::from([(face.clone(), paths.clone())]));
+        let recipe = |frames: &[String]| FusionRecipe {
+            frames: frames.to_vec(),
+            method: crate::services::hdr::HdrMethod::Fusion,
+        };
+        svc.set_fusions(HashMap::from([(face.clone(), recipe(&paths))]));
 
         // After: the file at this path is one exposure, not the photograph,
         // so the webview must ask for a render — of the fusion. And the state
@@ -917,7 +930,10 @@ mod tests {
         let face_path = face.display().to_string();
         svc.set_fusions(HashMap::from([(
             face_path.clone(),
-            vec![face_path.clone(), other.display().to_string()],
+            FusionRecipe {
+                frames: vec![face_path.clone(), other.display().to_string()],
+                method: crate::services::hdr::HdrMethod::Fusion,
+            },
         )]));
 
         // The photograph still opens — as the face frame, whole — and the
