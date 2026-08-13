@@ -128,6 +128,24 @@ describe("needsDevelopedFrame", () => {
     });
     expect(needsDevelopedFrame(edited)).toBe(true);
   });
+
+  it("becomes true for a JPEG once it is cropped, sliders untouched", () => {
+    // The regression: a crop is the one edit outside the params, and a
+    // cropped photograph shown as its whole file is the crop silently not
+    // applying. Finishing a crop must switch to the developed frame.
+    const cropped = session({
+      settings: {
+        ...neutralSettings,
+        crop: { x: 0.1, y: 0.1, width: 0.5, height: 0.5, angle: 0 },
+      },
+    });
+    expect(needsDevelopedFrame(cropped)).toBe(true);
+    // A straighten alone changes the pixels just as surely.
+    const turned = session({
+      settings: { ...neutralSettings, crop: { x: 0, y: 0, width: 1, height: 1, angle: 1.5 } },
+    });
+    expect(needsDevelopedFrame(turned)).toBe(true);
+  });
 });
 
 describe("visibleRegion", () => {

@@ -14,6 +14,7 @@ import {
   ASPECT_CHOICES,
   fitted,
   FULL_CROP as WHOLE_FRAME,
+  isCropped,
   ratioIn,
   ratioOf,
   straightened,
@@ -545,14 +546,18 @@ export function needsDevelopedFrame(session: Session | null): boolean {
  * rendering of the current state.
  *
  * Derived from `PARAM_KEYS` rather than listing the fields, because a listing
- * silently stops being true the moment a slider is added.
+ * silently stops being true the moment a slider is added. The crop is the
+ * one edit that lives outside the params, and it counts: a cropped
+ * photograph shown as its whole file is the crop silently not applying,
+ * which is exactly what this predicate exists to prevent.
  */
 export function isNeutral(session: Session): boolean {
   const { settings, info } = session;
   return (
     settings.whiteBalance.temperature === info.asShot.temperature &&
     settings.whiteBalance.tint === info.asShot.tint &&
-    PARAM_KEYS.every((key) => settings.params[key] === 0)
+    PARAM_KEYS.every((key) => settings.params[key] === 0) &&
+    !isCropped(settings.crop)
   );
 }
 
