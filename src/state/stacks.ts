@@ -78,11 +78,30 @@ export function stackKeyOfPath(path: string): string {
   return `${dir}/${dot <= 0 ? name : name.slice(0, dot)}`;
 }
 
+/**
+ * Which photograph a file belongs to, HDR sets included.
+ *
+ * An HDR set widens the stack: five bracketed stems are one photograph, so
+ * every member's stack key maps onto the set's face path and the whole
+ * bracket collapses together. `hdrKeys` is that mapping (stack key → face
+ * path), and null means no set has a say.
+ */
+export function photographKeyOf(
+  entry: FileEntry,
+  hdrKeys: ReadonlyMap<string, string> | null,
+): string {
+  const key = stackKeyOf(entry);
+  return hdrKeys?.get(key) ?? key;
+}
+
 /** Every stack in the list, in the order their first member appears. */
-export function groupStacks(entries: FileEntry[]): Map<string, FileEntry[]> {
+export function groupStacks(
+  entries: FileEntry[],
+  hdrKeys: ReadonlyMap<string, string> | null = null,
+): Map<string, FileEntry[]> {
   const stacks = new Map<string, FileEntry[]>();
   for (const entry of entries) {
-    const key = stackKeyOf(entry);
+    const key = photographKeyOf(entry, hdrKeys);
     const members = stacks.get(key);
     if (members) members.push(entry);
     else stacks.set(key, [entry]);
@@ -121,30 +140,43 @@ export function leadOf(
  * The list with each stack reduced to one member.
  *
  * Order is preserved by keeping each stack where its first member sat, so
- * whatever the sort decided still holds.
+ * whatever the sort decided still holds. An HDR set is one photograph whose
+ * face frame stands for it — the fused picture lives behind that path — so
+ * the face wins over the jpg/raw rule unless the user picked a member.
  */
 export function collapseStacks(
   entries: FileEntry[],
   preferred: Record<string, string>,
   lead: StackLead,
+  hdrKeys: ReadonlyMap<string, string> | null = null,
 ): FileEntry[] {
-  const stacks = groupStacks(entries);
+  const stacks = groupStacks(entries, hdrKeys);
   const out: FileEntry[] = [];
   const done = new Set<string>();
   for (const entry of entries) {
-    const key = stackKeyOf(entry);
+    const key = photographKeyOf(entry, hdrKeys);
     if (done.has(key)) continue;
     done.add(key);
-    const shown = leadOf(stacks.get(key) ?? [entry], preferred[key], lead);
+    const members = stacks.get(key) ?? [entry];
+    // For an HDR group the key *is* the face path; a filter can hide the
+    // face, and then the group is fronted like any stack.
+    const face = members.find((m) => m.path === key);
+    const shown = face && preferred[key] === undefined ? face : leadOf(members, preferred[key], lead);
     if (shown) out.push(shown);
   }
   return out;
 }
 
 /** The other files that are the same photograph as this one. */
-export function siblingsOf(entries: FileEntry[], entry: FileEntry): FileEntry[] {
-  const key = stackKeyOf(entry);
-  return entries.filter((e) => e.path !== entry.path && stackKeyOf(e) === key);
+export function siblingsOf(
+  entries: FileEntry[],
+  entry: FileEntry,
+  hdrKeys: ReadonlyMap<string, string> | null = null,
+): FileEntry[] {
+  const key = photographKeyOf(entry, hdrKeys);
+  return entries.filter(
+    (e) => e.path !== entry.path && photographKeyOf(e, hdrKeys) === key,
+  );
 }
 
 /**

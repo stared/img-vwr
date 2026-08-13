@@ -351,6 +351,18 @@ async developPickWhiteBalance(path: string, x: number, y: number, settings: Deve
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Install which paths open as fused exposure brackets — the face frame's
+ * path mapped to every frame of its bracket, the whole folder at once.
+ * 
+ * Detection lives on the UI side, where the EXIF is; from this call on the
+ * registered paths simply *are* the fused photographs: the viewer shows
+ * the fusion, edits store against the face path, and export renders it.
+ * Nothing is written anywhere by this — the merge is virtual until Export.
+ */
+async developSetFusions(fusions: Partial<{ [key in string]: string[] }>) : Promise<void> {
+    await TAURI_INVOKE("develop_set_fusions", { fusions });
 }
 }
 
@@ -507,7 +519,13 @@ edited: boolean;
  * True when the webview cannot display this file itself, so the viewer
  * must go through the develop pipeline to show anything at all.
  */
-needsRender: boolean }
+needsRender: boolean; 
+/**
+ * What this path is showing, HDR-wise. The refusal used to be an
+ * eprintln, which meant a set that would not align was indistinguishable
+ * on screen from one that fused — the panel has to be able to say which.
+ */
+hdr: HdrOutcome }
 /**
  * Direct image count of one folder, computed in the background. Keyed by
  * absolute path, so it is never stale — no epoch needed.
@@ -625,6 +643,29 @@ formatHint: string }
  * separately, and would get wrong whenever events were coalesced or dropped.
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
+/**
+ * Whether the scene behind a path is a fused bracket, and if not, why not.
+ * 
+ * A total answer rather than an optional field: every open scene is exactly
+ * one of these, and the panel renders whichever it is told.
+ */
+export type HdrOutcome = 
+/**
+ * An ordinary file — no bracket registered at this path.
+ */
+{ kind: "plain" } | 
+/**
+ * The fused photograph. Alignment is per frame, so `left_out` names
+ * any frames that were misaligned and left out rather than ghosted
+ * in — facts the panel must state per file, not round up.
+ */
+{ kind: "fused"; frames: number; leftOut: string[] } | 
+/**
+ * A bracket was registered but its frames would not align to the pixel,
+ * so the path shows the face file alone. `reason` is the measurement
+ * that said no.
+ */
+{ kind: "refused"; frames: number; reason: string }
 /**
  * 256-bin distributions of the *developed* image — what the user is actually
  * looking at, so clipping shown here is clipping they can see. (The info

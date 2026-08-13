@@ -6,7 +6,7 @@
 //! is ~20 ms. So the service is built around holding a small number of scenes
 //! open, which is what makes slider dragging feel live.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -58,6 +58,30 @@ pub struct DevelopState {
     /// True when the webview cannot display this file itself, so the viewer
     /// must go through the develop pipeline to show anything at all.
     pub needs_render: bool,
+    /// What this path is showing, HDR-wise. The refusal used to be an
+    /// eprintln, which meant a set that would not align was indistinguishable
+    /// on screen from one that fused — the panel has to be able to say which.
+    pub hdr: HdrOutcome,
+}
+
+/// Whether the scene behind a path is a fused bracket, and if not, why not.
+///
+/// A total answer rather than an optional field: every open scene is exactly
+/// one of these, and the panel renders whichever it is told.
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum HdrOutcome {
+    /// An ordinary file — no bracket registered at this path.
+    Plain,
+    /// The fused photograph. Alignment is per frame, so `left_out` names
+    /// any frames that were misaligned and left out rather than ghosted
+    /// in — facts the panel must state per file, not round up.
+    #[serde(rename_all = "camelCase")]
+    Fused { frames: u32, left_out: Vec<String> },
+    /// A bracket was registered but its frames would not align to the pixel,
+    /// so the path shows the face file alone. `reason` is the measurement
+    /// that said no.
+    Refused { frames: u32, reason: String },
 }
 
 /// A rendered preview: the pixels live in the service under `token` and are
@@ -81,6 +105,9 @@ pub struct DevelopFrame {
 struct OpenScene {
     path: String,
     scene: Box<dyn SceneImage>,
+    /// Decided when the scene opens — the one moment the fusion runs — and
+    /// reported by `state` for as long as the scene lives.
+    hdr: HdrOutcome,
 }
 
 pub struct DevelopService {
@@ -89,6 +116,12 @@ pub struct DevelopService {
     frames: Mutex<VecDeque<(u64, Vec<u8>)>>,
     next_token: AtomicU64,
     conn: Mutex<Connection>,
+    /// Paths that open as a fused exposure bracket rather than as the file:
+    /// the face frame's path → every frame of its bracket. The frontend
+    /// detects the brackets (it has the EXIF) and registers them here; from
+    /// then on the fused photograph is what this path *is* — viewing,
+    /// editing and export all pass through `scene_for` and never know.
+    fusions: Mutex<HashMap<String, Vec<String>>>,
 }
 
 impl DevelopService {
@@ -139,7 +172,28 @@ impl DevelopService {
             frames: Mutex::new(VecDeque::new()),
             next_token: AtomicU64::new(1),
             conn: Mutex::new(conn),
+            fusions: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Install which paths open as fused brackets — the whole folder's worth
+    /// at once, replacing whatever was there: detection answers for the
+    /// folder, so its answer is installed the same way.
+    ///
+    /// Any open scene whose recipe changed is dropped, so a path that
+    /// stopped (or started, or changed) being a bracket can never serve
+    /// stale pixels.
+    pub fn set_fusions(&self, fusions: HashMap<String, Vec<String>>) {
+        let old = {
+            let mut lock = self.fusions.lock().unwrap();
+            std::mem::replace(&mut *lock, fusions.clone())
+        };
+        let mut open = self.open.lock().unwrap();
+        open.retain(|s| old.get(&s.path) == fusions.get(&s.path));
+    }
+
+    fn is_fused(&self, path: &str) -> bool {
+        self.fusions.lock().unwrap().contains_key(path)
     }
 
     /// Open `path`, reusing an already-open scene when we have it.
@@ -157,10 +211,35 @@ impl DevelopService {
 
         // Opening is slow, so it happens outside the lock: two viewers landing
         // on the same new image would otherwise serialise behind each other.
-        let scene = self.registry.open(Path::new(path))?;
+        // A registered bracket opens as its fused photograph; everything else
+        // opens as the file it is. A fusion that *refuses* — frames that do
+        // not align to the pixel — falls back to the face file: the honest
+        // renderings are the merge or the frame, never a ghost and never an
+        // error where a photograph should be.
+        let fused = self.fusions.lock().unwrap().get(path).cloned();
+        let (scene, hdr) = match fused {
+            Some(frames) => match crate::services::hdr::fused_scene(&frames) {
+                Ok(fusion) => {
+                    let outcome = HdrOutcome::Fused {
+                        frames: frames.len() as u32,
+                        left_out: fusion.left_out,
+                    };
+                    (fusion.scene, outcome)
+                }
+                Err(refusal) => {
+                    let outcome = HdrOutcome::Refused {
+                        frames: frames.len() as u32,
+                        reason: refusal.to_string(),
+                    };
+                    (self.registry.open(Path::new(path))?, outcome)
+                }
+            },
+            None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
+        };
         let entry = Arc::new(OpenScene {
             path: path.to_owned(),
             scene,
+            hdr,
         });
 
         let mut open = self.open.lock().unwrap();
@@ -194,8 +273,11 @@ impl DevelopService {
             settings: stored.unwrap_or(opening),
             // A RAW file has no decoder in the webview; anything the codec
             // registry handles can be shown directly and only needs the
-            // develop path once it has actually been edited.
-            needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)),
+            // develop path once it has actually been edited. A fused bracket
+            // is the other exception: the file at this path is one exposure,
+            // not the photograph, so only a render shows the truth.
+            needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)) || self.is_fused(path),
+            hdr: entry.hdr.clone(),
         })
     }
 
@@ -421,7 +503,19 @@ impl DevelopService {
                 )
                 .ok_or_else(|| "developed buffer size mismatch".to_string())?;
 
-                let destination = export::destination_for(folder, path, plan.format.extension());
+                // A fused bracket says so in its name: the export folder ends
+                // up beside the frames' own exports, and "DSC_1156-HDR" is
+                // the honest answer to which file is the merge.
+                let named = if self.is_fused(path) {
+                    let stem = Path::new(path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("image");
+                    format!("{stem}-HDR")
+                } else {
+                    path.clone()
+                };
+                let destination = export::destination_for(folder, &named, plan.format.extension());
                 export::write_rendered(img, plan, exif, &destination)?;
                 Ok(Exported {
                     source,
@@ -723,6 +817,121 @@ mod tests {
         .save(&path)
         .unwrap();
         path
+    }
+
+    /// A tiny bracket on disk: the same textured scene at three exposures.
+    /// Blobby texture, not per-pixel noise — verified alignment refuses
+    /// static, and rightly.
+    fn bracket(dir: &Path) -> Vec<String> {
+        let noise = |gx: u32, gy: u32, salt: u32| -> i32 {
+            (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97)) as i32
+                % 61
+                - 30
+        };
+        let mut paths = Vec::new();
+        for (i, gain) in [250u32, 1000, 4000].iter().enumerate() {
+            let img = image::RgbImage::from_fn(60, 40, |x, y| {
+                let base = (90 + noise(x / 10, y / 10, 1) + noise(x / 3, y / 3, 2)).clamp(0, 255);
+                let v = (base as u32 * gain / 1000).min(255) as u8;
+                image::Rgb([v, v, v])
+            });
+            let path = dir.join(format!("DSC_000{i}.JPG"));
+            image::DynamicImage::ImageRgb8(img).save(&path).unwrap();
+            paths.push(path.display().to_string());
+        }
+        paths
+    }
+
+    #[test]
+    fn a_registered_bracket_is_the_fused_photograph_everywhere_behind_one_path() {
+        let (dir, svc) = service();
+        let paths = bracket(dir.path());
+        let face = paths[1].clone();
+
+        // Before registration the face is an ordinary JPEG: shown directly.
+        let before = svc.state(&face).unwrap();
+        assert!(!before.needs_render);
+        assert_eq!(before.hdr, HdrOutcome::Plain);
+
+        svc.set_fusions(HashMap::from([(face.clone(), paths.clone())]));
+
+        // After: the file at this path is one exposure, not the photograph,
+        // so the webview must ask for a render — of the fusion. And the state
+        // says so, which is what the panel shows the user.
+        let state = svc.state(&face).unwrap();
+        assert!(state.needs_render);
+        assert_eq!((state.width, state.height), (60, 40), "same framing, fused");
+        assert_eq!(
+            state.hdr,
+            HdrOutcome::Fused {
+                frames: 3,
+                left_out: vec![],
+            }
+        );
+
+        // The export of that path renders the fusion and says so in the name;
+        // the folder of originals gains nothing.
+        let out = tempfile::tempdir().unwrap();
+        let job = ExportJob::Render {
+            path: face.clone(),
+            exif: crate::services::export::ExifSource::None,
+        };
+        let exported = svc
+            .export(
+                &job,
+                &plan(
+                    out.path(),
+                    ExportFormat::Jpeg { quality: 90 },
+                    crate::services::export::ExportSize::Full,
+                ),
+            )
+            .unwrap();
+        assert!(exported.path.ends_with("DSC_0001-HDR.jpg"), "{}", exported.path);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3 + 1, "3 frames + develop.db");
+
+        // Un-registering drops the fused scene: the path is the file again.
+        svc.set_fusions(HashMap::new());
+        let plain = svc.state(&face).unwrap();
+        assert!(!plain.needs_render);
+        assert_eq!(plain.hdr, HdrOutcome::Plain);
+        assert_eq!((plain.width, plain.height), (60, 40));
+    }
+
+    #[test]
+    fn a_bracket_that_cannot_be_aligned_shows_its_face_rather_than_an_error() {
+        let (dir, svc) = service();
+        // Two frames that share nothing: alignment must refuse them.
+        let face = dir.path().join("DSC_0100.JPG");
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(60, 40, |x, y| {
+            image::Rgb([((x * 4) % 251) as u8, ((y * 7) % 251) as u8, 40])
+        }))
+        .save(&face)
+        .unwrap();
+        let other = dir.path().join("DSC_0101.JPG");
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(60, 40, |x, y| {
+            image::Rgb([(((x / 7) + (y / 5)) % 2 * 200) as u8, 30, 220])
+        }))
+        .save(&other)
+        .unwrap();
+
+        let face_path = face.display().to_string();
+        svc.set_fusions(HashMap::from([(
+            face_path.clone(),
+            vec![face_path.clone(), other.display().to_string()],
+        )]));
+
+        // The photograph still opens — as the face frame, whole — and the
+        // state carries the refusal, so the panel can say why instead of the
+        // user wondering where the HDR went.
+        let state = svc.state(&face_path).unwrap();
+        assert_eq!((state.width, state.height), (60, 40));
+        match state.hdr {
+            HdrOutcome::Refused { frames, ref reason } => {
+                assert_eq!(frames, 2);
+                assert!(!reason.is_empty());
+            }
+            ref other => panic!("expected a refusal, got {other:?}"),
+        }
     }
 
     #[test]

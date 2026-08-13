@@ -47,13 +47,16 @@ export interface Candidate {
   stack: FileEntry[];
   /** True when this photograph has a stored edit. */
   edited: boolean;
+  /** True when this path fronts an HDR set: the file is one exposure of a
+   * fused photograph, so only a render can export the truth. */
+  hdr: boolean;
 }
 
 /** A job, and why it is that job — the dialog explains itself with this. */
 export interface Planned {
   entry: FileEntry;
   job: ExportJob;
-  reason: "edited" | "camera-jpg" | "no-jpg" | "always-render";
+  reason: "edited" | "hdr" | "camera-jpg" | "no-jpg" | "always-render";
 }
 
 /** The JPEG of this photograph, if the camera wrote one. */
@@ -83,6 +86,9 @@ export function planFor(candidate: Candidate, options: ExportOptions): Planned {
   });
 
   if (candidate.edited) return render("edited");
+  // An HDR face never copies: the JPEG at its path is one exposure, and the
+  // photograph is the fusion the develop service renders behind that path.
+  if (candidate.hdr) return render("hdr");
   if (options.unedited === "render") return render("always-render");
   // A PNG export has no camera JPEG to hand over: copying one would be
   // ignoring the format that was asked for.
@@ -122,6 +128,7 @@ export function candidatesOf(
   chosen: FileEntry[],
   all: FileEntry[],
   edited: ReadonlySet<string>,
+  hdrFaces: ReadonlySet<string> = new Set(),
 ): Candidate[] {
   const byKey = new Map<string, FileEntry[]>();
   for (const entry of all) {
@@ -138,6 +145,7 @@ export function candidatesOf(
       // A photograph is edited when any of its files is: the raw and the JPEG
       // are one frame, and the edit was made on whichever one was on screen.
       edited: stack.some((f) => edited.has(f.path)),
+      hdr: hdrFaces.has(entry.path),
     };
   });
 }

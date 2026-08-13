@@ -287,6 +287,14 @@ export interface DevelopStore {
   prefetch: (paths: string[]) => void;
   /** Neighbours already opened and developed, by path. */
   warm: Record<string, Warm>;
+  /**
+   * These paths just changed what they mean — an HDR registration arrived
+   * after they were opened, so what is in hand shows the wrong thing.
+   * Forgets warm copies and reopens the one on screen; everything else is
+   * untouched, because an unaffected session losing its frame would be a
+   * flash of white for nothing.
+   */
+  dropStale: (paths: string[]) => void;
   setParam: (key: ParamKey, value: number) => void;
   setTemperature: (kelvin: number) => void;
   setTint: (tint: number) => void;
@@ -841,6 +849,21 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     },
 
     close: () => set({ session: null, opening: null }),
+
+    dropStale: (paths) => {
+      const stale = new Set(paths);
+      const warm = get().warm;
+      const kept = Object.fromEntries(Object.entries(warm).filter(([p]) => !stale.has(p)));
+      if (Object.keys(kept).length !== Object.keys(warm).length) set({ warm: kept });
+      const current = get().session?.path ?? get().opening ?? null;
+      if (current !== null && stale.has(current)) {
+        // Through the front door rather than patching the session in place:
+        // `open` early-outs on the same path, so the session has to be gone
+        // before it is asked for again.
+        set({ session: null, opening: null });
+        void get().open(current);
+      }
+    },
 
     setParam: (key, value) => {
       const session = get().session;

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/imgvwr-core", "crates/imgvwr-develop", "crates/imgvwr-embed", "crates/imgvwr-raw"]
+members = ["crates/imgvwr-core", "crates/imgvwr-develop", "crates/imgvwr-embed", "crates/imgvwr-hdr", "crates/imgvwr-raw"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -17,6 +17,12 @@ overflow-checks = false
 # own codegen units; unoptimized it costs ~30× per image. It is glue code we
 # rarely step through — trade its debuggability for dev-build speed.
 [profile.dev.package.imgvwr-embed]
+opt-level = 2
+
+# The hdr crate is per-pixel float loops over whole sensors' worth of frames;
+# unoptimized, one merge takes the better part of a minute. Same trade as
+# imgvwr-embed: it is a leaf we rarely step through.
+[profile.dev.package.imgvwr-hdr]
 opt-level = 2
 
 [package]
@@ -40,6 +46,7 @@ tauri-build = { version = "2", features = [] }
 imgvwr-core = { path = "crates/imgvwr-core" }
 imgvwr-develop = { path = "crates/imgvwr-develop" }
 imgvwr-embed = { path = "crates/imgvwr-embed" }
+imgvwr-hdr = { path = "crates/imgvwr-hdr" }
 imgvwr-raw = { path = "crates/imgvwr-raw" }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"

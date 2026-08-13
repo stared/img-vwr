@@ -1018,6 +1018,20 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
+/* The face of an HDR set: this cell is the fused photograph, not one file. */
+.thumb-hdr {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 1;
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--border);
+}
+
 .thumb-frame img {
   max-width: 100%;
   max-height: 100%;
@@ -1467,6 +1481,42 @@ button.stats-row:hover .stats-label {
   color: var(--danger);
 }
 
+/* The HDR set as rows of its files: name, exposure step, fate. One row is
+   the fused photograph's own; the others are single exposures a click puts
+   on screen. A misaligned frame is dim, not red — leaving it out is the
+   honest rendering, not a failure to repair. */
+.develop-toggle.hdr-frame {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: calc(100% - 16px);
+  text-align: left;
+}
+
+.hdr-frame-name {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.hdr-frame-ev {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hdr-frame-fate {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.develop-toggle.hdr-frame.current {
+  border-color: var(--accent);
+}
+
+.develop-toggle.hdr-frame.current .hdr-frame-fate {
+  color: var(--accent);
+}
+
 .develop-group {
   padding: 6px 0 2px;
   border-bottom: 1px solid var(--border);
@@ -1763,6 +1813,63 @@ button.stats-row:hover .stats-label {
 
 .filmstrip-cell:hover {
   border-color: var(--border);
+}
+
+/* A collapsed stack looks like the pile it is: card edges peek out behind
+   the shown member. `overflow: hidden` stays on the cell, so the "cards"
+   are drawn as stacked shadows rather than real offset boxes. */
+.filmstrip-cell.stacked {
+  overflow: visible;
+  box-shadow:
+    3px -3px 0 -1px color-mix(in srgb, var(--bg-overlay) 80%, white),
+    6px -6px 0 -2px color-mix(in srgb, var(--bg-overlay) 55%, white);
+  margin-left: 6px;
+}
+
+.filmstrip-cell.stacked img {
+  /* The pile's own frame clips its picture instead. */
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.filmstrip-count {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  z-index: 1;
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* The badge is shared with the grid, but a strip cell is smaller. */
+.filmstrip-cell .thumb-hdr {
+  right: 3px;
+  top: 3px;
+}
+
+/* A stack spread open: its members lie side by side under one accent
+   thread, so the run reads as one photograph laid out, not loose files. */
+.filmstrip-cell.unstacked::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* The members behind the shown one: present but quieter, until looked at. */
+.filmstrip-cell.member img {
+  opacity: 0.7;
+}
+
+.filmstrip-cell.member:hover img {
+  opacity: 1;
 }
 
 .filmstrip-cell.selected {

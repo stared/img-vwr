@@ -20,7 +20,7 @@ import {
   type Candidate,
 } from "../../state/export";
 import { effectiveDims } from "../../state/derived";
-import { chosenEntries, useAppStore } from "../../state/store";
+import { chosenEntries, hdrOf, useAppStore } from "../../state/store";
 import { parseNumber, Slider } from "./Slider";
 
 /**
@@ -109,12 +109,15 @@ export function ExportDialog() {
     const chosen = chosenEntries(state);
     const all = state.entries;
     let live = true;
+    // Which paths front HDR sets — those must render whatever the unedited
+    // policy says, because the file at the path is one exposure of a fusion.
+    const hdrFaces = new Set(hdrOf(state).byFace.keys());
     void developEditedPaths(all.map((e) => e.path)).then(
       (edited) => {
-        if (live) setCandidates(candidatesOf(chosen, all, new Set(edited)));
+        if (live) setCandidates(candidatesOf(chosen, all, new Set(edited), hdrFaces));
       },
       () => {
-        if (live) setCandidates(candidatesOf(chosen, all, new Set()));
+        if (live) setCandidates(candidatesOf(chosen, all, new Set(), hdrFaces));
       },
     );
     return () => {

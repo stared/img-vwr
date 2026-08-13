@@ -36,6 +36,19 @@ impl ImageCrateFormat {
     }
 }
 
+/// A scene over pixels that were decoded — or synthesised — elsewhere.
+///
+/// The HDR merge hands its fused picture here, so a photograph that exists
+/// only in memory develops exactly like a JPEG on disk would: same
+/// linearisation, same white balance model, same everything downstream.
+pub fn scene_from_rgba(img: image::RgbaImage) -> Box<dyn SceneImage> {
+    Box::new(ImageCrateScene {
+        width: img.width(),
+        height: img.height(),
+        rgba: img.into_raw(),
+    })
+}
+
 impl SceneFormat for ImageCrateFormat {
     fn id(&self) -> &'static str {
         "image-crate"

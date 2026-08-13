@@ -2,8 +2,9 @@ import { useEffect, useMemo } from "react";
 
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
-import { groupStacks, siblingsOf } from "../../state/stacks";
-import { useAppStore, useSelectedEntry } from "../../state/store";
+import { exposureValue, hdrLabel } from "../../state/hdr";
+import { groupStacks, siblingsOf, stackKeyOf } from "../../state/stacks";
+import { hdrOf, useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
   CAPTION_LABELS,
@@ -86,6 +87,18 @@ export function DevelopPanel() {
   const toggleLoupe = useDevelopStore((s) => s.toggleLoupe);
   const caption = useDevelopStore((s) => s.caption);
   const setCaption = useDevelopStore((s) => s.setCaption);
+  // The set this photograph belongs to, from either side: the face fronts
+  // it, a member sits inside it. The *outcome* — fused, and which frames
+  // made it — comes from the session, because the backend ran the alignment.
+  const hdrSet = useAppStore((s) => {
+    if (entry === null) return null;
+    const hdr = hdrOf(s);
+    const direct = hdr.byFace.get(entry.path);
+    if (direct !== undefined) return direct;
+    const facePath = hdr.keyByStack.get(stackKeyOf(entry));
+    return facePath === undefined ? null : (hdr.byFace.get(facePath) ?? null);
+  });
+  const allMeta = useAppStore((s) => s.meta);
   const view = useAppStore((s) => s.viewerView);
   const fitted = useAppStore((s) => s.viewerFitted);
   const zoomFit = useAppStore((s) => s.viewerZoomFit);
@@ -156,6 +169,90 @@ export function DevelopPanel() {
       </div>
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
+
+      {/* The HDR set as its files, not as a footnote over the sliders. One
+          row per frame with its exposure step and its fate — fused, or
+          misaligned and left out — because alignment is per frame and the
+          panel must say which, not round the set up. Clicking a row shows
+          that frame alone; clicking the face's row is the way back to the
+          fused photograph. The outcome is the backend's word: it ran the
+          alignment, this panel only repeats the measurement. */}
+      {hdrSet !== null && (() => {
+        const face = hdrSet.face;
+        const onFace = entry.path === face.path;
+        const outcome = onFace ? info.hdr : null;
+        const leftOut = outcome?.kind === "fused" ? new Set(outcome.leftOut) : null;
+        const evOf = (path: string) => {
+          const exif = allMeta[path]?.exif;
+          return exif === undefined || exif === null ? null : exposureValue(exif);
+        };
+        const faceEv = evOf(face.path);
+        const note =
+          outcome === null
+            ? "showing one frame of the set alone"
+            : outcome.kind === "fused"
+              ? leftOut !== null && leftOut.size > 0
+                ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused — the misaligned are left out, not ghosted in`
+                : `${hdrLabel(hdrSet)} — every frame aligned to the pixel and fused`
+              : outcome.kind === "refused"
+                ? "no two frames align to the pixel — no merge, this frame stands alone"
+                : "opening the fusion…";
+        return (
+          <section className="develop-group">
+            <h4>HDR</h4>
+            <p
+              className="develop-note"
+              title={
+                outcome?.kind === "refused"
+                  ? outcome.reason
+                  : "the merge is virtual — nothing is written beside the originals; export renders it"
+              }
+            >
+              {note}
+            </p>
+            {hdrSet.frames.map((frame) => {
+              const isFace = frame.path === face.path;
+              const ev = evOf(frame.path);
+              const step = faceEv === null || ev === null ? null : faceEv - ev;
+              const fate = isFace
+                ? outcome?.kind === "refused"
+                  ? "shown alone"
+                  : "the merge"
+                : leftOut !== null
+                  ? leftOut.has(frame.path)
+                    ? "misaligned"
+                    : "fused"
+                  : outcome?.kind === "refused"
+                    ? "misaligned"
+                    : "one exposure";
+              return (
+                <button
+                  key={frame.path}
+                  className={
+                    entry.path === frame.path
+                      ? "develop-toggle hdr-frame current"
+                      : "develop-toggle hdr-frame"
+                  }
+                  title={
+                    isFace
+                      ? "the middle exposure; its path is where the fusion lives — click to look at the merge"
+                      : "click to look at this frame alone"
+                  }
+                  onClick={() => preferMember(frame.path)}
+                >
+                  <span className="hdr-frame-name">{frame.name}</span>
+                  <span className="hdr-frame-ev">
+                    {step === null
+                      ? ""
+                      : `${step > 0 ? "+" : ""}${step.toFixed(1)} EV`}
+                  </span>
+                  <span className="hdr-frame-fate">{fate}</span>
+                </button>
+              );
+            })}
+          </section>
+        );
+      })()}
 
       {/* The other file of a pair, named rather than implied. Clicking swaps
           which one the stack shows, so the choice is per photograph — usually

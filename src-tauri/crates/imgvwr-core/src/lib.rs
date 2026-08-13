@@ -9,7 +9,7 @@ pub mod thumbs;
 
 pub use cache_key::thumb_cache_key;
 pub use codec::{CodecError, CodecRegistry, DecodedImage, ImageCodec};
-pub use image_scene::ImageCrateFormat;
+pub use image_scene::{scene_from_rgba, ImageCrateFormat};
 pub use meta::{read_meta, ExifSubset, ImageMeta};
 pub use scan::{list_subdirs, scan_dir, scan_dir_recursive, scan_stream, DirEntry, FileEntry};
 pub use scene::{

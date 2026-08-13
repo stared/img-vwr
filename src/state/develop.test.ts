@@ -53,6 +53,7 @@ function session(over: Partial<Session> = {}, info: Partial<DevelopState> = {}):
       settings: neutralSettings,
       edited: false,
       needsRender: false,
+      hdr: { kind: "plain" },
       ...info,
     },
     settings: neutralSettings,

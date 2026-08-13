@@ -288,6 +288,12 @@ export async function developExport(job: ExportJob, plan: ExportPlan): Promise<E
   return unwrap(await commands.developExport(job, plan));
 }
 
+/** Tell the develop service which paths open as fused HDR sets — the face
+ * frame's path mapped to every frame of its set, the whole folder at once. */
+export async function developSetFusions(fusions: Record<string, string[]>): Promise<void> {
+  return commands.developSetFusions(fusions);
+}
+
 /**
  * URL for a rendered frame. The token changes on every render, which is what
  * stops the webview's image cache from serving the previous edit.

@@ -38,6 +38,9 @@ export function scopeLoading(scope: Scope, epoch: number) {
     selectedIndex: null,
     selection: [] as string[],
     selectionAnchor: null,
+    // The new folder's stacks are new; a spread left open would be keyed to
+    // photographs that no longer exist.
+    expandedStacks: {} as Record<string, true>,
     similarity: null,
     embedProgress: null,
     // People are of the previous folder; a finished detection left standing

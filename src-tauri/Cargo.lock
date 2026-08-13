@@ -2691,6 +2691,7 @@ dependencies = [
  "imgvwr-core",
  "imgvwr-develop",
  "imgvwr-embed",
+ "imgvwr-hdr",
  "imgvwr-raw",
  "notify",
  "objc2 0.6.4",
@@ -2754,6 +2755,14 @@ dependencies = [
  "serde_json",
  "specta",
  "tokenizers",
+]
+
+[[package]]
+name = "imgvwr-hdr"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rayon",
 ]
 
 [[package]]

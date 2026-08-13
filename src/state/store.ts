@@ -33,9 +33,11 @@ import {
   type Scope,
 } from "./collection";
 import { DEFAULT_OPTIONS, type ExportOptions } from "./export";
+import { hdrSetsOf, type HdrSet } from "./hdr";
 import type { Query, Sort } from "./query";
 import {
   collapseStacks,
+  photographKeyOf,
   siblingsOf,
   stackKeyOf,
   stackKeyOfPath,
@@ -158,6 +160,17 @@ export interface AppState {
    * this particular frame is the one worth opening as its negative.
    */
   preferredMember: Record<string, string>;
+  /**
+   * Photograph keys whose stack is spread open in the filmstrip, showing
+   * every member as its own cell.
+   *
+   * Strip-only presentation: the visible list stays collapsed — one
+   * photograph, one index — and the spread cells are extras the strip lays
+   * beside the shown member. Clicking a stacked cell that is already the
+   * lead toggles this, which is what makes the pile openable without any
+   * new control.
+   */
+  expandedStacks: Record<string, true>;
   /**
    * Index into the VISIBLE (query-applied) list of the LEAD photograph, or
    * null when nothing is selected.
@@ -283,6 +296,7 @@ interface AppActions {
   toggleStackLead: () => void;
   /** Show `path` in place of whatever its stack was showing. */
   preferMember: (path: string) => void;
+  toggleStackExpanded: (key: string) => void;
   /** Select one image, or nothing (null) — clicking empty space, or Esc. */
   select: (index: number | null) => void;
   /** Click on an image with modifiers held; see `selectMode`. */
@@ -361,6 +375,7 @@ export const initialState: AppState = {
   stacking: true,
   stackLead: "jpg",
   preferredMember: {},
+  expandedStacks: {},
   selectedIndex: null,
   selection: [],
   selectionAnchor: null,
@@ -944,11 +959,20 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set((s) => {
       const entry = s.entries.find((e) => e.path === path);
       if (!entry) return {};
+      // Keyed by the photograph, which for a frame of an HDR set is the set
+      // — picking a member must swap what the whole bracket shows.
+      const key = photographKeyOf(entry, hdrOf(s).keyByStack);
       return withSelectionHeld(
         s,
-        { preferredMember: { ...s.preferredMember, [stackKeyOf(entry)]: path } },
+        { preferredMember: { ...s.preferredMember, [key]: path } },
         path,
       );
+    }),
+
+  toggleStackExpanded: (key) =>
+    set((s) => {
+      const { [key]: open, ...rest } = s.expandedStacks;
+      return { expandedStacks: open ? rest : { ...rest, [key]: true } };
     }),
 
   select: (index) => set((s) => withSelection(s, index)),
@@ -1136,8 +1160,47 @@ let visibleCache: {
   stacking: boolean;
   lead: StackLead;
   preferred: Record<string, string>;
+  hdrKeys: ReadonlyMap<string, string> | null;
   result: FileEntry[];
 } | null = null;
+
+/* The folder's HDR sets, derived from entries + streamed EXIF. Memoized by
+ * input identity like the visible list — and additionally by *answer*: a
+ * meta batch that taught us nothing about brackets keeps the previous maps'
+ * identity, so collapse and fusion registration never rework a non-change. */
+let hdrCache: {
+  entries: FileEntry[];
+  meta: Record<string, ImageMeta>;
+  signature: string;
+  sets: HdrSet[];
+  /** Every member stem's stack key → the set's face path. */
+  keyByStack: ReadonlyMap<string, string>;
+  /** Face path → its set, for anything fronting one photograph. */
+  byFace: ReadonlyMap<string, HdrSet>;
+} | null = null;
+
+export function hdrOf(state: Pick<AppState, "entries" | "meta">): {
+  sets: HdrSet[];
+  keyByStack: ReadonlyMap<string, string>;
+  byFace: ReadonlyMap<string, HdrSet>;
+} {
+  const c = hdrCache;
+  if (c && c.entries === state.entries && c.meta === state.meta) return c;
+  const sets = hdrSetsOf(state.entries, (path) => state.meta[path] ?? null);
+  const signature = sets.map((s) => `${s.face.path}:${s.frames.length}`).join("|");
+  if (c && c.signature === signature) {
+    hdrCache = { ...c, entries: state.entries, meta: state.meta };
+    return hdrCache;
+  }
+  const keyByStack = new Map<string, string>();
+  const byFace = new Map<string, HdrSet>();
+  for (const set of sets) {
+    byFace.set(set.face.path, set);
+    for (const frame of set.frames) keyByStack.set(stackKeyOf(frame), set.face.path);
+  }
+  hdrCache = { entries: state.entries, meta: state.meta, signature, sets, keyByStack, byFace };
+  return hdrCache;
+}
 
 /** Entries with filters + sort applied, memoized across all callers. */
 export function visibleOf(
@@ -1162,6 +1225,7 @@ export function visibleOf(
   const scores = usesScores(query) ? (state.similarity?.scores ?? null) : null;
   const labels = usesLabels(query) ? state.labels : null;
   const people = usesPeople(query) ? state.peopleByPath : null;
+  const collapsing = stacksCollapse(state);
   return applyQueryMemo(
     state.entries,
     query,
@@ -1169,9 +1233,10 @@ export function visibleOf(
     scores,
     labels,
     people,
-    stacksCollapse(state),
+    collapsing,
     state.stackLead,
     state.preferredMember,
+    collapsing ? hdrOf(state).keyByStack : null,
   );
 }
 
@@ -1185,6 +1250,7 @@ function applyQueryMemo(
   stacking: boolean,
   lead: StackLead,
   preferred: Record<string, string>,
+  hdrKeys: ReadonlyMap<string, string> | null,
 ): FileEntry[] {
   const c = visibleCache;
   if (
@@ -1197,7 +1263,8 @@ function applyQueryMemo(
     c.people === people &&
     c.stacking === stacking &&
     c.lead === lead &&
-    c.preferred === preferred
+    c.preferred === preferred &&
+    c.hdrKeys === hdrKeys
   ) {
     return c.result;
   }
@@ -1209,8 +1276,20 @@ function applyQueryMemo(
   });
   // Stacking collapses what the query already decided, so a filter that
   // matches only one member of a pair still shows that member.
-  const result = stacking ? collapseStacks(filtered, preferred, lead) : filtered;
-  visibleCache = { entries, query, meta, scores, labels, people, stacking, lead, preferred, result };
+  const result = stacking ? collapseStacks(filtered, preferred, lead, hdrKeys) : filtered;
+  visibleCache = {
+    entries,
+    query,
+    meta,
+    scores,
+    labels,
+    people,
+    stacking,
+    lead,
+    preferred,
+    hdrKeys,
+    result,
+  };
   return result;
 }
 
@@ -1238,5 +1317,19 @@ export function useVisibleEntries(): FileEntry[] {
   const stacking = useAppStore(stacksCollapse);
   const lead = useAppStore((s) => s.stackLead);
   const preferred = useAppStore((s) => s.preferredMember);
-  return applyQueryMemo(entries, query, meta, scores, labels, people, stacking, lead, preferred);
+  // Identity-stable while detection's answer stands, so this subscription
+  // only fires when a bracket actually appears or dissolves.
+  const hdrKeys = useAppStore((s) => (stacksCollapse(s) ? hdrOf(s).keyByStack : null));
+  return applyQueryMemo(
+    entries,
+    query,
+    meta,
+    scores,
+    labels,
+    people,
+    stacking,
+    lead,
+    preferred,
+    hdrKeys,
+  );
 }

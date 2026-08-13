@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
-import { fileUrl, requestThumbnails } from "../../ipc";
-import { siblingsOf, stackCaption } from "../../state/stacks";
-import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
+import { hdrLabel } from "../../state/hdr";
+import { photographKeyOf, siblingsOf, stackCaption } from "../../state/stacks";
+import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 
 /**
  * The darkroom's strip of the whole collection, running under the main image.
@@ -41,6 +42,55 @@ export function stripRange(
   };
 }
 
+/** One cell of the strip: a visible photograph, or — when its stack is
+ * spread open — one member of it. */
+export interface StripCell {
+  entry: FileEntry;
+  /** Index into the visible list, or null for a member that is on screen
+   * only because its stack is spread. */
+  index: number | null;
+  /** The photograph the cell belongs to. */
+  key: string;
+}
+
+/**
+ * The strip's cells: the visible list, with each spread stack replaced by
+ * all of its members in file order.
+ *
+ * The visible list itself stays collapsed — selection stays an index into
+ * it — and the members are extras only the strip knows about. Clicking one
+ * routes through `preferMember`, so "show this member" is the same move it
+ * is everywhere else in the app.
+ */
+export function stripCells(
+  visible: FileEntry[],
+  all: FileEntry[],
+  expanded: Record<string, true>,
+  hdrKeys: ReadonlyMap<string, string> | null,
+  stacking: boolean,
+): StripCell[] {
+  const cells: StripCell[] = [];
+  visible.forEach((entry, index) => {
+    const key = photographKeyOf(entry, hdrKeys);
+    // By name, not by scan order: `all` is the folder as the disk listed it,
+    // and a spread bracket should read as the sequence it was shot in.
+    const members =
+      stacking && expanded[key] !== undefined
+        ? all
+            .filter((e) => photographKeyOf(e, hdrKeys) === key)
+            .sort((a, b) => (a.path < b.path ? -1 : 1))
+        : [];
+    if (members.length < 2) {
+      cells.push({ entry, index, key });
+      return;
+    }
+    for (const member of members) {
+      cells.push({ entry: member, index: member.path === entry.path ? index : null, key });
+    }
+  });
+  return cells;
+}
+
 export function Filmstrip({ height }: { height: number }) {
   const entries = useVisibleEntries();
   const selectedIndex = useAppStore((s) => s.selectedIndex);
@@ -53,13 +103,23 @@ export function Filmstrip({ height }: { height: number }) {
   // in its stack — the strip itself is showing one member of each.
   const allEntries = useAppStore((s) => s.entries);
   const stacking = useAppStore((s) => s.stacking);
+  // Which cells front an HDR set, and how the whole photograph groups —
+  // a stacked cell should *look* stacked, not merely say so in a tooltip.
+  const hdr = useAppStore((s) => hdrOf(s));
+  const expandedStacks = useAppStore((s) => s.expandedStacks);
   const stripRef = useRef<HTMLDivElement>(null);
 
-  // Keep the current frame in view as the selection moves by keyboard.
+  const cells = useMemo(
+    () => stripCells(entries, allEntries, expandedStacks, hdr.keyByStack, stacking),
+    [entries, allEntries, expandedStacks, hdr, stacking],
+  );
+
+  // Keep the current frame in view as the selection moves by keyboard. Found
+  // by its class rather than its position: a spread stack puts extra cells
+  // in the strip, so the visible index no longer counts children.
   useEffect(() => {
     if (selectedIndex === null) return;
-    const strip = stripRef.current;
-    const cell = strip?.children[selectedIndex];
+    const cell = stripRef.current?.querySelector(".lead");
     cell?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [selectedIndex]);
 
@@ -77,11 +137,11 @@ export function Filmstrip({ height }: { height: number }) {
           origin: a?.offsetLeft ?? 0,
           pitch: a && b ? b.offsetLeft - a.offsetLeft : (a?.offsetWidth ?? 0),
         },
-        entries.length,
+        cells.length,
       );
-      const wanted = entries
+      const wanted = cells
         .slice(first, last)
-        .map((e) => e.path)
+        .map((c) => c.entry.path)
         .filter((path) => !(path in have) && !(path in thumbErrors));
       if (wanted.length > 0) void requestThumbnails(wanted, epoch);
     };
@@ -91,7 +151,7 @@ export function Filmstrip({ height }: { height: number }) {
       clearTimeout(timer);
       strip.removeEventListener("scroll", request);
     };
-  }, [entries, epoch, height]);
+  }, [cells, epoch, height]);
 
   return (
     <div
@@ -103,26 +163,66 @@ export function Filmstrip({ height }: { height: number }) {
         if (e.target === e.currentTarget) select(null);
       }}
     >
-      {entries.map((entry, index) => {
+      {cells.map(({ entry, index, key }) => {
         const thumb = thumbs[entry.path];
         const stars = labels[entry.path]?.stars ?? null;
+        const hdrSet = hdr.byFace.get(entry.path) ?? null;
+        const spread = stacking && expandedStacks[key] !== undefined;
+        const member = index === null;
+        const siblings =
+          stacking && !member ? siblingsOf(allEntries, entry, hdr.keyByStack) : [];
         return (
           <button
             key={entry.path}
             className={[
               "filmstrip-cell",
               selection.includes(entry.path) ? "selected" : "",
-              index === selectedIndex ? "lead" : "",
+              index !== null && index === selectedIndex ? "lead" : "",
+              // A collapsed stack wears the pile it is: edges of the cards
+              // behind it peek out, and an HDR set says what it is. Spread,
+              // the pile lies flat: its members run side by side under one
+              // thread, and the cards' edges go with it.
+              siblings.length > 0 && !spread ? "stacked" : "",
+              spread ? "unstacked" : "",
+              member ? "member" : "",
             ]
               .filter(Boolean)
               .join(" ")}
             style={{ width: height - 12, height: height - 12 }}
-            title={stacking ? stackCaption(entry, siblingsOf(allEntries, entry)) : entry.name}
-            onClick={(e) => useAppStore.getState().selectAt(index, selectMode(e))}
+            title={
+              member
+                ? `${entry.name} — in this stack; click to show it in front`
+                : spread
+                  ? `${entry.name} — the one in front; click to restack`
+                  : hdrSet
+                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; click again to spread its frames`
+                    : siblings.length > 0
+                      ? `${stackCaption(entry, siblings)} — click again to spread the stack`
+                      : stacking
+                        ? stackCaption(entry, siblings)
+                        : entry.name
+            }
+            onClick={(e) => {
+              const mode = selectMode(e);
+              if (index === null) {
+                // A spread member: showing it *is* the click's meaning, and
+                // preferMember swaps it in front with the selection held.
+                useAppStore.getState().preferMember(entry.path);
+                return;
+              }
+              // The second plain click on a stacked lead spreads the pile;
+              // the next one folds it back.
+              if (mode === "replace" && index === selectedIndex && (siblings.length > 0 || spread)) {
+                useAppStore.getState().toggleStackExpanded(key);
+                return;
+              }
+              useAppStore.getState().selectAt(index, mode);
+            }}
             // The same menu the grid has: culling happens here too, and the
             // strip is the only list the darkroom shows.
             onContextMenu={(e) => {
               e.preventDefault();
+              if (index === null) return;
               useAppStore.getState().selectForMenu(index);
               useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
             }}
@@ -131,6 +231,10 @@ export function Filmstrip({ height }: { height: number }) {
                 here as much as there, and a rating you cannot see while
                 working through a sequence may as well not exist. */}
             {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
+            {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
+            {hdrSet === null && siblings.length > 0 && !spread && (
+              <span className="filmstrip-count">×{siblings.length + 1}</span>
+            )}
             {thumb === undefined ? (
               <span className="filmstrip-placeholder" />
             ) : (

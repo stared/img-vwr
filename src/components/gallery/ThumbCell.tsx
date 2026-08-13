@@ -1,6 +1,7 @@
 import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
-import { selectMode, useAppStore } from "../../state/store";
+import { hdrLabel } from "../../state/hdr";
+import { hdrOf, selectMode, useAppStore } from "../../state/store";
 
 interface ThumbCellProps {
   entry: FileEntry;
@@ -17,6 +18,9 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const lead = useAppStore((s) => s.selectedIndex === index);
   const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
+  // The face of an HDR set wears the set's name: this cell is not one file
+  // but the photograph fused from its bracket.
+  const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
 
   return (
     <figure
@@ -32,6 +36,14 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
     >
       <div className="thumb-frame" style={{ height: size }}>
         {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
+        {hdr !== null && (
+          <span
+            className="thumb-hdr"
+            title={`${hdrLabel(hdr)} — this frame fronts the fused photograph; opening it shows the merge`}
+          >
+            HDR ×{hdr.frames.length}
+          </span>
+        )}
         {cacheFile !== undefined ? (
           <img src={fileUrl(cacheFile)} alt={entry.name} loading="lazy" draggable={false} />
         ) : error !== undefined ? (

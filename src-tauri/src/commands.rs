@@ -591,6 +591,22 @@ pub async fn develop_edited_paths(
         .map_err(|e| e.to_string())?
 }
 
+/// Install which paths open as fused exposure brackets — the face frame's
+/// path mapped to every frame of its bracket, the whole folder at once.
+///
+/// Detection lives on the UI side, where the EXIF is; from this call on the
+/// registered paths simply *are* the fused photographs: the viewer shows
+/// the fusion, edits store against the face path, and export renders it.
+/// Nothing is written anywhere by this — the merge is virtual until Export.
+#[tauri::command]
+#[specta::specta]
+pub fn develop_set_fusions(
+    service: State<'_, Arc<DevelopService>>,
+    fusions: HashMap<String, Vec<String>>,
+) {
+    service.set_fusions(fusions);
+}
+
 /// Export one photograph into the folder the plan names.
 ///
 /// One file per call rather than a whole batch, so the UI owns the progress,

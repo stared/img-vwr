@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
@@ -14,10 +14,63 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
-import { events } from "./ipc";
+import { developSetFusions, events, requestMeta } from "./ipc";
+import { useDevelopStore } from "./state/develop";
+import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
-import { useAppStore } from "./state/store";
+import { hdrOf, useAppStore } from "./state/store";
 import "./App.css";
+
+/**
+ * HDR sets are photographs, so noticing them is not a view's job — it is
+ * the collection's. As the folder's EXIF streams in, detection runs over
+ * it, and each set's face path is registered with the develop service as
+ * "this path opens as the fusion of these frames". From then on the merge
+ * simply *is* what that photograph looks like — in the viewer, in the
+ * darkroom, in an export — with no file written anywhere until an export
+ * writes one.
+ */
+function useHdrDetection() {
+  const scope = useAppStore((s) => s.scope);
+  const status = useAppStore((s) => s.status);
+  const entries = useAppStore((s) => s.entries);
+  const epoch = useAppStore((s) => s.epoch);
+  // Identity-stable: a meta batch that changed no set keeps the old array.
+  const sets = useAppStore((s) => (s.scope?.kind === "folder" ? hdrOf(s).sets : null));
+
+  // Detection wants every file's exposure, not only the EXIF the panels on
+  // screen happen to have asked about. Once per folder, in the background.
+  const askedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (scope?.kind !== "folder" || status !== "loaded") return;
+    if (askedFor.current === epoch) return;
+    askedFor.current = epoch;
+    const missing = entries.filter((e) => !useAppStore.getState().meta[e.path]).map((e) => e.path);
+    if (missing.length > 0) void requestMeta(missing, epoch);
+  }, [scope, status, entries, epoch]);
+
+  // What was last told to the develop service, so an unchanged answer costs
+  // nothing and a changed one replaces the whole map at once.
+  const registered = useRef("");
+  const previous = useRef<Record<string, string[]>>({});
+  useEffect(() => {
+    const fusions = sets === null ? {} : fusionMap(sets);
+    const signature = JSON.stringify(fusions);
+    if (signature === registered.current) return;
+    registered.current = signature;
+    const before = previous.current;
+    previous.current = fusions;
+    void developSetFusions(fusions).then(() => {
+      // Detection usually lands *after* the user is already looking at a
+      // frame: the face opened as a plain JPEG seconds ago, and nothing else
+      // would ever tell that session its path now means the fusion.
+      const changed = [...new Set([...Object.keys(before), ...Object.keys(fusions)])].filter(
+        (path) => JSON.stringify(before[path]) !== JSON.stringify(fusions[path]),
+      );
+      if (changed.length > 0) useDevelopStore.getState().dropStale(changed);
+    });
+  }, [sets]);
+}
 
 function App() {
   const status = useAppStore((s) => s.status);
@@ -28,6 +81,7 @@ function App() {
 
   useGlobalKeybindings();
   useSceneRefinement();
+  useHdrDetection();
 
   // Start in the default folder (testing convenience; see config.ts).
   useEffect(() => {
