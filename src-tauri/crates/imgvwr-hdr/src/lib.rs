@@ -26,8 +26,9 @@ use rayon::prelude::*;
 /// What a merge produced, and what it did to get there.
 pub struct Merged {
     pub image: image::RgbImage,
-    /// Which input frame the others were aligned to — the middle exposure,
-    /// whose metadata is the honest one to hand a viewer.
+    /// Which input frame the others were aligned to: the middle of the run
+    /// of exposures that verifiably aligned — chosen by measurement, not
+    /// position, so one unalignable frame never dictates the outcome.
     pub reference: usize,
     /// Per input frame, the motion that was undone to lay it on the
     /// reference (mapping reference coordinates onto that frame's) — None
@@ -49,43 +50,47 @@ pub fn merge(frames: &[image::RgbImage]) -> Result<Merged, String> {
     }
 
     // Alignment walks the bracket in brightness order, each frame against
-    // its exposure neighbour, and the motions compose out from the middle.
-    // Never directly across the bracket: its ends are six stops apart, and
-    // six stops of clipping leave two thresholded frames barely showing the
-    // same picture — neighbours are one bracket step apart by construction.
-    // The middle exposure is the reference, so the errors that composing
-    // can accumulate stay half a bracket long at worst.
+    // its exposure neighbour. Never directly across the bracket: its ends
+    // are six stops apart, and six stops of clipping leave two thresholded
+    // frames barely showing the same picture — neighbours are one bracket
+    // step apart by construction.
     let grays: Vec<align::Gray> = frames.par_iter().map(align::luma_of).collect();
     let mut order: Vec<usize> = (0..frames.len()).collect();
     let mean = |g: &align::Gray| -> u64 {
         g.data.iter().map(|&v| v as u64).sum::<u64>() / g.data.len().max(1) as u64
     };
     order.sort_by_key(|&i| mean(&grays[i]));
-    let middle = frames.len() / 2;
-    let reference = order[middle];
 
-    // A link that cannot be aligned does not sink the bracket: the frames
-    // beyond the break are left out and the rest still merge. Align or
-    // refuse holds per frame — an excluded frame contributes nothing,
-    // which is strictly better than contributing a ghost.
     let links: Vec<Result<Rigid, String>> = (0..frames.len() - 1)
         .into_par_iter()
         .map(|k| align::rigid_between(&grays[order[k]], &grays[order[k + 1]]))
         .collect();
-    let mut motions: Vec<Option<Rigid>> = vec![None; frames.len()];
-    motions[reference] = Some(Rigid::IDENTITY);
-    for k in middle + 1..frames.len() {
-        let Some(previous) = motions[order[k - 1]] else { break };
-        let Ok(link) = &links[k - 1] else { break };
-        motions[order[k]] = Some(link.after(&previous));
+
+    // Failed links split the ordered bracket into runs of frames that
+    // verifiably continue one another, and the merge takes the longest run.
+    // The anchor is an *outcome* of the measurements, never a prior: a
+    // bracket whose middle frame is the unalignable one (a bird, a cloud,
+    // parallax at the wrong moment) still merges the frames that do agree,
+    // instead of the middle's failure sinking everything. Ties prefer the
+    // run holding the middle exposure — its metadata is the honest one to
+    // hand a viewer — and the reference is the chosen run's own middle, so
+    // composed errors stay half a run long at worst.
+    let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut start = 0;
+    for (k, link) in links.iter().enumerate() {
+        if link.is_err() {
+            runs.push(start..k + 1);
+            start = k + 1;
+        }
     }
-    for k in (0..middle).rev() {
-        let Some(next) = motions[order[k + 1]] else { break };
-        let Ok(link) = &links[k] else { break };
-        motions[order[k]] = Some(link.inverse().after(&next));
-    }
-    let included: Vec<usize> = (0..frames.len()).filter(|&i| motions[i].is_some()).collect();
-    if included.len() < 2 {
+    runs.push(start..frames.len());
+    let middle = frames.len() / 2;
+    let run = runs
+        .iter()
+        .max_by_key(|r| (r.len(), r.contains(&middle)))
+        .cloned()
+        .expect("a bracket always has at least one run");
+    if run.len() < 2 {
         let refusal = links
             .iter()
             .find_map(|l| l.as_ref().err())
@@ -93,6 +98,26 @@ pub fn merge(frames: &[image::RgbImage]) -> Result<Merged, String> {
             .unwrap_or_else(|| "the frames do not align".to_string());
         return Err(refusal);
     }
+
+    // A link that cannot be aligned does not sink the bracket: the frames
+    // beyond the run are left out and the rest still merge. Align or
+    // refuse holds per frame — an excluded frame contributes nothing,
+    // which is strictly better than contributing a ghost.
+    let run_middle = run.start + run.len() / 2;
+    let reference = order[run_middle];
+    let mut motions: Vec<Option<Rigid>> = vec![None; frames.len()];
+    motions[reference] = Some(Rigid::IDENTITY);
+    for k in run_middle + 1..run.end {
+        let previous = motions[order[k - 1]].expect("walked outward in order");
+        let link = links[k - 1].as_ref().expect("a run never crosses a failed link");
+        motions[order[k]] = Some(link.after(&previous));
+    }
+    for k in (run.start..run_middle).rev() {
+        let next = motions[order[k + 1]].expect("walked outward in order");
+        let link = links[k].as_ref().expect("a run never crosses a failed link");
+        motions[order[k]] = Some(link.inverse().after(&next));
+    }
+    let included: Vec<usize> = (0..frames.len()).filter(|&i| motions[i].is_some()).collect();
 
     // The window every motioned frame covers. Cropping to it is the honest
     // move: pixels only one end of the bracket saw would have to be
@@ -343,6 +368,34 @@ mod tests {
     #[test]
     fn frames_of_different_sizes_are_refused() {
         assert!(merge(&[scene(64, 64), scene(128, 64)]).is_err());
+    }
+
+    #[test]
+    fn an_unalignable_middle_frame_does_not_sink_the_frames_that_agree() {
+        let mid = scene(640, 480);
+        // By brightness this sits in the middle of the bracket — exactly
+        // where the old fixed anchor lived. An anchor chosen by position
+        // would refuse the whole set; the measurements instead pick the
+        // run that verifies and merge it.
+        let garbage = image::RgbImage::from_fn(640, 480, |x, y| {
+            let v = ((x / 7 + y / 11) % 2 * 200) as u8;
+            image::Rgb([v, 40, 255 - v])
+        });
+        let frames = vec![
+            moved_exposed(&mid, &slide(4.0, -3.0), 0.25),
+            moved_exposed(&mid, &slide(-2.0, 1.0), 0.5),
+            garbage,
+            moved_exposed(&mid, &slide(1.0, 2.0), 3.0),
+        ];
+        let merged = merge(&frames).expect("the aligned run still merges");
+        assert!(merged.motions[0].is_some());
+        assert!(merged.motions[1].is_some());
+        assert!(merged.motions[2].is_none(), "the garbage frame is left out");
+        assert!(
+            merged.motions[3].is_none(),
+            "no verified link reaches past the break, even for a frame of the scene"
+        );
+        assert!(merged.reference == 0 || merged.reference == 1);
     }
 
     #[test]

@@ -69,13 +69,16 @@ tone-mapper's. Alignment is a verified rigid motion (rotation + translation,
 subpixel): nine tiles per frame vote with median-threshold-bitmap
 translations, votes are weighted by evidence and texture (smooth sky scores
 its own iso-line beautifully and knows nothing), a motion is fitted per
-exposure-neighbour link and composed out from the middle exposure — and
-every candidate is *measured*, by warping and correlating edges against the
-reference where both frames resolved the scene. MTB proposes; photometry
-disposes. The contract is align or refuse, per frame: a frame that cannot
-be verified is left out of the fusion, a set with nothing verifiable shows
-its face frame plain — the honest renderings are the merge or the frame,
-never a ghost. Either way the develop panel states the outcome ("fused",
+exposure-neighbour link — and every candidate is *measured*, by warping and
+correlating edges against the reference where both frames resolved the
+scene. MTB proposes; photometry disposes. Failed links split the bracket
+into runs of exposures that verifiably continue one another, and the merge
+takes the longest run: the anchor is an outcome of the measurements, never
+a prior, so one unalignable frame — wherever it sits — costs the set that
+frame, not the merge. The contract is align or refuse, per frame: a frame
+that cannot be verified is left out of the fusion, a set in which no two
+exposures verify shows its face frame plain — the honest renderings are
+the merge or the frame, never a ghost. Either way the develop panel states the outcome ("fused",
 or "won't align — showing this frame alone", with the measured reason):
 a silent refusal would be indistinguishable from the feature not working.
 The output is cropped to the pixels every frame saw, turned upright before

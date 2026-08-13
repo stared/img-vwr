@@ -177,10 +177,11 @@ export function DevelopPanel() {
           frame — and every original stays checkable, the middle one
           included: its row shows the file the camera wrote even though its
           path opens as the fusion. Fates are per frame because alignment
-          is per frame, and every verdict is measured *against the middle
-          frame* — two frames can align with each other and still fail
-          here. The outcome is the backend's word: it ran the alignment,
-          this panel only repeats the measurement. */}
+          is per frame: the merge is the longest run of exposures that
+          verified against each other, so any frame — the middle one
+          included — can be the one left out. The outcome is the backend's
+          word: it ran the alignment, this panel only repeats the
+          measurement. */}
       {hdrSet !== null && (() => {
         const face = hdrSet.face;
         const onFace = entry.path === face.path;
@@ -199,7 +200,7 @@ export function DevelopPanel() {
                 ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused — the misaligned are left out, not ghosted in`
                 : `${hdrLabel(hdrSet)} — every frame aligned to the pixel and fused`
               : outcome.kind === "refused"
-                ? "nothing verifies against the middle frame — no merge"
+                ? "no two exposures align with each other — no merge"
                 : "opening the fusion…";
         return (
           <section className="develop-group">
@@ -208,7 +209,7 @@ export function DevelopPanel() {
               className="develop-note"
               title={
                 outcome?.kind === "refused"
-                  ? `${outcome.reason} — frames may align with each other and still fail against the middle one`
+                  ? outcome.reason
                   : "the merge is virtual — nothing is written beside the originals; export renders it"
               }
             >
@@ -244,16 +245,18 @@ export function DevelopPanel() {
               const isFace = frame.path === face.path;
               const ev = evOf(frame.path);
               const step = faceEv === null || ev === null ? null : faceEv - ev;
-              const fate = isFace
-                ? outcome?.kind === "refused"
-                  ? "the anchor"
-                  : "fused"
-                : leftOut !== null
+              // The face gets no special fate: since the merge anchors on
+              // whichever run of exposures verified, the middle frame can
+              // itself be the one left out.
+              const fate =
+                leftOut !== null
                   ? leftOut.has(frame.path)
                     ? "misaligned"
                     : "fused"
                   : outcome?.kind === "refused"
-                    ? "misaligned"
+                    ? isFace
+                      ? "shown alone"
+                      : "misaligned"
                     : "one exposure";
               const current =
                 entry.path === frame.path && (!isFace || original === face.path);
