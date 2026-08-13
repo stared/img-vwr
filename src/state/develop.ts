@@ -263,6 +263,28 @@ export interface DevelopStore {
    * chose would be claiming a decision the user never made.
    */
   loupeAimedByUser: boolean;
+  /**
+   * The loupe box's side in CSS pixels — measured by the develop column
+   * that shows it, read by the canvas to size the mark. One number shared,
+   * or the mark would outline a region the loupe is not showing.
+   */
+  loupeSide: number;
+  setLoupeSide: (side: number) => void;
+  /** True while the aim is being dragged on the photograph, so the loupe
+   * and its mark brighten together — they are one instrument in two places. */
+  loupeAiming: boolean;
+  setLoupeAiming: (aiming: boolean) => void;
+
+  /**
+   * Develop-panel sections folded away, by heading.
+   *
+   * The panel is every control the darkroom has, and on any one photograph
+   * most of them are not the work at hand. Folding is per section and stays
+   * for the session: which controls you are working with is a fact about the
+   * sitting, not about the image, so it survives navigation.
+   */
+  folded: Record<string, boolean>;
+  toggleFolded: (section: string) => void;
 
   /** How the facts about this photograph sit over it. */
   caption: CaptionMode;
@@ -1100,8 +1122,16 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     loupe: false,
     loupeAt: null,
     loupeAimedByUser: false,
+    loupeSide: 240,
+    loupeAiming: false,
 
     toggleLoupe: () => set((s) => ({ loupe: !s.loupe })),
+    setLoupeSide: (side) => set({ loupeSide: side }),
+    setLoupeAiming: (aiming) => set({ loupeAiming: aiming }),
+
+    folded: {},
+    toggleFolded: (section) =>
+      set((s) => ({ folded: { ...s.folded, [section]: !s.folded[section] } })),
 
     // The pixels are kept, not dropped. They came with the region they cover,
     // so the window can be re-centred over them for nothing — which is what

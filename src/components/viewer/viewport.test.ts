@@ -10,7 +10,6 @@ import {
   panBy,
   zoomAtPoint,
 } from "./viewport";
-import { loupeEdge } from "./ImageCanvas";
 
 const IMG = { width: 2000, height: 1000 };
 const WIN = { width: 800, height: 600 };
@@ -126,26 +125,5 @@ describe("heldView", () => {
     expect(
       heldView({ scale: 1, tx: 0, ty: 0 }, { width: 0, height: 0 }, img, win),
     ).toEqual(fitToWindow(img, win));
-  });
-});
-
-describe("loupeEdge", () => {
-  it("scales with the canvas rather than sitting at a fixed size", () => {
-    // The failure this fixes: with both sidebars open the darkroom's canvas
-    // was 280 px across, and a fixed 220 px loupe covered the photograph it
-    // was meant to help judge.
-    expect(loupeEdge({ width: 280, height: 398 })).toBeLessThan(120);
-    expect(loupeEdge({ width: 1400, height: 900 })).toBeGreaterThan(200);
-  });
-
-  it("stays useful at both extremes", () => {
-    const tiny = loupeEdge({ width: 60, height: 40 });
-    expect(tiny).toBe(96);
-    const huge = loupeEdge({ width: 6000, height: 4000 });
-    expect(huge).toBe(240);
-  });
-
-  it("measures the shorter side, so a wide strip does not get a tall loupe", () => {
-    expect(loupeEdge({ width: 2000, height: 200 })).toBe(loupeEdge({ width: 200, height: 2000 }));
   });
 });

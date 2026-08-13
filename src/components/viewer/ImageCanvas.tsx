@@ -14,7 +14,6 @@ import {
   displayedSize,
   frameAspect,
   FULL_CROP,
-  loupeCovers,
   loupeRegion,
   needsDetail,
   needsDevelopedFrame,
@@ -36,21 +35,6 @@ import { ImageCaption } from "./ImageCaption";
  */
 
 const ZOOM_WHEEL_SENSITIVITY = 0.0022;
-
-/**
- * The loupe's side in CSS pixels, for a canvas of this size.
- *
- * A share of the canvas rather than a fixed box, because the canvas is not a
- * fixed size: with both sidebars open the darkroom's is barely 280 px across,
- * and a 220 px loupe there covers most of the photograph it is meant to be
- * helping you judge. The bounds keep it useful at both extremes — below the
- * floor there is not enough of it to see an eyelash, above the ceiling it
- * stops being an inset.
- */
-export function loupeEdge(canvas: { width: number; height: number }): number {
-  const shorter = Math.min(canvas.width, canvas.height);
-  return Math.round(Math.min(240, Math.max(96, shorter * 0.34)));
-}
 
 interface Point2 {
   x: number;
@@ -82,8 +66,6 @@ export function ImageCanvas() {
 
   const loupe = useDevelopStore((s) => s.loupe);
   const aimLoupe = useDevelopStore((s) => s.aimLoupe);
-  const requestLoupe = useDevelopStore((s) => s.requestLoupe);
-  const loupeFrame = session?.loupeFrame ?? null;
 
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
@@ -132,33 +114,17 @@ export function ImageCanvas() {
     }
   }, [entries, index]);
 
-  // The loupe's own render: a small region at true 1:1, developed wider than
-  // the window so the window can slide across it. Asked for when it has
-  // nothing to show — on opening it, on a new photograph, after an edit — and
-  // when the aim has been dragged past the edge of the pixels in hand.
-  //
-  // The effect re-runs when the pixels land, which is also what retries a
-  // request that arrived while one was already in flight: the loupe can be
-  // dragged far faster than it renders, and every intermediate position it
-  // passed through is work nobody wants done.
+  // The loupe itself lives at the top of the develop column (DevelopLoupe);
+  // the canvas keeps the aiming gesture and the mark saying where it is
+  // looking. The side is whatever the column measured, so the mark outlines
+  // exactly the region the loupe is showing.
   const loupeAimed = useDevelopStore((s) => s.loupeAt);
-  const aimedByUser = useDevelopStore((s) => s.loupeAimedByUser);
-  const loupeSide = loupeEdge(canvas);
+  const loupeSide = useDevelopStore((s) => s.loupeSide);
   const loupeShown = session ? displayedSize(session.info, session.settings.crop) : null;
   const loupeWindow =
     loupeAimed && loupeShown
       ? loupeRegion(loupeAimed, loupeShown, Math.round(loupeSide * devicePixelRatio))
       : null;
-  const needsLoupe =
-    loupe &&
-    session !== null &&
-    (loupeFrame === null ||
-      loupeWindow === null ||
-      !loupeCovers(loupeFrame.region, loupeWindow));
-  useEffect(() => {
-    if (!needsLoupe) return;
-    requestLoupe(Math.round(loupeSide * devicePixelRatio));
-  }, [needsLoupe, loupeAimed, loupeSide, requestLoupe]);
 
   // And develop the neighbours ahead, which is the expensive half. Only once
   // this image's own frame has arrived: the user is waiting on that one, and
@@ -270,16 +236,19 @@ export function ImageCanvas() {
    * each guess. Held pixels and a margin (see `LOUPE_MARGIN`) are what let
    * the movement itself be immediate.
    */
-  /* The drag itself lives in a ref and only its appearance in state. A
-   * handler has to know whether a drag is running *now*, and React state is
+  /* The drag itself lives in a ref and only its appearance in the store. A
+   * handler has to know whether a drag is running *now*, and store state is
    * whatever the last render saw — pointer events that arrive in one batch
    * (a synthetic sequence, or moves the browser coalesced) would all read the
-   * value from before the drag began, and the release would be missed. */
+   * value from before the drag began, and the release would be missed. In the
+   * store rather than local state because the loupe brightening with the drag
+   * sits in the develop column, not on this canvas. */
   const aimingRef = useRef(false);
-  const [aiming, setAiming] = useState(false);
+  const aiming = useDevelopStore((s) => s.loupeAiming);
+  const setLoupeAiming = useDevelopStore((s) => s.setLoupeAiming);
   const setAimingNow = (on: boolean) => {
     aimingRef.current = on;
-    setAiming(on);
+    setLoupeAiming(on);
   };
   const aimsLoupe = loupe && !cropping && session?.picking !== true;
 
@@ -565,46 +534,11 @@ export function ImageCanvas() {
           <span className="across" style={{ top: "66.667%" }} />
         </div>
       )}
-      {/* True 100% pixels of one small region, beside the fitted photograph
-          rather than instead of it — so "is this sharp" and "is this a good
-          picture" are one glance apart instead of a mode change apart. */}
-      {loupe && (
-        <div
-          className={aiming ? "viewer-loupe aiming" : "viewer-loupe"}
-          style={{ width: loupeSide, height: loupeSide }}
-        >
-          {loupeFrame && loupeAimed && loupeShown ? (
-            /* Placed by where its pixels are rather than centred blindly: the
-               window slides across a patch wider than itself, so the point
-               under the crosshair is the point being aimed at even when the
-               render for this exact position is still coming. */
-            <img
-              src={developFrameUrl(loupeFrame.frame.token)}
-              alt=""
-              draggable={false}
-              style={{
-                width: (loupeFrame.region.width * loupeShown.width) / devicePixelRatio,
-                height: (loupeFrame.region.height * loupeShown.height) / devicePixelRatio,
-                left:
-                  loupeSide / 2 -
-                  ((loupeAimed.x - loupeFrame.region.x) * loupeShown.width) / devicePixelRatio,
-                top:
-                  loupeSide / 2 -
-                  ((loupeAimed.y - loupeFrame.region.y) * loupeShown.height) / devicePixelRatio,
-              }}
-            />
-          ) : (
-            <span className="viewer-loupe-waiting" />
-          )}
-          {/* Says where it is looking, not just that it is at 1:1 — which
-              of the two is the interesting fact while stepping through. */}
-          <span className="viewer-loupe-note">{aimedByUser ? "1:1" : "sharpest"}</span>
-        </div>
-      )}
-      {/* And where on the photograph that is. Without it the inset is detail
-          from nowhere in particular: you can see that something is sharp
-          without being able to see what. It marks the window, not the wider
-          patch developed around it — the window is what you are looking at. */}
+      {/* Where on the photograph the loupe (top of the develop column) is
+          looking. Without it the loupe is detail from nowhere in particular:
+          you can see that something is sharp without being able to see what.
+          It marks the window, not the wider patch developed around it — the
+          window is what you are looking at. */}
       {loupe && loupeWindow !== null && loupeShown !== null && view !== null && (
         <div
           className={aiming ? "viewer-loupe-mark aiming" : "viewer-loupe-mark"}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
@@ -27,6 +27,29 @@ import {
   type ParamSpec,
 } from "../../state/develop";
 import { DevelopHistogram } from "./DevelopHistogram";
+import { DevelopLoupe } from "./DevelopLoupe";
+
+/**
+ * A section of the panel, folded and unfolded by its own heading — the same
+ * disclosure the sidebar's panels wear, one level down. What is folded stays
+ * folded across photographs: it is a statement about the work of the
+ * sitting, not about any one image.
+ */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  const folded = useDevelopStore((s) => s.folded[title] === true);
+  const toggleFolded = useDevelopStore((s) => s.toggleFolded);
+  return (
+    <section className="develop-group">
+      <h4>
+        <button className="develop-fold" onClick={() => toggleFolded(title)}>
+          <span className="panel-disclosure">{folded ? "▸" : "▾"}</span>
+          {title}
+        </button>
+      </h4>
+      {!folded && children}
+    </section>
+  );
+}
 
 /**
  * The develop panel: white balance, tone and colour for the selected image,
@@ -152,6 +175,7 @@ export function DevelopPanel() {
 
   return (
     <div className="develop-panel">
+      <DevelopLoupe />
       <DevelopHistogram histogram={session.frame?.histogram ?? null} />
 
       <div className="develop-status">
@@ -205,8 +229,7 @@ export function DevelopPanel() {
                 ? "no two exposures align with each other; no merge"
                 : "opening the fusion…";
         return (
-          <section className="develop-group">
-            <h4>HDR</h4>
+          <Group title="HDR">
             <p
               className="develop-note"
               title={
@@ -313,7 +336,7 @@ export function DevelopPanel() {
                 </button>
               );
             })}
-          </section>
+          </Group>
         );
       })()}
 
@@ -367,8 +390,7 @@ export function DevelopPanel() {
         </div>
       )}
 
-      <section className="develop-group">
-        <h4>White balance</h4>
+      <Group title="White balance">
         <Slider
           label="temperature"
           value={settings.whiteBalance.temperature}
@@ -410,10 +432,9 @@ export function DevelopPanel() {
           as shot: {Math.round(info.asShot.temperature)} K, tint{" "}
           {Math.round(info.asShot.tint)}
         </p>
-      </section>
+      </Group>
 
-      <section className="develop-group">
-        <h4>Tone</h4>
+      <Group title="Tone">
         {/* One button saying which look is in effect; clicking moves to the
             next. Every preset is only a set of slider positions, so the
             sliders below always show exactly what it did. */}
@@ -465,10 +486,9 @@ export function DevelopPanel() {
         <button className="develop-toggle" onClick={toggleDeviation}>
           values: {showDeviation ? `from ${baseline?.label ?? "flat"}` : "absolute"}
         </button>
-      </section>
+      </Group>
 
-      <section className="develop-group">
-        <h4>Crop</h4>
+      <Group title="Crop">
         <button
           className={cropping ? "develop-toggle armed" : "develop-toggle"}
           title="Drag the handles to trim, the inside to move it, the outside to draw a new one. Enter keeps the crop, Escape puts back the one you started with."
@@ -533,10 +553,9 @@ export function DevelopPanel() {
             back to the whole frame
           </button>
         )}
-      </section>
+      </Group>
 
-      <section className="develop-group">
-        <h4>View</h4>
+      <Group title="View">
         {/* The magnification, in words, on a button that changes it — the
             same shape as every other state control here. Fit and 100% are the
             two a photographer actually asks for; anything in between you got
@@ -560,10 +579,9 @@ export function DevelopPanel() {
         >
           caption: {CAPTION_LABELS[caption]}
         </button>
-      </section>
+      </Group>
 
-      <section className="develop-group">
-        <h4>Analysis</h4>
+      <Group title="Analysis">
         {/* One button labelled with the state it is in; clicking moves to the
             next. These replace what the photograph looks like, so only one can
             be on — which is why they share a control rather than having one
@@ -580,7 +598,7 @@ export function DevelopPanel() {
         <button className="develop-toggle" onClick={toggleGridlines}>
           guides: {gridlines ? "thirds" : "off"}
         </button>
-      </section>
+      </Group>
     </div>
   );
 }

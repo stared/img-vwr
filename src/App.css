@@ -1532,6 +1532,22 @@ button.stats-row:hover .stats-label {
   text-transform: uppercase;
 }
 
+/* The heading is the fold, wearing the same disclosure as the sidebar's own
+   sections. The whole line is the target — a heading you can only hit on
+   the triangle is a heading you miss. */
+.develop-fold {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.develop-fold:hover {
+  color: var(--text);
+}
+
 .develop-note {
   margin: 2px 0 4px;
   padding: 0 8px;
@@ -2205,31 +2221,33 @@ button.stats-row:hover .stats-label {
 /* Thirds guides. A hairline in both black and white so the line reads over a
    bright sky and a dark shadow alike, without either being loud enough to
    compete with the photograph. */
-/* ---- Loupe: 1:1 pixels beside the fitted photograph ---- */
+/* ---- Loupe: 1:1 pixels at the top of the develop column ---- */
 
-.viewer-loupe {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+/* In the column rather than floating over the canvas — an inset covers the
+   photograph it is meant to help you judge. Sticky, so the pixels ride the
+   top of the column however far the panel is scrolled; the panel's content
+   slides beneath it, which is what the opaque background is for. */
+.develop-loupe {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.5);
-  /* Lifted off the photograph rather than drawn onto it. */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
-  pointer-events: none;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
 /* Brighter while it is being aimed, so the thing you are moving is the thing
    that stands out. */
-.viewer-loupe.aiming {
-  border-color: var(--accent);
+.develop-loupe.aiming {
+  border-bottom-color: var(--accent);
 }
 
 /* Placed, not stretched: the patch is wider than the window and sits at an
    offset that puts the aimed point in the middle. Sizing it to the window
    instead would show the wrong pixels at the wrong scale. */
-.viewer-loupe img {
+.develop-loupe img {
   position: absolute;
   /* Never smoothed: the whole point is to show the pixels as they are. */
   image-rendering: pixelated;
@@ -2250,7 +2268,7 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
-.viewer-loupe-waiting {
+.develop-loupe-waiting {
   display: block;
   width: 100%;
   height: 100%;
@@ -2258,10 +2276,10 @@ button.stats-row:hover .stats-label {
 }
 
 /* Says what it is pointing at, in the words the panel uses. */
-.viewer-loupe-note {
+.develop-loupe-note {
   position: absolute;
-  right: 4px;
-  bottom: 2px;
+  right: 6px;
+  bottom: 4px;
   color: rgba(255, 255, 255, 0.75);
   font-size: 10px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
