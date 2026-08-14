@@ -1,9 +1,9 @@
 # TODO: NEF / Nikon processing
 
 Where the match stands (held-out, mean |Δ| 8-bit sRGB vs the camera JPEG)
-after the 2026-08-14 joint-fit session: shipped model **3.28** held-out
-(**3.61** end-to-end over all 1115 pairs incl. degenerates; was 3.86/4.26),
-per-image oracle 2.82, oracle + coarse spatial field 2.68. Every number is
+after the 2026-08-14 joint-fit session: shipped model **3.26** held-out
+(**3.41** end-to-end over all 1115 pairs incl. degenerates; was 3.86/4.26),
+per-image oracle 2.81, oracle + coarse spatial field 2.68, LOFO ≈4.4. Every number is
 measurable against `verify_look`; nothing ships without beating the
 baseline held-out.
 
@@ -25,14 +25,23 @@ baseline held-out.
       NEF's XMP packet carries Auto PC's Contrast/Saturation/Clarity/
       Texture per shot; feeding them to the predictor was worth −0.19,
       and the portable subset (no maker-note decryption) carries all of it.
-- [ ] Predictor still has the biggest headroom: 3.28 predicted vs 2.82
-      oracle. Faces/subject-detection features, deeper MLP, k-NN ensemble.
+- [x] k-NN ensemble: shipped as a residual k-NN over the corpus (fixes
+      the Contrast2012-extreme tail; fades out off-corpus). Fine-tuning
+      the globals AROUND the k-NN measured WORSE (3.23 → 3.26) — the
+      bolted-on correction is already optimal.
+- [ ] Predictor still has the biggest headroom: 3.26 predicted vs 2.81
+      oracle. Faces/subject-detection features are the untried signal —
+      the failures that remain are "who is the subject" decisions.
+- [ ] The eclipse sun disk: near-monochromatic deep red stays saturated
+      where the camera desaturates. Thin-data LUT corner; needs either
+      anchor data (ColorChecker + deep-red patches) or a wider clamp
+      there specifically.
 
 ## 2. Different model families (not just deeper fitting of the same one)
 
-- [ ] **Dual-illuminant matrix** (DNG-style): two matrices interpolated by
-      as-shot temperature, instead of one global. The night folders pull the
-      matrix one way, daylight the other.
+- [x] **Dual-illuminant matrix** — tried in the joint fit (2026-08-14):
+      3.275 vs 3.279 single-matrix, within restart noise; did not stack
+      with the other wins. Not shipped.
 - [ ] **Hue/sat/val lattice in IPT or Oklab** instead of the RGB display
       cube: hue twists are axis-aligned there, so a smaller table with less
       leakage between lightness and hue.
@@ -55,18 +64,15 @@ baseline held-out.
       Nikon Auto softens and protects skin; a face-area feature (and later a
       skin-tone-region weight in the loss) targets exactly the portrait
       shots people care most about.
-- [ ] **k-NN in feature space** over the training pairs as the tuning
-      predictor (weighted neighbour average): often beats linear, trivially
-      portable (the corpus features are small), and its failures are
-      inspectable.
-- [ ] **Proper gradient-boosted trees** (LightGBM, then distill or port the
-      handful of trees) instead of the hand-rolled stumps that were tried
-      and undersold.
+- [x] **k-NN in feature space** — shipped as the residual layer on the
+      MLP (bake-off: ridge 3.95, k-NN 3.32, in-loop MLP 3.28, hybrid 3.25).
+- [x] **Gradient-boosted trees** — measured (LightGBM): adds nothing over
+      k-NN on this corpus size. Not shipped.
 
 ## 4. Data and evaluation
 
-- [ ] **Leave-one-folder-out CV**: the honest number for "a future shoot
-      unlike the five we have". Currently unknown.
+- [x] **Leave-one-folder-out CV** — measured: shoot-a 5.0, shoot-b 3.3,
+      shoot-c 4.5, eclipse 4.6 → a genuinely new shoot lands ≈4.4.
 - [ ] **Controlled anchor shoot**: ColorChecker under daylight/tungsten/LED
       at an ISO ladder, RAW+JPEG. Chart patches give per-hue ground truth
       that 1062 uncontrolled frames cannot.
@@ -76,27 +82,33 @@ baseline held-out.
 - [ ] **Sub-pixel + distortion-aware alignment** (fit a radial term): makes
       full-frame 1:1 comparisons valid, which unlocks fitting texture and
       vignetting on the whole frame instead of centre patches.
-- [ ] **Localized-error sweep** over all pairs (block-max, not mean) to
-      catch categorical bugs like the UV black holes; review flagged frames.
+- [x] **Localized-error sweep** — `localized_sweep.py`, ran twice; caught
+      the UV green blobs (fixed via cross-channel clip) and the sun-disk
+      saturation miss (open, see §1).
 - [ ] Weight the loss by perceptual importance: faces and midtones up,
       JPEG block noise excluded.
 
 ## 5. Texture and noise beyond the decoder's knobs
 
-- [ ] **Own sharpening stage** fitted on aligned full-res patches
-      (unsharp radius+amount per ISO, differentiable), since CIRAW sharpness
-      at 1.0 still reaches only ~0.6 of the camera's edge energy.
-- [ ] **Chroma NR pass** (guided filter on ab channels) for ISO ≥ 12800,
-      where the camera is 8-20× smoother than our decode even at max knobs.
+- [x] **Own sharpening stage** — shipped (imgvwr-develop/src/nr.rs): wide
+      unsharp on luminance below ISO ~250, fitted on 1:1 patches; edge
+      ratio to camera 1.27 → 1.01.
+- [x] **Guided-filter NR** — shipped: chroma from ISO ~5000, luminance
+      above ~13k, run in GAMMA-ENCODED light (in linear light one eps
+      cannot serve shadows and highlights; the linear version measured
+      worse than nothing). ISO-57600 patch error 5.11 → 4.52, edge ratio
+      1.016. Gated to scale ≥ 0.5; previews untouched.
+- [ ] Full-res export runs ~25 box-filter passes — parallelise the SAT
+      build or tile if export latency ever matters.
 - [ ] Measure `moireReductionAmount` and sharpness×NR interactions.
 - [ ] Later, consistent with the HDRNet decision: a tiny ort-run denoiser,
       transform-constrained, if classical NR cannot close the gap.
 
 ## 6. Decode fidelity questions (Nikon-specific)
 
-- [ ] Compare CIRAW's neutralTemperature/Tint against the NEF's recorded
-      `WB_RBLevels`/AsShotNeutral: part of the per-image WB correction may
-      be Apple misreading HE* white balance, not the camera adapting.
+- [x] CIRAW WB vs the NEF's recorded values — audited: r=0.993 with a
+      2.5% systematic offset; Apple reads HE* WB correctly. The per-image
+      WB nudges model the camera's rendering, not a decode bug.
 - [ ] Does CIRAW apply the lens distortion/vignetting the JPEG has
       (AutoDistortionControl On)? Measure geometry against the JPEG; if not
       matched, edges disagree for a reason no colour model can fix.
