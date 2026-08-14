@@ -22,16 +22,20 @@ use rayon::prelude::*;
 pub struct NrStrength {
     pub chroma: f32,
     pub luma: f32,
+    /// Base-ISO unsharp: at low ISO the camera draws 1.27× our edge
+    /// energy, and CIRAW's sharpener maxes out below it.
+    pub sharpen: f32,
 }
 
 impl NrStrength {
     pub const NONE: NrStrength = NrStrength {
         chroma: 0.0,
         luma: 0.0,
+        sharpen: 0.0,
     };
 
     pub fn active(&self) -> bool {
-        self.chroma > 0.0 || self.luma > 0.0
+        self.chroma > 0.0 || self.luma > 0.0 || self.sharpen > 0.0
     }
 }
 
@@ -41,6 +45,10 @@ const CHROMA_RADIUS: f32 = 8.0;
 const CHROMA_EPS: f32 = 0.004;
 const LUMA_RADIUS: f32 = 4.0;
 const LUMA_EPS: f32 = 0.001;
+/// Unsharp: a wide, gentle boost (σ≈2 gaussian fitted; a box of this
+/// radius has the same variance) at half amount.
+const SHARPEN_RADIUS: f32 = 3.0;
+const SHARPEN_AMOUNT: f32 = 0.5;
 
 /// Apply the enabled passes to a display-linear RGB f32 buffer in place.
 /// `scale` is rendered pixels per native pixel (1.0 at 1:1).
@@ -109,6 +117,23 @@ fn apply_encoded(rgb: &mut [f32], w: usize, h: usize, s: NrStrength, scale: f32)
                 }
             });
     }
+
+    if s.sharpen > 0.0 {
+        let r = ((SHARPEN_RADIUS * scale).round() as usize).clamp(1, 6);
+        let blur = box_mean(&y, w, h, r);
+        let amount = s.sharpen * SHARPEN_AMOUNT;
+        rgb.par_chunks_exact_mut(3)
+            .zip(y.par_iter().zip(blur.par_iter()))
+            .for_each(|(px, (yy, bl))| {
+                if *yy > 1e-6 {
+                    let gain = 1.0 + amount * (yy - bl) / yy.max(0.02);
+                    let gain = gain.clamp(0.2, 3.0);
+                    px[0] *= gain;
+                    px[1] *= gain;
+                    px[2] *= gain;
+                }
+            });
+    }
 }
 
 /// The guided filter: local linear model of `src` on `guide`, box windows.
@@ -169,7 +194,7 @@ mod tests {
         let (w, h) = (32, 32);
         let mut rgb: Vec<f32> = (0..w * h).flat_map(|_| [0.3, 0.5, 0.2]).collect();
         let before = rgb.clone();
-        apply(&mut rgb, w, h, NrStrength { chroma: 1.0, luma: 1.0 }, 1.0);
+        apply(&mut rgb, w, h, NrStrength { chroma: 1.0, luma: 1.0, sharpen: 0.0 }, 1.0);
         for (a, b) in rgb.iter().zip(&before) {
             assert!((a - b).abs() < 1e-3, "flat field moved: {a} vs {b}");
         }
@@ -192,7 +217,7 @@ mod tests {
             }
         }
         let mut out = rgb.clone();
-        apply(&mut out, w, h, NrStrength { chroma: 1.0, luma: 0.0 }, 1.0);
+        apply(&mut out, w, h, NrStrength { chroma: 1.0, luma: 0.0, sharpen: 0.0 }, 1.0);
         // speckle: neighbouring pixels' red difference collapses
         let mid = (h / 2 * w + w / 4) * 3;
         let speckle_before = (rgb[mid] - rgb[mid + 3]).abs();

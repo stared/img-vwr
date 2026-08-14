@@ -50,6 +50,9 @@ pub struct LookTuning {
     /// frames far beyond what the decoder's own knobs reach.
     pub chroma_nr: f32,
     pub luma_nr: f32,
+    /// Base-ISO unsharp strength: there the camera draws more edge energy
+    /// than the decoder's sharpener can reach.
+    pub sharpen: f32,
 }
 
 impl LookTuning {
@@ -63,6 +66,7 @@ impl LookTuning {
         saturation: 0.0,
         chroma_nr: 0.0,
         luma_nr: 0.0,
+        sharpen: 0.0,
     };
 }
 
@@ -94,7 +98,11 @@ impl LookTuning {
         let ramp = |iso_f: f32, lo: f32, hi: f32| {
             ((iso_f.log2() - lo.log2()) / (hi.log2() - lo.log2())).clamp(0.0, 1.0)
         };
-        let iso_f = iso.unwrap_or(0).max(1) as f32;
+        // No recorded ISO means no basis for texture work — leave it alone.
+        let iso_f = match iso {
+            Some(v) if v > 0 => v as f32,
+            _ => 1600.0, // mid-range: every ramp sits at zero there
+        };
         Self {
             gain: p[0].clamp(-1.5, 1.5),
             contrast: p[1].clamp(-0.5, 0.5),
@@ -107,6 +115,7 @@ impl LookTuning {
             },
             chroma_nr: ramp(iso_f, 3200.0, 6400.0) * (1.0 - ramp(iso_f, 16000.0, 25600.0)),
             luma_nr: ramp(iso_f, 12800.0, 25600.0),
+            sharpen: 1.0 - ramp(iso_f, 200.0, 800.0),
         }
     }
 }

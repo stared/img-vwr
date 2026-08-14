@@ -144,6 +144,7 @@ pub fn render_looked(
         Some(t) if scale >= 0.5 => nr::NrStrength {
             chroma: t.chroma_nr,
             luma: t.luma_nr,
+            sharpen: t.sharpen,
         },
         _ => nr::NrStrength::NONE,
     };
