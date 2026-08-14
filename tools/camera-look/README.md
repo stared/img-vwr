@@ -79,8 +79,8 @@ even/odd split within each folder:
 | joint fit, same architecture | 3.69 |
 | + three per-channel curves + 17³ LUT + MLP predictor | 3.49 |
 | + the camera's own per-shot decisions as features | 3.30 |
-| + per-image saturation latent (shipped model) | **3.28** |
-| per-image oracle under the shipped globals | 2.82 |
+| + saturation latent + residual k-NN + cross-clip (shipped) | **3.26** |
+| per-image oracle under the shipped globals | 2.81 |
 | oracle + 6×6 spatial gain field (ADL/clarity share) | 2.68 |
 
 Findings that shaped the model:
@@ -112,5 +112,19 @@ Findings that shaped the model:
 - A pair dump can contain degenerate pairs (sun-disk frames shot at −10 EV
   where both files are essentially black); the fits exclude them.
 - Far-over-range chroma (UV stage lights at 3–5× clip) used to leak
-  through the matrix into green blobs; clipping the matrix's cross-channel
-  input is the fix under test (`--clip-scene/--clip-cross`).
+  through the matrix into green blobs; the shipped model clips the
+  matrix's cross-channel input at two stops over white (0.005 of average
+  error for the fix).
+- The predictor's failures cluster: the frames where the camera's own
+  Contrast2012 goes extreme (backlit fountains at +5, UV club at −42).
+  A distance-weighted residual k-NN over the fitting corpus repairs the
+  lookalike tail and fades out away from anything seen (LOFO says a
+  genuinely new venue lands near 4.4 before it has any neighbours).
+- Texture, measured on 1:1 patches: at base ISO the camera has 1.26× our
+  edge energy (a wide unsharp would close a little); from ISO 1000 up the
+  ratio inverts (0.72–0.80) and flat-area noise is 11–26× the camera's —
+  CIRAW's luminance NR trades real edges for noise, so matching Nikon
+  here needs an edge-preserving pass (guided filter), not a knob.
+- Known limitation: near-monochromatic deep red (the eclipse sun disk)
+  stays saturated where the camera desaturates it — that corner of the
+  display cube has almost no training data and the LUT is clamped.
