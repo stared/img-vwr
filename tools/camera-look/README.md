@@ -83,6 +83,12 @@ even/odd split within each folder:
 | per-image oracle under the shipped globals | 2.81 |
 | oracle + 6×6 spatial gain field (ADL/clarity share) | 2.68 |
 
+Perceptually (CIEDE2000, held-out): mean 1.89, **median 1.19** — half of
+all pixels are inside the "flip A/B to notice" range. Twenty further
+restarts of the ship config all land in [3.26, 3.28]: the architecture
+is exhausted at this corpus, and what remains is predictor semantics
+(faces), texture at the pixel level, and the thin-data colour corners.
+
 Findings that shaped the model:
 
 - The camera curves **per channel**, and the three channels genuinely
