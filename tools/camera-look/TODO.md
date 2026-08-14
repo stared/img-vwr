@@ -19,8 +19,12 @@ baseline held-out.
       old coordinate-descent oracle (~3.6) by a wide margin.
 - [ ] **CMA-ES / basin hopping** over the non-differentiable pieces
       (decoder detail knobs, curve grid geometry, loss weights).
-- [ ] Optimize **ΔE00 directly** as an alternative objective; compare which
-      objective users actually prefer on A/Bs.
+- [x] **Lab/ΔE objective** — measured: ΔE00 1.86 vs 1.89 for +0.15 sRGB;
+      the sRGB Huber is already nearly perceptually optimal. Closed.
+- [x] Also measured-out in the same night: latent weight-decay (hurts),
+      8k-step phase A (overfits), LUT clamp 0.25 (restart noise),
+      speckle/glint features (no separation), longer chroma-NR radii
+      (worse). The 512-grid full-frame refit is the floor of this corpus.
 - [x] **Per-shot camera decisions as features** (found mid-session): the
       NEF's XMP packet carries Auto PC's Contrast/Saturation/Clarity/
       Texture per shot; feeding them to the predictor was worth −0.19,
