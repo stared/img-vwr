@@ -64,5 +64,9 @@ Findings that shaped the model:
   clamped to ±0.15 so colours the corpus never saw pass through untouched.
 - Active D-Lighting was off everywhere, so no local tone mapping is modelled;
   if a future shoot has it on, a global model will visibly under-fit it.
-- A pair dump can contain broken pairs (eclipse-totality frames where the
-  NEF decodes black against a lit JPEG); `fit_look.py` excludes them.
+- A pair dump can contain degenerate pairs (sun-disk frames shot at −10 EV
+  where both files are essentially black); `fit_look.py` excludes them.
+- What remains in the worst tail is not tone: fountain-spray and droplet
+  scenes where the camera's sharpening and noise reduction move fine texture
+  the grid then averages differently. A per-pixel global transform cannot
+  and should not chase that — side by side the renders match.

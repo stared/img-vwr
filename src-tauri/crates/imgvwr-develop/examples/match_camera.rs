@@ -1,5 +1,13 @@
 //! Fits develop settings that make a raw file look like the camera's own JPEG.
 //!
+//! Historical: this search over the *sliders* is what established that no
+//! slider setting could get closer than ~7 sRGB units, and that the free-LUT
+//! ceiling of the luminance-gain pipeline was the bottleneck. The shipped
+//! answer is the fitted camera look (`src/look.rs`, fitted by
+//! `tools/camera-look`, measured end to end by the `verify_look` example) —
+//! this example remains as the measurement harness for slider-space
+//! questions.
+//!
 //! ```sh
 //! cargo run --release -p imgvwr-develop --example match_camera -- ~/Pictures/Nikon_RAW/"20260802 bb"
 //! ```
