@@ -144,7 +144,14 @@ pub fn develop_looked(
             for (out, inp) in out_row.chunks_exact_mut(4).zip(in_row.chunks_exact(3)) {
                 let (mut r, mut g, mut b) = (inp[0], inp[1], inp[2]);
 
-                let y0 = luma(r, g, b);
+                // Luminance from the non-negative part of each channel. A
+                // sensor records colours outside the sRGB primaries — deep
+                // ultraviolet-lit violet arrives with green strongly negative
+                // — and the raw weighted sum can then be zero or negative for
+                // a pixel that is plainly bright blue. Ranking such a pixel
+                // "black" sent it down the neutral branch below and punched
+                // black holes in UV-lit fabric.
+                let y0 = luma(r.max(0.0), g.max(0.0), b.max(0.0));
                 let y1 = tone_curve(y0, &tone);
                 if y0 > 1e-6 {
                     let gain = y1 / y0;
@@ -509,6 +516,26 @@ mod tests {
         assert_eq!(out.rgba.len(), 2 * 4);
         assert_eq!(out.rgba[3], 255);
         assert_eq!(out.rgba[7], 255);
+    }
+
+    #[test]
+    fn ultraviolet_violet_renders_as_colour_not_as_a_black_hole() {
+        // Deep UV-lit violet from a real sensor: outside the sRGB primaries,
+        // green negative enough to drag the raw luminance to zero. The pixel
+        // is plainly bright blue and must render as such — measured against
+        // the camera's JPEG of a blacklight party, zeroing these punched
+        // black holes across the fabric.
+        let src = linear(&[[0.02, -0.09, 0.35]]);
+        let out = develop(&src, &DevelopParams::default());
+        assert!(out.rgba[2] > 100, "blue survives: {:?}", &out.rgba[..3]);
+        let tables = crate::look::LookTables::new(&crate::look::LookTuning {
+            gain: 0.0,
+            contrast: 0.0,
+            wb_r: 0.0,
+            wb_b: 0.0,
+        });
+        let (_, _, b) = crate::look::apply_pixel(0.02, -0.09, 0.35, &tables);
+        assert!(b > 0.3, "and through the look too: {b}");
     }
 
     #[test]
