@@ -756,6 +756,11 @@ impl DevelopService {
                                 wb_r: row.get::<_, f64>(2)? as f32,
                                 wb_b: row.get::<_, f64>(3)? as f32,
                                 saturation: row.get::<_, f64>(4)? as f32,
+                                // Zero in every shipped 5-axis row; a
+                                // 7-axis refit changes model_tag and
+                                // invalidates this cache wholesale.
+                                shadow_lift: 0.0,
+                                highlight_shift: 0.0,
                                 chroma_nr: row.get::<_, f64>(5)? as f32,
                                 luma_nr: row.get::<_, f64>(6)? as f32,
                                 sharpen: row.get::<_, f64>(7)? as f32,
