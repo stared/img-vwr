@@ -17,12 +17,14 @@
 //! follows the precedent already set for AVIF, which likewise has no viable
 //! Rust decoder and is left to the platform.
 //!
-//! Core Image is used for exactly two things: demosaicing, and white balance
-//! in sensor space (which must happen before demosaicing to be correct, and
-//! is the one adjustment a generic pipeline genuinely cannot do properly).
-//! Everything Apple would otherwise add — its tone curve, contrast, sharpening
-//! and gamut mapping — is switched off, because exposure and tone belong to
-//! `imgvwr-develop` and must behave identically for every format.
+//! Core Image is used for demosaicing, white balance in sensor space (which
+//! must happen before demosaicing to be correct, and is the one adjustment a
+//! generic pipeline genuinely cannot do properly), and detail reconstruction
+//! — capture sharpening and noise reduction, set per ISO to follow what the
+//! camera's own JPEG engine does. Everything Apple would otherwise add in
+//! *tone* — its tone curve, contrast, shadow boost, gamut mapping — is
+//! switched off, because exposure and tone belong to `imgvwr-develop` and
+//! must behave identically for every format.
 
 use imgvwr_core::SceneFormat;
 

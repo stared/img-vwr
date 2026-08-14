@@ -55,15 +55,27 @@ impl SceneFormat for CoreImageRawFormat {
                 ))
             })?;
 
-            // Neutral decode. Apple's renderer would otherwise apply its own
-            // look — a tone curve, shadow boost, capture sharpening — and the
-            // develop sliders would then be stacking on top of an opinion the
-            // user cannot see or undo.
+            // Neutral in tone, matched in texture. Apple's renderer would
+            // otherwise apply its own look — a tone curve, shadow boost,
+            // gamut mapping — and the develop sliders would then be stacking
+            // on top of an opinion the user cannot see or undo; all of that
+            // is switched off. Capture sharpening and noise reduction are a
+            // different matter: they are detail reconstruction, like
+            // demosaicing, not tone — and measured against the camera's own
+            // JPEGs a decode without them has less than half the camera's
+            // edge energy at base ISO and many times its noise in the dark
+            // (fit_detail example). So they are set to follow the camera.
             filter.setBoostAmount(0.0);
             filter.setBoostShadowAmount(0.0);
             filter.setGamutMappingEnabled(false);
+            let (sharpness, nr_floor) = detail_settings(
+                imgvwr_core::read_meta(path)
+                    .ok()
+                    .and_then(|m| m.exif)
+                    .and_then(|e| e.iso),
+            );
             if filter.isSharpnessSupported() {
-                filter.setSharpnessAmount(0.0);
+                filter.setSharpnessAmount(sharpness);
             }
             if filter.isContrastSupported() {
                 filter.setContrastAmount(0.0);
@@ -73,6 +85,14 @@ impl SceneFormat for CoreImageRawFormat {
             }
             if filter.isLocalToneMapSupported() {
                 filter.setLocalToneMapAmount(0.0);
+            }
+            // Apple already ramps luminance NR with ISO; the floor only ever
+            // raises it, because against the camera's JPEGs its ramp starts
+            // too late and ends too low. Colour NR is left as Apple set it —
+            // measured neutral everywhere.
+            let lnr = filter.luminanceNoiseReductionAmount();
+            if lnr < nr_floor {
+                filter.setLuminanceNoiseReductionAmount(nr_floor);
             }
             // Highlight recovery is not a look — it reconstructs channels the
             // sensor clipped, which is precisely what makes a highlights slider
@@ -105,9 +125,26 @@ impl SceneFormat for CoreImageRawFormat {
                 inner: Mutex::new(Inner { filter, context }),
                 native,
                 as_shot,
+                sharpness,
             }))
         }
     }
+}
+
+/// Capture sharpening and the luminance-NR floor for a frame's ISO, fitted
+/// against the camera's own JPEGs (`fit_detail` example, 2026-08-14).
+///
+/// The shape mirrors what the camera itself does: full sharpening at low
+/// ISO fading out as noise would be amplified (measured best at 1.0 for
+/// ISO ≤ 1600, harmful by 6400), and luminance noise reduction rising
+/// through the same range to a strong 0.7 (measured best at every high-ISO
+/// frame tried, above Apple's own ramp). Both ramps are linear in stops.
+fn detail_settings(iso: Option<u32>) -> (f32, f32) {
+    let iso = iso.unwrap_or(400).max(1) as f32;
+    let stops = iso.log2();
+    let sharpness = 1.0 - ((stops - 1600f32.log2()) / 2.0).clamp(0.0, 1.0);
+    let nr_floor = 0.7 * ((stops - 800f32.log2()) / 3.0).clamp(0.0, 1.0);
+    (sharpness, nr_floor)
 }
 
 /// Frame size without decoding anything.
@@ -144,6 +181,11 @@ struct CoreImageRawScene {
     inner: Mutex<Inner>,
     native: (u32, u32),
     as_shot: WhiteBalance,
+    /// The fitted capture sharpening for this frame's ISO. Held here rather
+    /// than baked into the filter because it is only applied to renders near
+    /// 1:1 — at preview scales its radius is sub-pixel and invisible, while
+    /// its cost (~80 ms at 2000 px) would land on every slider drag.
+    sharpness: f32,
 }
 
 // SAFETY: `CIContext` is documented as thread-safe, and the filter is only
@@ -200,6 +242,16 @@ impl SceneImage for CoreImageRawScene {
         // sequence, so no other thread can observe a half-applied setting.
         unsafe {
             inner.filter.setScaleFactor(scale);
+            // Capture sharpening only where its radius survives the scale: a
+            // fit-to-window preview downsamples it away while still paying
+            // for it on every slider drag. Near 1:1 — the loupe, a zoomed
+            // detail, an export — is where the camera's edge rendering is
+            // actually visible, and where it is applied.
+            if inner.filter.isSharpnessSupported() {
+                inner
+                    .filter
+                    .setSharpnessAmount(if scale >= 0.5 { self.sharpness } else { 0.0 });
+            }
             // White balance goes to the decoder rather than being applied to
             // the output: it belongs before demosaicing, in sensor space.
             inner
