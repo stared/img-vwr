@@ -9,6 +9,7 @@
 use imgvwr_core::{linear_to_srgb, DecodedImage, LinearImage};
 use rayon::prelude::*;
 
+use crate::look::{self, LookTables, LookTuning};
 use crate::params::DevelopParams;
 
 /// Middle grey in scene-linear terms — the pivot every tonal control turns
@@ -110,8 +111,24 @@ fn tone_curve(y: f32, t: &Tone) -> f32 {
 
 /// Apply an edit to scene-linear pixels, producing display-ready sRGB RGBA8.
 pub fn develop(src: &LinearImage, params: &DevelopParams) -> DecodedImage {
+    develop_looked(src, params, None)
+}
+
+/// The same, through the camera look when one is in effect.
+///
+/// The slider pipeline runs first, in scene light — which is what keeps
+/// highlight recovery real: pulling highlights down moves values back under
+/// white *before* the look's curve decides where white is. With every slider
+/// at zero the tone stage is the identity and the output is exactly the
+/// camera's rendering.
+pub fn develop_looked(
+    src: &LinearImage,
+    params: &DevelopParams,
+    look: Option<&LookTuning>,
+) -> DecodedImage {
     let params = params.clamped();
     let tone = Tone::new(&params);
+    let tables = look.map(LookTables::new);
 
     // Saturation and vibrance combine into one factor per pixel; vibrance is
     // the part weighted down for colours that are already vivid.
@@ -140,6 +157,13 @@ pub fn develop(src: &LinearImage, params: &DevelopParams) -> DecodedImage {
                     r = y1;
                     g = y1;
                     b = y1;
+                }
+
+                // The camera look renders the slider-adjusted scene the way
+                // the camera would have; without one the values go to the
+                // encoder as they are, exactly as before.
+                if let Some(tables) = &tables {
+                    (r, g, b) = look::apply_pixel(r, g, b, tables);
                 }
 
                 if sat != 0.0 || vib != 0.0 {

@@ -595,7 +595,8 @@ export function isAtOpening(session: Session): boolean {
   return (
     settings.whiteBalance.temperature === info.settings.whiteBalance.temperature &&
     settings.whiteBalance.tint === info.settings.whiteBalance.tint &&
-    PARAM_KEYS.every((key) => settings.params[key] === info.settings.params[key])
+    PARAM_KEYS.every((key) => settings.params[key] === info.settings.params[key]) &&
+    (settings.look ?? "flat") === (info.settings.look ?? "flat")
   );
 }
 
@@ -603,9 +604,22 @@ export function isAtOpening(session: Session): boolean {
  * Which preset the current settings are, or null once they are nobody's.
  *
  * Compared rather than remembered, so the control can only ever name a look
- * the sliders are actually sitting on.
+ * the settings actually are. Two comparisons, because a preset is two
+ * things now: the camera look it selects and the slider positions it sets —
+ * "nikon" and "flat" share the identity sliders and differ only in look.
  */
-export function presetOf(params: DevelopParams, presets: Preset[]): Preset | null {
+export function presetOf(settings: DevelopSettings, presets: Preset[]): Preset | null {
+  return (
+    presets.find(
+      (p) =>
+        (settings.look ?? "flat") === p.id &&
+        PARAM_KEYS.every((key) => p.params[key] === settings.params[key]),
+    ) ?? null
+  );
+}
+
+/** Which preset these slider positions are, look aside — the zero level. */
+function presetOfParams(params: DevelopParams, presets: Preset[]): Preset | null {
   return presets.find((p) => PARAM_KEYS.every((key) => p.params[key] === params[key])) ?? null;
 }
 
@@ -622,7 +636,14 @@ export function pastedSettings(
   target: DevelopSettings,
   copied: DevelopSettings,
 ): DevelopSettings {
-  return { ...target, params: copied.params, basis: copied.basis };
+  // The look travels with the edit: the appearance being copied was made
+  // under it. On an image the look cannot apply to, the backend ignores it.
+  return {
+    ...target,
+    params: copied.params,
+    basis: copied.basis,
+    look: copied.look ?? "flat",
+  };
 }
 
 /**
@@ -634,7 +655,9 @@ export function pastedSettings(
  */
 export function baselineOf(settings: DevelopSettings, presets: Preset[]): Preset | null {
   return (
-    presetOf(settings.params, presets) ?? presets.find((p) => p.id === settings.basis) ?? null
+    presetOfParams(settings.params, presets) ??
+    presets.find((p) => p.id === settings.basis) ??
+    null
   );
 }
 
@@ -1109,8 +1132,14 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       // preset that overwrote it would throw away the eyedropper's work.
       //
       // The basis moves with it: from here on, this is what the sliders
-      // measure their deviation from.
-      change({ ...session.settings, params: preset.params, basis: preset.id });
+      // measure their deviation from. So does the look — a preset names a
+      // whole rendering, the camera transform and the slider positions both.
+      change({
+        ...session.settings,
+        params: preset.params,
+        basis: preset.id,
+        look: preset.id,
+      });
     },
 
     clearDetail: () => {

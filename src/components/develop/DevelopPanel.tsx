@@ -140,7 +140,7 @@ export function DevelopPanel() {
   // stacking off.
   const sibling = siblingsOf(allEntries, entry)[0] ?? null;
   const { settings, info, overlay } = session;
-  const active = presetOf(settings.params, presets);
+  const active = presetOf(settings, presets);
   const baseline = baselineOf(settings, presets);
   // A raw file opens with a look already on it, so "is this the identity edit"
   // is the wrong question for whether there is anything to undo.
@@ -436,11 +436,12 @@ export function DevelopPanel() {
 
       <Group title="Tone">
         {/* Every look on show, the one in effect marked. An edited state
-            marks nothing — the sliders are nobody's preset — and clicking
-            the look the edit was built on puts every slider back to it.
-            Every preset is only a set of slider positions, so the sliders
-            below always show exactly what it did. */}
-        {presets.length > 0 && (
+            marks nothing, and clicking a look puts the sliders back to its
+            starting point. Sensor pixels only: a preset now selects the
+            fitted camera transform, and a finished JPEG already has the
+            camera's rendering baked in — offering to apply it again would
+            be a row of buttons that do nothing. */}
+        {presets.length > 0 && info.needsRender && (
           <div className="develop-switch">
             <span className="develop-switch-label">preset</span>
             {presets.map((preset) => (

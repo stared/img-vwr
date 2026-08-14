@@ -498,7 +498,18 @@ crop: Crop;
  * has since been removed) reads as the identity, which is what a missing
  * baseline should mean.
  */
-basis: string }
+basis: string; 
+/**
+ * Which camera look renders this image — the fitted transform that makes
+ * a neutral raw decode match the camera's own JPEG, applied under the
+ * sliders. `"flat"` means none.
+ * 
+ * Separate from `basis` (and defaulting to none) on purpose: edits saved
+ * before the look existed carry slider positions that already emulate
+ * it, and deserialising those into a world where the look also applied
+ * would render every old edit twice as strong.
+ */
+look?: string }
 /**
  * Everything the develop UI needs to show an image before any edit is made.
  */

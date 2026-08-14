@@ -61,6 +61,7 @@ fn main() {
             saturation: 0.0,
         },
         basis: imgvwr_develop::presets::NONE.to_owned(),
+        look: imgvwr_develop::presets::NONE.to_owned(),
         crop: imgvwr_develop::Crop::FULL,
     };
     let mut worst = std::time::Duration::ZERO;
@@ -73,6 +74,30 @@ fn main() {
     println!("edited preview  : {worst:?} (worst of 5 — this is the slider-drag cost)");
     let out = render(scene.as_ref(), &edited, PREVIEW_EDGE, Overlay::None, Region::FULL).expect("render");
     save(&out.image, &format!("{out_prefix}-edited.png"));
+
+    // The camera look path, which is what a raw actually opens with.
+    let opening = imgvwr_develop::opening_settings(scene.as_shot(), scene.rendering());
+    let tuning = {
+        let small = imgvwr_develop::render_linear(scene.as_ref(), &opening, 384, Region::FULL)
+            .expect("measure render");
+        imgvwr_develop::LookTuning::measure(&small, None, scene.as_shot())
+    };
+    let mut worst = std::time::Duration::ZERO;
+    for _ in 0..5 {
+        let t = Instant::now();
+        let out = imgvwr_develop::render_looked(
+            scene.as_ref(), &opening, PREVIEW_EDGE, Overlay::None, Region::FULL, Some(&tuning),
+        )
+        .expect("render");
+        worst = worst.max(t.elapsed());
+        std::hint::black_box(&out.image.rgba[0]);
+    }
+    println!("looked preview  : {worst:?} (worst of 5 — the camera-look cost)");
+    let out = imgvwr_develop::render_looked(
+        scene.as_ref(), &opening, PREVIEW_EDGE, Overlay::None, Region::FULL, Some(&tuning),
+    )
+    .expect("render");
+    save(&out.image, &format!("{out_prefix}-looked.png"));
 
     let t = Instant::now();
     let focus = render(scene.as_ref(), &neutral, PREVIEW_EDGE, Overlay::Sharpness, Region::FULL).expect("render");

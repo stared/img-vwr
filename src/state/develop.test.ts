@@ -224,6 +224,8 @@ describe("regionsDiffer", () => {
 });
 
 describe("presets", () => {
+  // Presets share the identity sliders now — what tells them apart is the
+  // camera look each one selects.
   const flat: Preset = {
     id: "flat",
     label: "flat",
@@ -234,17 +236,28 @@ describe("presets", () => {
     id: "nikon",
     label: "nikon",
     note: "camera look",
-    params: { ...neutralSettings.params, exposure: 0.8, contrast: 36, rolloff: 83 },
+    params: neutralSettings.params,
   };
   const catalog = [flat, nikon];
 
-  it("names the preset the sliders are currently sitting on", () => {
-    expect(presetOf(nikon.params, catalog)?.id).toBe("nikon");
-    expect(presetOf(flat.params, catalog)?.id).toBe("flat");
+  it("names the preset the settings are currently sitting on, by look", () => {
+    expect(presetOf({ ...neutralSettings, look: "nikon" }, catalog)?.id).toBe("nikon");
+    expect(presetOf({ ...neutralSettings, look: "flat" }, catalog)?.id).toBe("flat");
+    // Settings from before the look existed read as no look at all.
+    expect(presetOf(neutralSettings, catalog)?.id).toBe("flat");
   });
 
   it("names nothing once a slider has moved off one", () => {
-    expect(presetOf({ ...nikon.params, shadows: -12 }, catalog)).toBeNull();
+    expect(
+      presetOf(
+        {
+          ...neutralSettings,
+          look: "nikon",
+          params: { ...neutralSettings.params, shadows: -12 },
+        },
+        catalog,
+      ),
+    ).toBeNull();
   });
 
   it("cycles through the catalog from a preset", () => {

@@ -104,6 +104,20 @@ pub struct DevelopSettings {
     /// has since been removed) reads as the identity, which is what a missing
     /// baseline should mean.
     pub basis: String,
+    /// Which camera look renders this image — the fitted transform that makes
+    /// a neutral raw decode match the camera's own JPEG, applied under the
+    /// sliders. `"flat"` means none.
+    ///
+    /// Separate from `basis` (and defaulting to none) on purpose: edits saved
+    /// before the look existed carry slider positions that already emulate
+    /// it, and deserialising those into a world where the look also applied
+    /// would render every old edit twice as strong.
+    #[serde(default = "default_look")]
+    pub look: String,
+}
+
+fn default_look() -> String {
+    crate::presets::NONE.to_owned()
 }
 
 impl DevelopSettings {
@@ -115,6 +129,7 @@ impl DevelopSettings {
             params: DevelopParams::default(),
             crop: crate::crop::Crop::FULL,
             basis: crate::presets::NONE.to_owned(),
+            look: crate::presets::NONE.to_owned(),
         }
     }
 
@@ -127,6 +142,7 @@ impl DevelopSettings {
             params: self.params.clamped(),
             crop: self.crop.clamped(),
             basis: self.basis.clone(),
+            look: self.look.clone(),
         }
     }
 }
@@ -218,6 +234,7 @@ mod tests {
             },
             params: DevelopParams::default(),
             basis: crate::presets::NONE.to_owned(),
+            look: crate::presets::NONE.to_owned(),
             crop: crate::crop::Crop::FULL,
         }
         .clamped();

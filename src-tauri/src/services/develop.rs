@@ -108,6 +108,11 @@ struct OpenScene {
     /// Decided when the scene opens — the one moment the fusion runs — and
     /// reported by `state` for as long as the scene lives.
     hdr: HdrOutcome,
+    /// The camera look's per-image half, measured once from a small render
+    /// when a scene-referred image opens. Measured here rather than per
+    /// render call so a preview, the loupe and the export all agree on what
+    /// the camera would have decided for this frame.
+    tuning: Option<imgvwr_develop::LookTuning>,
 }
 
 pub struct DevelopService {
@@ -167,6 +172,9 @@ impl DevelopService {
             "crop_w REAL NOT NULL DEFAULT 1",
             "crop_h REAL NOT NULL DEFAULT 1",
             "crop_angle REAL NOT NULL DEFAULT 0",
+            // No look: rows from before the camera look existed carry slider
+            // positions that emulated it, and applying both would double it.
+            "look TEXT NOT NULL DEFAULT 'flat'",
         ] {
             if let Err(e) = conn.execute(&format!("ALTER TABLE develop ADD COLUMN {column}"), []) {
                 // Already there on every run but the first.
@@ -245,10 +253,12 @@ impl DevelopService {
             },
             None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
         };
+        let tuning = measure_tuning(path, scene.as_ref());
         let entry = Arc::new(OpenScene {
             path: path.to_owned(),
             scene,
             hdr,
+            tuning,
         });
 
         let mut open = self.open.lock().unwrap();
@@ -393,9 +403,15 @@ impl DevelopService {
         region: Region,
     ) -> Result<DevelopFrame, String> {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
-        let developed =
-            imgvwr_develop::render(entry.scene.as_ref(), settings, max_edge, overlay, region)
-                .map_err(|e| e.to_string())?;
+        let developed = imgvwr_develop::render_looked(
+            entry.scene.as_ref(),
+            settings,
+            max_edge,
+            overlay,
+            region,
+            entry.tuning.as_ref(),
+        )
+        .map_err(|e| e.to_string())?;
 
         let jpeg = encode_jpeg(&developed.image, PREVIEW_QUALITY)?;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
@@ -496,12 +512,13 @@ impl DevelopService {
                 let settings = self.stored_settings(path)?.unwrap_or_else(|| {
                     imgvwr_develop::opening_settings(entry.scene.as_shot(), entry.scene.rendering())
                 });
-                let developed = imgvwr_develop::render(
+                let developed = imgvwr_develop::render_looked(
                     entry.scene.as_ref(),
                     &settings,
                     plan.size.edge(w.max(h)),
                     Overlay::None,
                     Region::FULL,
+                    entry.tuning.as_ref(),
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -541,7 +558,7 @@ impl DevelopService {
             .prepare(
                 "SELECT temperature, tint, exposure, contrast, highlights, shadows,
                         whites, blacks, rolloff, vibrance, saturation, basis,
-                        crop_x, crop_y, crop_w, crop_h, crop_angle
+                        crop_x, crop_y, crop_w, crop_h, crop_angle, look
                  FROM develop WHERE path = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -571,6 +588,7 @@ impl DevelopService {
                         angle: row.get::<_, f64>(16)? as f32,
                     },
                     basis: row.get::<_, String>(11)?,
+                    look: row.get::<_, String>(17)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -589,9 +607,9 @@ impl DevelopService {
             "INSERT INTO develop
                  (path, temperature, tint, exposure, contrast, highlights,
                   shadows, whites, blacks, rolloff, vibrance, saturation, basis,
-                  crop_x, crop_y, crop_w, crop_h, crop_angle)
+                  crop_x, crop_y, crop_w, crop_h, crop_angle, look)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                     ?14, ?15, ?16, ?17, ?18)
+                     ?14, ?15, ?16, ?17, ?18, ?19)
              ON CONFLICT(path) DO UPDATE SET
                  temperature = excluded.temperature, tint = excluded.tint,
                  exposure = excluded.exposure, contrast = excluded.contrast,
@@ -602,7 +620,7 @@ impl DevelopService {
                  basis = excluded.basis,
                  crop_x = excluded.crop_x, crop_y = excluded.crop_y,
                  crop_w = excluded.crop_w, crop_h = excluded.crop_h,
-                 crop_angle = excluded.crop_angle",
+                 crop_angle = excluded.crop_angle, look = excluded.look",
             rusqlite::params![
                 path,
                 f64::from(s.white_balance.temperature),
@@ -622,6 +640,7 @@ impl DevelopService {
                 f64::from(s.crop.width),
                 f64::from(s.crop.height),
                 f64::from(s.crop.angle),
+                s.look.clone(),
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -659,6 +678,32 @@ impl DevelopService {
     }
 }
 
+/// The camera look's per-image half for a freshly opened scene, or None for
+/// pixels the look does not apply to.
+///
+/// Measured from a small full-frame render at the camera's own balance —
+/// the frame the camera itself metered — plus the ISO it recorded. A scene
+/// that fails to render small would fail everywhere else too, so a failure
+/// here just means the look falls back to its per-image neutral.
+fn measure_tuning(path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::LookTuning> {
+    const MEASURE_EDGE: u32 = 384;
+    if scene.rendering() != imgvwr_core::Rendering::SceneReferred {
+        return None;
+    }
+    let linear = scene
+        .render(imgvwr_core::RenderRequest {
+            max_edge: MEASURE_EDGE,
+            white_balance: scene.as_shot(),
+            region: Region::FULL,
+        })
+        .ok()?;
+    let iso = imgvwr_core::read_meta(Path::new(path))
+        .ok()
+        .and_then(|m| m.exif)
+        .and_then(|e| e.iso);
+    Some(imgvwr_develop::LookTuning::measure(&linear, iso, scene.as_shot()))
+}
+
 /// Render one image straight to WebP thumbnail bytes, for formats the codec
 /// registry cannot decode. Used by the thumbnail service so RAW files appear
 /// in the gallery like anything else.
@@ -676,9 +721,16 @@ pub fn thumbnail_via_develop(
     // consulted: a thumbnail is a cheap index entry, and reading the database
     // once per cell would make scrolling a folder a database scan.
     let settings = imgvwr_develop::opening_settings(scene.as_shot(), scene.rendering());
-    let developed =
-        imgvwr_develop::render(scene.as_ref(), &settings, max_edge, Overlay::None, Region::FULL)
-            .map_err(|e| e.to_string())?;
+    let tuning = measure_tuning(&path.to_string_lossy(), scene.as_ref());
+    let developed = imgvwr_develop::render_looked(
+        scene.as_ref(),
+        &settings,
+        max_edge,
+        Overlay::None,
+        Region::FULL,
+        tuning.as_ref(),
+    )
+    .map_err(|e| e.to_string())?;
     let img = &developed.image;
     webp::Encoder::from_rgba(&img.rgba, img.width, img.height)
         .encode_simple(false, imgvwr_core::thumbs::THUMB_WEBP_QUALITY)
@@ -972,9 +1024,14 @@ mod tests {
         let raw_like = dir.path().join("frame.sensor");
         std::fs::write(&raw_like, b"pretend sensor data").unwrap();
         let opened = svc.state(raw_like.to_str().unwrap()).unwrap();
+        assert_eq!(
+            opened.settings.look,
+            imgvwr_develop::presets::DEFAULT_FOR_RAW,
+            "a flat decode should open under the camera look, not flat"
+        );
         assert!(
-            !opened.settings.params.is_identity(),
-            "a flat decode should open with the default look, not flat"
+            opened.settings.params.is_identity(),
+            "the look lives in the look, not in pre-moved sliders"
         );
         assert!(!opened.edited, "opening with a look is not an edit");
         // The look is tone and colour only; the balance stays the camera's.
@@ -982,8 +1039,9 @@ mod tests {
 
         let rendered = sample(dir.path(), "already.png");
         let untouched = svc.state(rendered.to_str().unwrap()).unwrap();
-        assert!(
-            untouched.settings.params.is_identity(),
+        assert_eq!(
+            untouched.settings.look,
+            imgvwr_develop::presets::NONE,
             "a finished JPEG already has somebody's look; applying one would double it"
         );
     }
@@ -999,6 +1057,7 @@ mod tests {
             white_balance: WhiteBalance { temperature: 5200.0, tint: -3.0 },
             params: DevelopParams { exposure: -0.4, ..Default::default() },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            look: imgvwr_develop::presets::NONE.to_owned(),
             crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &mine).unwrap();
@@ -1063,6 +1122,7 @@ mod tests {
             white_balance: WhiteBalance { temperature: 6000.0, tint: 0.0 },
             params: DevelopParams { rolloff: 83.0, ..Default::default() },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            look: imgvwr_develop::presets::NONE.to_owned(),
             crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &settings).unwrap();
@@ -1099,6 +1159,7 @@ mod tests {
                 ..Default::default()
             },
             basis: imgvwr_develop::presets::NONE.to_owned(),
+            look: imgvwr_develop::presets::NONE.to_owned(),
             crop: imgvwr_develop::Crop::FULL,
         };
         svc.save_settings(path, &edit).unwrap();
@@ -1134,6 +1195,7 @@ mod tests {
                     ..Default::default()
                 },
                 basis: imgvwr_develop::presets::NONE.to_owned(),
+                look: imgvwr_develop::presets::NONE.to_owned(),
                 crop: imgvwr_develop::Crop::FULL,
             },
         )
@@ -1240,6 +1302,7 @@ mod tests {
                     ..Default::default()
                 },
                 basis: imgvwr_develop::presets::NONE.to_owned(),
+                look: imgvwr_develop::presets::NONE.to_owned(),
                 crop: imgvwr_develop::Crop::FULL,
             },
             max_edge,

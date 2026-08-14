@@ -52,19 +52,14 @@ pub fn presets() -> Vec<Preset> {
         Preset {
             id: DEFAULT_FOR_RAW.into(),
             label: "nikon".into(),
-            note: "Fitted to the JPEGs this camera makes from the same frames."
+            note: "The camera's own rendering, fitted to the JPEGs it makes \
+                   from the same frames."
                 .into(),
-            params: DevelopParams {
-                exposure: 0.80,
-                contrast: 36.0,
-                highlights: -22.0,
-                shadows: -33.0,
-                whites: 68.0,
-                blacks: 0.0,
-                rolloff: 83.0,
-                vibrance: 32.0,
-                saturation: 2.0,
-            },
+            // The look is not slider positions any more: it is the fitted
+            // camera transform (see `crate::look`), selected by
+            // `DevelopSettings::look` carrying this id. The sliders stay at
+            // zero so every one of them still means "as the camera would".
+            params: DevelopParams::default(),
         },
     ]
 }
@@ -104,6 +99,7 @@ pub fn opening_settings(
         params: opening_params(rendering),
         crop: crate::crop::Crop::FULL,
         basis: opening_preset(rendering).to_owned(),
+        look: opening_preset(rendering).to_owned(),
     }
 }
 
@@ -153,19 +149,26 @@ mod tests {
     }
 
     #[test]
-    fn raw_opens_with_a_look_and_a_rendered_file_opens_untouched() {
-        assert!(!opening_params(Rendering::SceneReferred).is_identity());
+    fn raw_opens_with_the_camera_look_and_a_rendered_file_without_one() {
+        // The look moved out of the sliders: every preset opens with them at
+        // zero, and what distinguishes a raw is the look id it opens under.
+        assert!(opening_params(Rendering::SceneReferred).is_identity());
         assert!(opening_params(Rendering::AlreadyRendered).is_identity());
+        let raw = opening_settings(imgvwr_core::WhiteBalance::D65, Rendering::SceneReferred);
+        assert_eq!(raw.look, DEFAULT_FOR_RAW);
+        let jpeg = opening_settings(imgvwr_core::WhiteBalance::D65, Rendering::AlreadyRendered);
+        assert_eq!(jpeg.look, NONE);
     }
 
     #[test]
-    fn a_preset_recognises_itself_and_nothing_else_does() {
-        for p in presets() {
-            assert_eq!(matching(&p.params).map(|m| m.id), Some(p.id));
-        }
+    fn matching_by_params_lands_on_the_first_preset_with_those_sliders() {
+        // Every preset now shares the identity sliders, so params alone name
+        // the first of them; which look is on is `DevelopSettings::look`'s
+        // question, not the sliders'.
+        assert_eq!(matching(&DevelopParams::default()).map(|m| m.id), Some(NONE.to_owned()));
         let nudged = DevelopParams {
             exposure: 0.123,
-            ..preset(DEFAULT_FOR_RAW).unwrap().params
+            ..DevelopParams::default()
         };
         assert_eq!(matching(&nudged), None, "a moved slider is no longer a preset");
     }

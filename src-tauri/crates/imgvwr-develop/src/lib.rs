@@ -7,6 +7,8 @@
 
 pub mod analysis;
 pub mod crop;
+pub mod look;
+mod look_data;
 pub mod params;
 pub mod pipeline;
 pub mod presets;
@@ -16,9 +18,10 @@ pub use analysis::{
     histogram, resolved_detail, sharpness_map, Histogram,
 };
 pub use crop::Crop;
+pub use look::LookTuning;
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use presets::{baseline, opening_params, opening_settings, preset, presets, Preset};
-pub use pipeline::{develop, MID_GREY};
+pub use pipeline::{develop, develop_looked, MID_GREY};
 
 use imgvwr_core::{DecodedImage, Region, RenderRequest, SceneError, SceneImage};
 
@@ -109,10 +112,29 @@ pub fn render(
     overlay: Overlay,
     region: Region,
 ) -> Result<Developed, SceneError> {
+    render_looked(scene, settings, max_edge, overlay, region, None)
+}
+
+/// [`render`], through the camera look when the settings ask for one and the
+/// caller has the image's tuning in hand. The gate is the settings' `look`
+/// id, so switching the look off is a settings change like any other.
+pub fn render_looked(
+    scene: &dyn SceneImage,
+    settings: &DevelopSettings,
+    max_edge: u32,
+    overlay: Overlay,
+    region: Region,
+    tuning: Option<&LookTuning>,
+) -> Result<Developed, SceneError> {
     let settings = settings.clamped();
     let linear = render_linear(scene, &settings, max_edge, region)?;
 
-    let mut image = develop(&linear, &settings.params);
+    let look = if settings.look == presets::DEFAULT_FOR_RAW {
+        tuning
+    } else {
+        None
+    };
+    let mut image = develop_looked(&linear, &settings.params, look);
     let hist = histogram(&image);
 
     match overlay {
