@@ -109,6 +109,12 @@ baseline held-out.
 - [x] CIRAW WB vs the NEF's recorded values — audited: r=0.993 with a
       2.5% systematic offset; Apple reads HE* WB correctly. The per-image
       WB nudges model the camera's rendering, not a decode bug.
+- [ ] **CIRAW fails outright on pixel-shift + big-bracket frames**: the
+      two "degenerate" eclipse pairs (DSC_1189/1194 — PixelShiftActive,
+      ExposureBracketValue +6) decode as a FLAT constant (−0.004
+      everywhere) while their JPEGs are normal sunsets. Not an exposure
+      problem — the decode returns nothing. Detect a flat SceneReferred
+      decode and fall back to the embedded JPEG for display.
 - [ ] Does CIRAW apply the lens distortion/vignetting the JPEG has
       (AutoDistortionControl On)? Measure geometry against the JPEG; if not
       matched, edges disagree for a reason no colour model can fix.
