@@ -38,7 +38,8 @@ def main():
                     lut_n=cfg["lut"], predictor=cfg["predictor"], init="shipped",
                     seed=cfg["seed"], latent_extra=cfg.get("latent_extra", 0),
                     clip_scene=cfg.get("clip_scene", 0.0),
-                    clip_cross=cfg.get("clip_cross", False))
+                    clip_cross=cfg.get("clip_cross", False),
+                    hidden=cfg.get("hidden", 16))
     sd = {k: torch.tensor(npz[k]) for k in npz.files
           if k not in ("err", "oracle", "config")}
     model.load_state_dict(sd, strict=False)
@@ -72,6 +73,7 @@ def main():
     out.append(f"    {fmt(lut)}")
     out.append("];")
     out.append(f"pub const N_FEATURES: usize = {nf};")
+    out.append(f"pub const N_TUNING: usize = {model.latent_dim};")
 
     with torch.no_grad():
         if cfg["predictor"] == "linear":
@@ -84,15 +86,51 @@ def main():
         else:
             w1 = model.mlp1.weight.numpy()   # (h, nf)
             b1 = model.mlp1.bias.numpy()
-            w2 = model.mlp2.weight.numpy()   # (4, h)
+            w2 = model.mlp2.weight.numpy()   # (n_tuning, h)
             b2 = model.mlp2.bias.numpy()
             h = w1.shape[0]
+            nt = model.latent_dim
             out.append(f"pub const PREDICTOR_HIDDEN: usize = {h};")
             out.append(f"pub const MLP_W1: [f32; {h * nf}] = [\n    {fmt(w1)}\n];")
             out.append(f"pub const MLP_B1: [f32; {h}] = [\n    {fmt(b1)}\n];")
-            out.append(f"pub const MLP_W2: [f32; {4 * h}] = [\n    {fmt(w2)}\n];")
-            out.append(f"pub const MLP_B2: [f32; {4}] = [\n    {fmt(b2)}\n];")
+            out.append(f"pub const MLP_W2: [f32; {nt * h}] = [\n    {fmt(w2)}\n];")
+            out.append(f"pub const MLP_B2: [f32; {nt}] = [\n    {fmt(b2)}\n];")
+    # ---- residual k-NN over the training rows ----
+    # The MLP fits the bulk; the camera's odd per-shot decisions (the
+    # Contrast2012 extremes) live in the tail. A distance-weighted k-NN on
+    # the MLP's residuals, faded to zero far from the corpus, fixes the
+    # lookalike frames without touching generalisation.
+    lat_file = HERE / (path.replace(".npz", "_latents.npy"))
+    if lat_file.exists():
+        lat = np.load(lat_file)
+    else:
+        import fit_joint as fj2
+        lat = fj2.fit_test_latents(model, data, steps=500).numpy()
+        np.save(lat_file, lat)
+    with torch.no_grad():
+        mlp_pred = model.predict(torch.tensor(data["feats_np"])).numpy()
+    rows_tr = data["is_train"] & ~data["bad"]
+    resid = (lat - mlp_pred)[rows_tr]
+    Xtr = data["feats_np"][rows_tr]
+    mu = Xtr.mean(0)
+    sd = Xtr.std(0) + 1e-6
+    Xw = (Xtr - mu) / sd
+    # typical 4-NN distance inside the corpus (leave-one-out)
+    from sklearn.neighbors import NearestNeighbors
+    nn = NearestNeighbors(n_neighbors=5).fit(Xw)
+    d, _ = nn.kneighbors(Xw)
+    far = float(np.percentile(d[:, 1:].mean(1), 90))
+    n_tr = len(Xw)
+    out2 = []
+    out2.append("pub const KNN_K: usize = 4;")
+    out2.append(f"pub const KNN_N: usize = {n_tr};")
+    out2.append(f"pub const KNN_FAR: f32 = {far:.6};")
+    out2.append(f"pub const KNN_MU: [f32; {nf}] = [\n    {fmt(mu)}\n];")
+    out2.append(f"pub const KNN_SD: [f32; {nf}] = [\n    {fmt(sd)}\n];")
+    out2.append(f"pub const KNN_X: [f32; {n_tr * nf}] = [\n    {fmt(Xw)}\n];")
+    out2.append(f"pub const KNN_R: [f32; {n_tr * model.latent_dim}] = [\n    {fmt(resid)}\n];")
     print("\n".join(out))
+    print("\n".join(out2))
 
     # ---- verification vectors (stderr) ----
     e = sys.stderr
@@ -126,7 +164,8 @@ def main():
         p = model.predict(torch.tensor(X[ref : ref + 1])).numpy()[0]
     print(f"\nfeature test case (tag {data['entries'][ref]['tag']}):", file=e)
     print("    " + ", ".join(f"{v:.7}" for v in X[ref]), file=e)
-    for i, k in enumerate(["gain", "contrast", "wb_r", "wb_b"]):
+    names = ["gain", "contrast", "wb_r", "wb_b", "saturation"][: model.latent_dim]
+    for i, k in enumerate(names):
         print(f"    {k}: {p[i]:.5f}", file=e)
 
 

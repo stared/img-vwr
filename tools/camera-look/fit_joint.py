@@ -70,7 +70,8 @@ def inv_softplus(x):
 class Look(torch.nn.Module):
     def __init__(self, ship, n_img, feats, curves=3, lut_n=9, predictor="linear",
                  init="shipped", seed=0, latent_extra=0, clip_scene=0.0,
-                 clip_cross=False, dual_matrix=False, temp_w=None, basis_luts=1):
+                 clip_cross=False, dual_matrix=False, temp_w=None, basis_luts=1,
+                 hidden=16):
         super().__init__()
         self.clip_scene = clip_scene
         self.clip_cross = clip_cross
@@ -136,7 +137,7 @@ class Look(torch.nn.Module):
                 W0[: ship["W"].shape[1], :4] = ship["W"].T
             self.pred = torch.nn.Parameter(torch.tensor(W0, dtype=torch.float32))
         else:
-            h = 16
+            h = hidden
             self.mlp1 = torch.nn.Linear(nf, h)
             self.mlp2 = torch.nn.Linear(h, self.latent_dim)
             torch.nn.init.normal_(self.mlp1.weight, 0, 0.05, generator=g)
@@ -288,13 +289,77 @@ def maker_features(entries):
     return np.array(out, dtype=np.float32)
 
 
+def face_features(entries):
+    """Subject-aware features from Vision face boxes (dump_faces bin).
+
+    The predictor's remaining failures are 'who is the subject' exposure
+    decisions; the camera's Auto PC meters faces. Per image: how much face
+    there is, and how bright the largest face is relative to the scene.
+    """
+    import re as _re
+    boxes_by_tag = {}
+    for line in open(HERE / "faces.jsonl"):
+        e = json.loads(line)
+        m = _re.match(r".*/Nikon_RAW/([^/]+)/([^/]+)\.JPG", e["path"])
+        if not m:
+            continue
+        tag = m.group(1).replace(" ", "-") + "_" + m.group(2)
+        boxes_by_tag[tag] = e["boxes"]
+
+    def datefree(tag):
+        folder, stem = tag.rsplit("_DSC_", 1)
+        return _re.sub(r"^\d+-", "", folder) + "_DSC_" + stem
+
+    alias = {datefree(t): t for t in boxes_by_tag}
+    dims = {}
+    for line in open(HERE / "pairs2/manifest.jsonl"):
+        m = json.loads(line)
+        dims[m["tag"]] = (m["w"], m["h"])
+
+    out = []
+    for e in entries:
+        t = e["tag"]
+        boxes = boxes_by_tag.get(t)
+        if boxes is None and datefree(t) in alias:
+            boxes = boxes_by_tag[alias[datefree(t)]]
+        boxes = boxes or []
+        n = len(boxes)
+        total_area = sum(b[2] * b[3] for b in boxes)
+        if boxes:
+            bx = max(boxes, key=lambda b: b[2] * b[3])
+            big_area = bx[2] * bx[3]
+            w, h = dims[t]
+            x0, y0 = int(bx[0] * w), int(bx[1] * h)
+            x1, y1 = int((bx[0] + bx[2]) * w) + 1, int((bx[1] + bx[3]) * h) + 1
+            scene = np.fromfile(HERE / f"pairs2/{t}_scene.f32",
+                                dtype=np.float32).reshape(h, w, 3)
+            y = 0.2126 * scene[..., 0] + 0.7152 * scene[..., 1] + 0.0722 * scene[..., 2]
+            face_l = float(np.log2(max(np.median(
+                y[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]), 1e-8)))
+            global_l = float(np.log2(max(np.median(y), 1e-8)))
+            face_delta = face_l - global_l
+        else:
+            big_area = 0.0
+            face_l = 0.0
+            face_delta = 0.0
+        out.append([
+            min(n, 8) / 4.0,
+            min(total_area, 0.5) * 4.0,
+            min(big_area, 0.4) * 5.0,
+            face_l / 8.0 if boxes else 0.0,
+            np.clip(face_delta, -6, 6) / 3.0,
+            1.0 if boxes else 0.0,
+        ])
+    return np.array(out, dtype=np.float32)
+
+
 # maker feature columns readable without exiftool at runtime: the XMP packet
 # (plain XML in TIFF tag 700) and standard EXIF. Excludes ColorTemperatureAuto,
 # WB_RBLevels and FocusDistance, which live in Nikon's encrypted maker blocks.
 PORTABLE_MAKER = [0, 1, 2, 3, 4, 5, 9, 10, 11, 13]
 
 
-def load_data(dev, maker="none"):
+def load_data(dev, maker="none", faces=False):
     d = np.load(HERE / "samples2.npz")
     scene, cam, img = d["scene"], d["cam"], d["img"]
     entries = json.load(open(HERE / "images2.json"))
@@ -304,6 +369,8 @@ def load_data(dev, maker="none"):
         if maker == "portable":
             mk = mk[:, PORTABLE_MAKER]
         feats = np.concatenate([feats, mk], axis=1)
+    if faces:
+        feats = np.concatenate([feats, face_features(entries)], axis=1)
     n_img = len(entries)
 
     def luma(a):
@@ -341,7 +408,27 @@ def huber(x, delta=3.0):
     return torch.where(a <= delta, 0.5 * a * a / delta, a - 0.5 * delta)
 
 
-def run_phase(model, data, sel, steps, lr, use_predictor, log_every=200, tag=""):
+def lab_of_encoded(e):
+    """Encoded sRGB (B,3) -> CIELAB (differentiable, smooth cube root)."""
+    v = e.clamp(0.0, 1.0)
+    lin = torch.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4)
+    M = torch.tensor([[0.4124564, 0.3575761, 0.1804375],
+                      [0.2126729, 0.7151522, 0.0721750],
+                      [0.0193339, 0.1191920, 0.9503041]],
+                     device=e.device, dtype=e.dtype)
+    xyz = lin @ M.T
+    wp = torch.tensor([0.95047, 1.0, 1.08883], device=e.device, dtype=e.dtype)
+    t = (xyz / wp).clamp_min(1e-6)
+    d = 6.0 / 29.0
+    f = torch.where(t > d**3, t ** (1.0 / 3.0), t / (3 * d * d) + 4.0 / 29.0)
+    L = 116 * f[:, 1] - 16
+    a = 500 * (f[:, 0] - f[:, 1])
+    b = 200 * (f[:, 1] - f[:, 2])
+    return torch.stack([L, a, b], 1)
+
+
+def run_phase(model, data, sel, steps, lr, use_predictor, log_every=200, tag="",
+              delta=3.0, loss_space="srgb"):
     """Adam over pixel subset sel (bool np array over samples)."""
     dev = data["scene"].device
     idx = torch.tensor(np.where(sel)[0]).to(dev)
@@ -360,7 +447,10 @@ def run_phase(model, data, sel, steps, lr, use_predictor, log_every=200, tag="")
         else:
             tun = model.latents[im]
         out = model(scene, tun, im)
-        loss = huber(255.0 * (out - cam))
+        if loss_space == "lab":
+            loss = huber(lab_of_encoded(out) - lab_of_encoded(cam), delta=delta)
+        else:
+            loss = huber(255.0 * (out - cam), delta=delta)
         loss = loss.mean() + 1e-3 * model.lut_free.pow(2).mean()
         opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -408,6 +498,8 @@ def main():
     ap.add_argument("--init", default="mixed", help="shipped|random|mixed")
     ap.add_argument("--maker", default="none", choices=["none", "full", "portable"],
                     help="append per-shot maker-note features to the predictor")
+    ap.add_argument("--faces", action="store_true",
+                    help="append Vision face-box features to the predictor")
     ap.add_argument("--clip-scene", type=float, default=0.0,
                     help="clamp scene channels at this value before the matrix")
     ap.add_argument("--dual-matrix", action="store_true",
@@ -416,13 +508,19 @@ def main():
                     help="image-adaptive LUT: this many bases, weights predicted")
     ap.add_argument("--clip-cross", action="store_true",
                     help="clip only the cross-channel matrix input")
+    ap.add_argument("--delta-c", type=float, default=3.0,
+                    help="Huber delta for the predictor fine-tune phase")
+    ap.add_argument("--hidden", type=int, default=16,
+                    help="MLP predictor hidden width")
+    ap.add_argument("--loss", default="srgb", choices=["srgb", "lab"],
+                    help="training loss space (evaluation stays sRGB)")
     ap.add_argument("--exclude-folder", default=None,
                     help="LOFO CV: hold this folder out entirely, eval on it")
     ap.add_argument("--out", default="joint_best.npz")
     args = ap.parse_args()
 
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
-    data = load_data(dev, maker=args.maker)
+    data = load_data(dev, maker=args.maker, faces=args.faces)
     ship = load_shipped()
     img_np = data["img"].cpu().numpy()
     if args.exclude_folder:
@@ -454,7 +552,7 @@ def main():
                      clip_scene=args.clip_scene, clip_cross=args.clip_cross,
                      dual_matrix=args.dual_matrix,
                      temp_w=temp_w if args.dual_matrix else None,
-                     basis_luts=args.basis_luts).to(dev)
+                     basis_luts=args.basis_luts, hidden=args.hidden).to(dev)
         # warm-start latents from shipped predictor where dims allow
         if init == "shipped":
             with torch.no_grad():
@@ -463,7 +561,7 @@ def main():
 
         # A: global + latents on train pixels
         run_phase(model, data, train_px, args.steps_a, args.lr, False,
-                  tag=f"r{r}({init})/A")
+                  tag=f"r{r}({init})/A", loss_space=args.loss)
 
         # B: ridge predictor from latents (train rows), closed form
         X = data["feats_np"][rows]
@@ -477,9 +575,12 @@ def main():
                 # leave MLP init; C will learn. Seed linear part into mlp2? skip.
                 pass
 
-        # C: end-to-end with predictor
+        # C: end-to-end with predictor. A bigger Huber delta here lets the
+        # rare badly-missed frames (the camera's odd per-shot decisions)
+        # actually pull on the predictor instead of being L1-flattened.
         run_phase(model, data, train_px, args.steps_c, args.lr * 0.5, True,
-                  tag=f"r{r}({init})/C")
+                  tag=f"r{r}({init})/C", delta=args.delta_c,
+                  loss_space=args.loss)
 
         with torch.no_grad():
             tun = model.predict(data["feats"])
@@ -495,7 +596,9 @@ def main():
                                   clip_scene=args.clip_scene, maker=args.maker,
                                   dual_matrix=args.dual_matrix,
                                   basis_luts=args.basis_luts,
-                                  clip_cross=args.clip_cross))
+                                  clip_cross=args.clip_cross,
+                                  hidden=args.hidden, delta_c=args.delta_c,
+                                  faces=args.faces))
 
     # oracle ceiling for the best model
     model = Look(ship, data["n_img"], data["feats_np"], curves=best[2]["curves"],
@@ -506,7 +609,8 @@ def main():
                  dual_matrix=best[2].get("dual_matrix", False),
                  temp_w=temp_w_all if best[2].get("dual_matrix") else None,
                  basis_luts=best[2].get("basis_luts", 1),
-                 clip_cross=best[2].get("clip_cross", False)).to(dev)
+                 clip_cross=best[2].get("clip_cross", False),
+                 hidden=best[2].get("hidden", 16)).to(dev)
     model.load_state_dict({k: torch.tensor(v) for k, v in best[1].items()})
     lat = fit_test_latents(model, data)
     oracle = evaluate(model, data, test_px, lat)

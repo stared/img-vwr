@@ -19,6 +19,7 @@ BLOCK = 16
 
 
 def main():
+    import sys
     torch.set_num_threads(6)
     ship = fj.load_shipped()
     entries = json.load(open(HERE / "images2.json"))
@@ -28,12 +29,20 @@ def main():
         dims[m["tag"]] = (m["w"], m["h"])
     for e in entries:
         e["w"], e["h"] = dims[e["tag"]]
-    feats = fj.assemble_features(entries)
-    n_img = len(entries)
-    model = fj.Look(ship, n_img, feats, curves=1, lut_n=9,
-                    predictor="linear", init="shipped", seed=0)
-    with torch.no_grad():
-        tun_all = torch.tensor(feats) @ torch.tensor(ship["W"].T, dtype=torch.float32)
+    if len(sys.argv) > 1:  # a joint-fit npz: use its model and predictor
+        import fit_predictors as fp
+        npz = np.load(HERE / sys.argv[1], allow_pickle=True)
+        cfg = json.loads(str(npz["config"]))
+        data = fj.load_data("cpu", maker=cfg.get("maker", "none"))
+        model, _ = fp.rebuild(npz, data, ship)
+        with torch.no_grad():
+            tun_all = model.predict(torch.tensor(data["feats_np"]))
+    else:
+        feats = fj.assemble_features(entries)
+        model = fj.Look(ship, len(entries), feats, curves=1, lut_n=9,
+                        predictor="linear", init="shipped", seed=0)
+        with torch.no_grad():
+            tun_all = torch.tensor(feats) @ torch.tensor(ship["W"].T, dtype=torch.float32)
 
     out = []
     with torch.no_grad():

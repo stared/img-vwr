@@ -23,7 +23,7 @@ use imgvwr_core::{srgb_to_linear, Region, RenderRequest, SceneFormat, WhiteBalan
 use imgvwr_raw::CoreImageRawFormat;
 use rayon::prelude::*;
 
-const GRID_EDGE: u32 = 384;
+const GRID_EDGE: u32 = 512;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -115,9 +115,10 @@ baseline held-out.
       everywhere) while their JPEGs are normal sunsets. Not an exposure
       problem — the decode returns nothing. Detect a flat SceneReferred
       decode and fall back to the embedded JPEG for display.
-- [ ] Does CIRAW apply the lens distortion/vignetting the JPEG has
-      (AutoDistortionControl On)? Measure geometry against the JPEG; if not
-      matched, edges disagree for a reason no colour model can fix.
+- [x] CIRAW lens geometry vs the JPEG — measured on corner patches
+      (dump_patches --at): corners align to ~1 native px, spread <1 px.
+      Distortion correction matches; full-frame 1:1 fitting is NOT
+      geometry-blocked (the old ±14 px was the active-area offset).
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 

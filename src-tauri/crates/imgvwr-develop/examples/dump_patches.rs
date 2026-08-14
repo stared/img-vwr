@@ -2,8 +2,11 @@
 //! next to the camera JPEG's matching crop (with a margin for alignment).
 //!
 //! ```sh
-//! cargo run --release -p imgvwr-develop --example dump_patches -- <out-dir> <raw>...
+//! cargo run --release -p imgvwr-develop --example dump_patches -- <out-dir> [--at cx,cy] <raw>...
 //! ```
+//!
+//! `--at` moves the patch centre (normalized coordinates; default 0.5,0.5)
+//! — corner patches are how lens-geometry agreement gets measured.
 //!
 //! Writes `<tag>_ours.png` (768² through decode + camera look, default
 //! params) and `<tag>_cam.png` (the JPEG's centre 832² in its native
@@ -29,10 +32,16 @@ fn main() {
     }
     let out_dir = PathBuf::from(&args[0]);
     std::fs::create_dir_all(&out_dir).expect("create out dir");
+    let (centre, rest) = if args.len() > 2 && args[1] == "--at" {
+        let mut it = args[2].split(',').map(|v| v.parse::<f32>().unwrap_or(0.5));
+        ((it.next().unwrap_or(0.5), it.next().unwrap_or(0.5)), &args[3..])
+    } else {
+        ((0.5, 0.5), &args[1..])
+    };
 
-    let lines: Vec<String> = args[1..]
+    let lines: Vec<String> = rest
         .par_iter()
-        .filter_map(|raw| match dump_one(Path::new(raw), &out_dir) {
+        .filter_map(|raw| match dump_one(Path::new(raw), &out_dir, centre) {
             Ok(line) => Some(line),
             Err(e) => {
                 eprintln!("skipped {raw}: {e}");
@@ -47,7 +56,7 @@ fn main() {
     println!("dumped {} patch pairs", lines.len());
 }
 
-fn dump_one(raw: &Path, out_dir: &Path) -> Result<String, String> {
+fn dump_one(raw: &Path, out_dir: &Path, centre: (f32, f32)) -> Result<String, String> {
     let jpeg = sibling_jpeg(raw).ok_or("no sibling JPEG")?;
     let stem = raw.file_stem().ok_or("no stem")?.to_string_lossy().into_owned();
     let folder = raw
@@ -74,9 +83,10 @@ fn dump_one(raw: &Path, out_dir: &Path) -> Result<String, String> {
 
     let (w, h) = scene.native_size();
     let (rw, rh) = (PATCH as f32 / w as f32, PATCH as f32 / h as f32);
+    let (cx, cy) = centre;
     let region = Region {
-        x: 0.5 - rw / 2.0,
-        y: 0.5 - rh / 2.0,
+        x: (cx - rw / 2.0).clamp(0.0, 1.0 - rw),
+        y: (cy - rh / 2.0).clamp(0.0, 1.0 - rh),
         width: rw,
         height: rh,
     };
@@ -113,7 +123,9 @@ fn dump_one(raw: &Path, out_dir: &Path) -> Result<String, String> {
     if jw < side || jh < side {
         return Err("JPEG smaller than patch".into());
     }
-    let crop = image::imageops::crop_imm(&img, (jw - side) / 2, (jh - side) / 2, side, side);
+    let jx = ((cx * jw as f32) as u32).saturating_sub(side / 2).min(jw - side);
+    let jy = ((cy * jh as f32) as u32).saturating_sub(side / 2).min(jh - side);
+    let crop = image::imageops::crop_imm(&img, jx, jy, side, side);
     crop.to_image()
         .save(out_dir.join(format!("{tag}_cam.png")))
         .map_err(|e| e.to_string())?;

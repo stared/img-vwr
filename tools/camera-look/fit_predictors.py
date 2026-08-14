@@ -42,7 +42,8 @@ def rebuild(npz, data, ship):
                     clip_scene=cfg.get("clip_scene", 0.0),
                     clip_cross=cfg.get("clip_cross", False),
                     dual_matrix=dual, temp_w=temp_w,
-                    basis_luts=cfg.get("basis_luts", 1))
+                    basis_luts=cfg.get("basis_luts", 1),
+                    hidden=cfg.get("hidden", 16))
     sd = {k: torch.tensor(npz[k]) for k in npz.files
           if k not in ("err", "oracle", "config")}
     model.load_state_dict(sd, strict=False)
