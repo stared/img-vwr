@@ -202,6 +202,16 @@ impl DevelopService {
                  sharpen    REAL NOT NULL
              ) STRICT;",
         )?;
+        // Whether the decode came out flat (unusable) — added after the
+        // table first shipped, so existing databases need the column.
+        if let Err(e) = conn.execute(
+            "ALTER TABLE look_tunings ADD COLUMN flat INTEGER NOT NULL DEFAULT 0",
+            [],
+        ) {
+            if !e.to_string().contains("duplicate column name") {
+                return Err(e);
+            }
+        }
         Ok(Self {
             registry,
             open: Mutex::new(VecDeque::new()),
@@ -272,7 +282,18 @@ impl DevelopService {
             },
             None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
         };
-        let tuning = self.tuning_for(path, scene.as_ref());
+        let (tuning, flat) = self.tuning_for(path, scene.as_ref());
+        // A flat scene-referred decode is the system decoder failing while
+        // pretending it didn't (pixel-shift exposure brackets do this). The
+        // camera's embedded JPEG is the honest picture, so it opens instead.
+        let (scene, tuning) = if flat {
+            match embedded_fallback(path) {
+                Some(fallback) => (fallback, None),
+                None => (scene, tuning),
+            }
+        } else {
+            (scene, tuning)
+        };
         let entry = Arc::new(OpenScene {
             path: path.to_owned(),
             scene,
@@ -703,9 +724,13 @@ impl DevelopService {
     /// The 384px measuring render costs more than the whole open otherwise
     /// does; the answer only changes when the file or the fitted model
     /// does, and both are in the key.
-    fn tuning_for(&self, path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::LookTuning> {
+    fn tuning_for(
+        &self,
+        path: &str,
+        scene: &dyn SceneImage,
+    ) -> (Option<imgvwr_develop::LookTuning>, bool) {
         if scene.rendering() != imgvwr_core::Rendering::SceneReferred {
-            return None;
+            return (None, false);
         }
         let mtime_ms = std::fs::metadata(path)
             .ok()
@@ -719,36 +744,41 @@ impl DevelopService {
             let cached = conn
                 .query_row(
                     "SELECT gain, contrast, wb_r, wb_b, saturation,
-                            chroma_nr, luma_nr, sharpen
+                            chroma_nr, luma_nr, sharpen, flat
                      FROM look_tunings
                      WHERE path = ?1 AND mtime_ms = ?2 AND model_tag = ?3",
                     rusqlite::params![path, mtime_ms, tag],
                     |row| {
-                        Ok(imgvwr_develop::LookTuning {
-                            gain: row.get::<_, f64>(0)? as f32,
-                            contrast: row.get::<_, f64>(1)? as f32,
-                            wb_r: row.get::<_, f64>(2)? as f32,
-                            wb_b: row.get::<_, f64>(3)? as f32,
-                            saturation: row.get::<_, f64>(4)? as f32,
-                            chroma_nr: row.get::<_, f64>(5)? as f32,
-                            luma_nr: row.get::<_, f64>(6)? as f32,
-                            sharpen: row.get::<_, f64>(7)? as f32,
-                        })
+                        Ok((
+                            imgvwr_develop::LookTuning {
+                                gain: row.get::<_, f64>(0)? as f32,
+                                contrast: row.get::<_, f64>(1)? as f32,
+                                wb_r: row.get::<_, f64>(2)? as f32,
+                                wb_b: row.get::<_, f64>(3)? as f32,
+                                saturation: row.get::<_, f64>(4)? as f32,
+                                chroma_nr: row.get::<_, f64>(5)? as f32,
+                                luma_nr: row.get::<_, f64>(6)? as f32,
+                                sharpen: row.get::<_, f64>(7)? as f32,
+                            },
+                            row.get::<_, i64>(8)? != 0,
+                        ))
                     },
                 )
                 .ok();
-            if let Some(t) = cached {
-                return Some(t);
+            if let Some((t, flat)) = cached {
+                return (Some(t), flat);
             }
         }
 
-        let t = measure_tuning(path, scene)?;
+        let Some((t, flat)) = measure_tuning_checked(path, scene) else {
+            return (None, false);
+        };
         if let Ok(conn) = self.conn.lock() {
             let _ = conn.execute(
                 "INSERT OR REPLACE INTO look_tunings
                  (path, mtime_ms, model_tag, gain, contrast, wb_r, wb_b,
-                  saturation, chroma_nr, luma_nr, sharpen)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                  saturation, chroma_nr, luma_nr, sharpen, flat)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 rusqlite::params![
                     path,
                     mtime_ms,
@@ -761,10 +791,11 @@ impl DevelopService {
                     t.chroma_nr as f64,
                     t.luma_nr as f64,
                     t.sharpen as f64,
+                    flat as i64,
                 ],
             );
         }
-        Some(t)
+        (Some(t), flat)
     }
 }
 
@@ -776,6 +807,18 @@ impl DevelopService {
 /// that fails to render small would fail everywhere else too, so a failure
 /// here just means the look falls back to its per-image neutral.
 fn measure_tuning(path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::LookTuning> {
+    measure_tuning_checked(path, scene).map(|(t, _)| t)
+}
+
+/// The same, also reporting whether the decode came out FLAT — every pixel
+/// the same value, which is what the system decoder produces for the rare
+/// file it cannot actually read (pixel-shift exposure brackets). A flat
+/// scene-referred decode means the raw pixels are unusable and the caller
+/// should fall back to the camera's embedded JPEG.
+fn measure_tuning_checked(
+    path: &str,
+    scene: &dyn SceneImage,
+) -> Option<(imgvwr_develop::LookTuning, bool)> {
     const MEASURE_EDGE: u32 = 384;
     if scene.rendering() != imgvwr_core::Rendering::SceneReferred {
         return None;
@@ -787,17 +830,41 @@ fn measure_tuning(path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::
             region: Region::FULL,
         })
         .ok()?;
+    let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+    for &v in &linear.rgb {
+        lo = lo.min(v);
+        hi = hi.max(v);
+    }
+    let flat = !(hi - lo > 1e-4);
     let iso = imgvwr_core::read_meta(Path::new(path))
         .ok()
         .and_then(|m| m.exif)
         .and_then(|e| e.iso);
     let decisions = imgvwr_core::read_camera_decisions(Path::new(path));
-    Some(imgvwr_develop::LookTuning::measure(
-        &linear,
-        iso,
-        scene.as_shot(),
-        &decisions,
+    Some((
+        imgvwr_develop::LookTuning::measure(&linear, iso, scene.as_shot(), &decisions),
+        flat,
     ))
+}
+
+/// The camera's own JPEG out of a raw file whose decode came back flat,
+/// as a scene — oriented, already rendered, honest pixels instead of a
+/// black rectangle.
+fn embedded_fallback(path: &str) -> Option<Box<dyn SceneImage>> {
+    let bytes = imgvwr_raw::embedded_jpeg(Path::new(path))?;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let orientation = imgvwr_core::read_meta(Path::new(path))
+        .ok()
+        .and_then(|m| m.exif)
+        .map(|e| e.orientation)
+        .unwrap_or(1);
+    let rgba = match orientation {
+        6 => image::imageops::rotate90(&img.to_rgba8()),
+        8 => image::imageops::rotate270(&img.to_rgba8()),
+        3 => image::imageops::rotate180(&img.to_rgba8()),
+        _ => img.to_rgba8(),
+    };
+    Some(imgvwr_core::image_scene::scene_from_rgba(rgba))
 }
 
 /// Render one image straight to WebP thumbnail bytes, for formats the codec
@@ -816,8 +883,18 @@ pub fn thumbnail_via_develop(
     // disagree with the picture it leads to. Stored edits are deliberately not
     // consulted: a thumbnail is a cheap index entry, and reading the database
     // once per cell would make scrolling a folder a database scan.
+    let measured = measure_tuning_checked(&path.to_string_lossy(), scene.as_ref());
+    // A flat decode gets the same embedded-JPEG fallback the viewer uses,
+    // so the grid never shows a black rectangle for a readable photograph.
+    let (scene, tuning) = match measured {
+        Some((_, true)) => match embedded_fallback(&path.to_string_lossy()) {
+            Some(fallback) => (fallback, None),
+            None => (scene, measured.map(|(t, _)| t)),
+        },
+        Some((t, false)) => (scene, Some(t)),
+        None => (scene, None),
+    };
     let settings = imgvwr_develop::opening_settings(scene.as_shot(), scene.rendering());
-    let tuning = measure_tuning(&path.to_string_lossy(), scene.as_ref());
     let developed = imgvwr_develop::render_looked(
         scene.as_ref(),
         &settings,

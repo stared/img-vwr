@@ -34,9 +34,11 @@ pub use imgvwr_core::scan::{is_raw_extension, RAW_EXTENSIONS};
 
 #[cfg(target_os = "macos")]
 mod core_image;
+mod preview;
 
 #[cfg(target_os = "macos")]
 pub use core_image::CoreImageRawFormat;
+pub use preview::embedded_jpeg;
 
 /// Frame size of a raw file without decoding it, or `None` when this platform
 /// (or this file) cannot report one. Lets metadata cover raw files, which no
