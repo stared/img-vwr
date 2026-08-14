@@ -9,6 +9,7 @@ pub mod analysis;
 pub mod crop;
 pub mod look;
 mod look_data;
+pub mod nr;
 pub mod params;
 pub mod pipeline;
 pub mod presets;
@@ -134,7 +135,19 @@ pub fn render_looked(
     } else {
         None
     };
-    let mut image = develop_looked(&linear, &settings.params, look);
+    // Rendered pixels per native pixel: the gate for the texture-matching
+    // NR pass, which only makes sense where the pixels are the subject.
+    // At preview scale the downsample averages the noise away by itself.
+    let (nw, _) = scene.native_size();
+    let scale = linear.width as f32 / (nw as f32 * region.width).max(1.0);
+    let nr = match look {
+        Some(t) if scale >= 0.5 => nr::NrStrength {
+            chroma: t.chroma_nr,
+            luma: t.luma_nr,
+        },
+        _ => nr::NrStrength::NONE,
+    };
+    let mut image = pipeline::develop_looked_nr(&linear, &settings.params, look, nr, scale);
     let hist = histogram(&image);
 
     match overlay {

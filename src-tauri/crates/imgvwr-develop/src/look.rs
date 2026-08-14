@@ -45,6 +45,25 @@ pub struct LookTuning {
     pub wb_r: f32,
     pub wb_b: f32,
     pub saturation: f32,
+    /// Edge-preserving NR strengths for 1:1-scale renders, from the ISO
+    /// ramps the patch measurements fitted — the camera smooths high-ISO
+    /// frames far beyond what the decoder's own knobs reach.
+    pub chroma_nr: f32,
+    pub luma_nr: f32,
+}
+
+impl LookTuning {
+    /// The identity tuning: exactly the fitted global look, no per-image
+    /// adjustment and no extra noise reduction.
+    pub const NEUTRAL: LookTuning = LookTuning {
+        gain: 0.0,
+        contrast: 0.0,
+        wb_r: 0.0,
+        wb_b: 0.0,
+        saturation: 0.0,
+        chroma_nr: 0.0,
+        luma_nr: 0.0,
+    };
 }
 
 impl LookTuning {
@@ -69,6 +88,13 @@ impl LookTuning {
         for (pi, ci) in p.iter_mut().zip(c.iter()) {
             *pi += ci;
         }
+        // NR strengths from ISO alone: chroma from ~ISO 5000 (fading out
+        // where luminance NR takes over, which measured better alone at the
+        // extreme), luminance from ~ISO 18000. Log-ISO ramps, patch-fitted.
+        let ramp = |iso_f: f32, lo: f32, hi: f32| {
+            ((iso_f.log2() - lo.log2()) / (hi.log2() - lo.log2())).clamp(0.0, 1.0)
+        };
+        let iso_f = iso.unwrap_or(0).max(1) as f32;
         Self {
             gain: p[0].clamp(-1.5, 1.5),
             contrast: p[1].clamp(-0.5, 0.5),
@@ -79,6 +105,8 @@ impl LookTuning {
             } else {
                 0.0
             },
+            chroma_nr: ramp(iso_f, 3200.0, 6400.0) * (1.0 - ramp(iso_f, 16000.0, 25600.0)),
+            luma_nr: ramp(iso_f, 12800.0, 25600.0),
         }
     }
 }
@@ -503,7 +531,7 @@ mod tests {
             contrast: 0.07,
             wb_r: -0.05,
             wb_b: 0.03,
-            saturation: 0.0,
+            ..LookTuning::NEUTRAL
         };
         let tables = LookTables::new(&tuning);
         for (input, expected) in PIXEL_CASES {
@@ -560,13 +588,7 @@ mod tests {
     /// grey a touch warm — but it must stay a nuance, never a colour.
     #[test]
     fn grey_keeps_at_most_the_cameras_own_cast() {
-        let tables = LookTables::new(&LookTuning {
-            gain: 0.0,
-            contrast: 0.0,
-            wb_r: 0.0,
-            wb_b: 0.0,
-            saturation: 0.0,
-        });
+        let tables = LookTables::new(&LookTuning::NEUTRAL);
         for v in [0.02f32, 0.18, 0.5, 0.9] {
             let (r, g, b) = apply_pixel(v, v, v, &tables);
             let spread = (r.max(g).max(b) - r.min(g).min(b)) * 255.0;

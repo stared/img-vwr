@@ -120,16 +120,95 @@ pub fn develop(src: &LinearImage, params: &DevelopParams) -> DecodedImage {
 }
 
 /// The same, through the camera look when one is in effect.
+pub fn develop_looked(
+    src: &LinearImage,
+    params: &DevelopParams,
+    look: Option<&LookTuning>,
+) -> DecodedImage {
+    develop_looked_nr(src, params, look, crate::nr::NrStrength::NONE, 1.0)
+}
+
+/// One pixel through tone and look: scene-linear in, display-linear out.
+#[inline]
+fn toned_looked(inp: &[f32], tone: &Tone, tables: &Option<LookTables>) -> (f32, f32, f32) {
+    let (mut r, mut g, mut b) = (inp[0], inp[1], inp[2]);
+
+    // Luminance from the non-negative part of each channel. A sensor
+    // records colours outside the sRGB primaries — deep ultraviolet-lit
+    // violet arrives with green strongly negative — and the raw weighted
+    // sum can then be zero or negative for a pixel that is plainly bright
+    // blue. Ranking such a pixel "black" sent it down the neutral branch
+    // below and punched black holes in UV-lit fabric.
+    let y0 = luma(r.max(0.0), g.max(0.0), b.max(0.0));
+    let y1 = tone_curve(y0, tone);
+    if y0 > 1e-6 {
+        let gain = y1 / y0;
+        r *= gain;
+        g *= gain;
+        b *= gain;
+    } else {
+        // Nothing to scale (the pixel is black); a lifted black point
+        // still has to show up, and it does so neutrally.
+        r = y1;
+        g = y1;
+        b = y1;
+    }
+
+    // The camera look renders the slider-adjusted scene the way the camera
+    // would have; without one the values pass through exactly as before.
+    if let Some(tables) = tables {
+        (r, g, b) = look::apply_pixel(r, g, b, tables);
+    }
+    (r, g, b)
+}
+
+/// Saturation/vibrance and the sRGB encode: display-linear in, RGBA8 out.
+#[inline]
+fn finish_pixel(mut r: f32, mut g: f32, mut b: f32, sat: f32, vib: f32, out: &mut [u8]) {
+    if sat != 0.0 || vib != 0.0 {
+        let y = luma(r, g, b);
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        // How colourful this pixel already is, 0..1.
+        //
+        // Clamped, not merely divided: a sensor records colours outside
+        // the sRGB primaries, which arrive here as negative channels, and
+        // those would push the ratio past 1. Vibrance would then read the
+        // most saturated pixels in the image as "more than fully
+        // saturated" and pull colour *out* of them — the exact opposite
+        // of the control's purpose.
+        let current = if max > 1e-6 {
+            ((max - min) / max).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let factor = (1.0 + sat + vib * (1.0 - current)).max(0.0);
+        r = y + (r - y) * factor;
+        g = y + (g - y) * factor;
+        b = y + (b - y) * factor;
+    }
+    out[0] = encode(r);
+    out[1] = encode(g);
+    out[2] = encode(b);
+    out[3] = 255;
+}
+
+/// The full pipeline, with the optional noise-reduction pass between the
+/// look and the colour controls.
 ///
 /// The slider pipeline runs first, in scene light — which is what keeps
 /// highlight recovery real: pulling highlights down moves values back under
 /// white *before* the look's curve decides where white is. With every slider
 /// at zero the tone stage is the identity and the output is exactly the
-/// camera's rendering.
-pub fn develop_looked(
+/// camera's rendering. When NR is active the render goes through a
+/// display-linear float buffer so the guided filter can see neighbourhoods;
+/// otherwise everything stays in the original single pass.
+pub fn develop_looked_nr(
     src: &LinearImage,
     params: &DevelopParams,
     look: Option<&LookTuning>,
+    nr: crate::nr::NrStrength,
+    scale: f32,
 ) -> DecodedImage {
     let params = params.clamped();
     let tone = Tone::new(&params);
@@ -141,73 +220,39 @@ pub fn develop_looked(
     let vib = params.vibrance / 100.0;
 
     let w = src.width as usize;
-    let mut rgba = vec![0u8; w * src.height as usize * 4];
+    let h = src.height as usize;
+    let mut rgba = vec![0u8; w * h * 4];
 
-    rgba.par_chunks_mut(w * 4)
-        .zip(src.rgb.par_chunks(w * 3))
-        .for_each(|(out_row, in_row)| {
-            for (out, inp) in out_row.chunks_exact_mut(4).zip(in_row.chunks_exact(3)) {
-                let (mut r, mut g, mut b) = (inp[0], inp[1], inp[2]);
-
-                // Luminance from the non-negative part of each channel. A
-                // sensor records colours outside the sRGB primaries — deep
-                // ultraviolet-lit violet arrives with green strongly negative
-                // — and the raw weighted sum can then be zero or negative for
-                // a pixel that is plainly bright blue. Ranking such a pixel
-                // "black" sent it down the neutral branch below and punched
-                // black holes in UV-lit fabric.
-                let y0 = luma(r.max(0.0), g.max(0.0), b.max(0.0));
-                let y1 = tone_curve(y0, &tone);
-                if y0 > 1e-6 {
-                    let gain = y1 / y0;
-                    r *= gain;
-                    g *= gain;
-                    b *= gain;
-                } else {
-                    // Nothing to scale (the pixel is black); a lifted black
-                    // point still has to show up, and it does so neutrally.
-                    r = y1;
-                    g = y1;
-                    b = y1;
+    if nr.active() && tables.is_some() {
+        let mut disp = vec![0f32; w * h * 3];
+        disp.par_chunks_mut(w * 3)
+            .zip(src.rgb.par_chunks(w * 3))
+            .for_each(|(out_row, in_row)| {
+                for (out, inp) in out_row.chunks_exact_mut(3).zip(in_row.chunks_exact(3)) {
+                    let (r, g, b) = toned_looked(inp, &tone, &tables);
+                    out[0] = r;
+                    out[1] = g;
+                    out[2] = b;
                 }
-
-                // The camera look renders the slider-adjusted scene the way
-                // the camera would have; without one the values go to the
-                // encoder as they are, exactly as before.
-                if let Some(tables) = &tables {
-                    (r, g, b) = look::apply_pixel(r, g, b, tables);
+            });
+        crate::nr::apply(&mut disp, w, h, nr, scale);
+        rgba.par_chunks_mut(w * 4)
+            .zip(disp.par_chunks(w * 3))
+            .for_each(|(out_row, in_row)| {
+                for (out, inp) in out_row.chunks_exact_mut(4).zip(in_row.chunks_exact(3)) {
+                    finish_pixel(inp[0], inp[1], inp[2], sat, vib, out);
                 }
-
-                if sat != 0.0 || vib != 0.0 {
-                    let y = luma(r, g, b);
-                    let max = r.max(g).max(b);
-                    let min = r.min(g).min(b);
-                    // How colourful this pixel already is, 0..1.
-                    //
-                    // Clamped, not merely divided: a sensor records colours
-                    // outside the sRGB primaries, which arrive here as
-                    // negative channels, and those would push the ratio past
-                    // 1. Vibrance would then read the most saturated pixels
-                    // in the image as "more than fully saturated" and pull
-                    // colour *out* of them — the exact opposite of the
-                    // control's purpose.
-                    let current = if max > 1e-6 {
-                        ((max - min) / max).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    let factor = (1.0 + sat + vib * (1.0 - current)).max(0.0);
-                    r = y + (r - y) * factor;
-                    g = y + (g - y) * factor;
-                    b = y + (b - y) * factor;
+            });
+    } else {
+        rgba.par_chunks_mut(w * 4)
+            .zip(src.rgb.par_chunks(w * 3))
+            .for_each(|(out_row, in_row)| {
+                for (out, inp) in out_row.chunks_exact_mut(4).zip(in_row.chunks_exact(3)) {
+                    let (r, g, b) = toned_looked(inp, &tone, &tables);
+                    finish_pixel(r, g, b, sat, vib, out);
                 }
-
-                out[0] = encode(r);
-                out[1] = encode(g);
-                out[2] = encode(b);
-                out[3] = 255;
-            }
-        });
+            });
+    }
 
     DecodedImage {
         width: src.width,
@@ -533,13 +578,7 @@ mod tests {
         let src = linear(&[[0.02, -0.09, 0.35]]);
         let out = develop(&src, &DevelopParams::default());
         assert!(out.rgba[2] > 100, "blue survives: {:?}", &out.rgba[..3]);
-        let tables = crate::look::LookTables::new(&crate::look::LookTuning {
-            gain: 0.0,
-            contrast: 0.0,
-            wb_r: 0.0,
-            wb_b: 0.0,
-            saturation: 0.0,
-        });
+        let tables = crate::look::LookTables::new(&crate::look::LookTuning::NEUTRAL);
         let (_, _, b) = crate::look::apply_pixel(0.02, -0.09, 0.35, &tables);
         assert!(b > 0.3, "and through the look too: {b}");
     }
