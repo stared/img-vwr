@@ -325,7 +325,45 @@ pub const W_WB_B: [f32; {NF}] = [
 """
     Path("look_data.rs").write_text(rust)
     print("wrote look_data.rs — move it into imgvwr-develop/src/ and refresh the"
-          " verification vectors in look.rs (see export section of this script)")
+          " verification vectors in look.rs with the values below\n")
+
+    # verification vectors for look.rs's tests: pixels through the fitted
+    # chain with a fixed tuning, in the exact shape the unit test wants.
+    tuning = dict(gain=-0.31, contrast=0.07, wb_r=-0.05, wb_b=0.03)
+    pix = np.array([
+        [0.005, 0.004, 0.003], [0.18, 0.18, 0.18], [0.6, 0.3, 0.1],
+        [1.4, 1.1, 0.9], [0.02, 0.30, 0.05], [3.5, 3.2, 2.8],
+        [0.0, 0.0, 0.0], [0.09, 0.12, 0.35],
+    ])
+    x = pix @ M.T
+    gg = np.array([tuning["gain"] + tuning["wb_r"], tuning["gain"], tuning["gain"] + tuning["wb_b"]])
+    x = x * 2.0**gg
+    x = MID_GREY * np.power(np.maximum(x, 1e-9) / MID_GREY, 2.0 ** tuning["contrast"])
+    disp = apply_channel_curve(x, grid, knots)
+    e = srgb_encode(disp)
+    ue = np.clip(e, 0, 1) * (N - 1)
+    i0e = np.minimum(np.floor(ue).astype(int), N - 2)
+    te = ue - i0e
+    out = np.zeros_like(e)
+    for dz in (0, 1):
+        for dy in (0, 1):
+            for dxk in (0, 1):
+                wgt = ((te[:, 0] if dxk else 1 - te[:, 0])
+                       * (te[:, 1] if dy else 1 - te[:, 1])
+                       * (te[:, 2] if dz else 1 - te[:, 2]))
+                out += wgt[:, None] * lut[
+                    [idx3(i0e[k, 0] + dxk, i0e[k, 1] + dy, i0e[k, 2] + dz) for k in range(len(e))]
+                ]
+    out = np.clip(out, 0, 1)
+    print("pixel test cases (tuning gain -0.31, contrast 0.07, wb_r -0.05, wb_b 0.03):")
+    for a, b in zip(pix, out):
+        print(f"    ([{a[0]:.6}, {a[1]:.6}, {a[2]:.6}], [{b[0]:.6}, {b[1]:.6}, {b[2]:.6}]),")
+
+    ref = next(i for i in range(n_img) if not bad[i])
+    print("\nfeature test case (tag", entries[ref]["tag"], "):")
+    print("    " + ", ".join(f"{v:.7}" for v in X[ref]))
+    for i, k in enumerate(["gain", "contrast", "wb_r", "wb_b"]):
+        print(f"    {k}: {float(X[ref] @ W[k]):.5f}")
 
 
 if __name__ == "__main__":
