@@ -79,15 +79,22 @@ even/odd split within each folder:
 | joint fit, same architecture | 3.69 |
 | + three per-channel curves + 17³ LUT + MLP predictor | 3.49 |
 | + the camera's own per-shot decisions as features | 3.30 |
-| + saturation latent + residual k-NN + cross-clip (shipped) | **3.26** |
+| + saturation latent + residual k-NN + cross-clip | 3.26 |
+| refit full-frame at a 512 grid (shipped) | **3.26**, e2e 3.40 |
 | per-image oracle under the shipped globals | 2.81 |
 | oracle + 6×6 spatial gain field (ADL/clarity share) | 2.68 |
 
 Perceptually (CIEDE2000, held-out): mean 1.89, **median 1.19** — half of
 all pixels are inside the "flip A/B to notice" range. Twenty further
 restarts of the ship config all land in [3.26, 3.28]: the architecture
-is exhausted at this corpus, and what remains is predictor semantics
-(faces), texture at the pixel level, and the thin-data colour corners.
+is exhausted at this corpus. Also measured and closed: Lab-loss training
+(ΔE00 1.86 vs 1.89 for +0.15 sRGB — not worth it), face features from
+Vision boxes (−0.007 — the failing frames are faceless water), fine-tuning
+around the k-NN (worse), lens geometry (corners align ~1 px) and
+vignetting (±0.03 EV) — both match the camera, which is why the final
+fit uses the full frame. What remains needs new data: a ColorChecker
+anchor shoot for the thin colour corners, NX Studio as a second oracle,
+and shoots unlike the five folders.
 
 Findings that shaped the model:
 
