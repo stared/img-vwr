@@ -64,7 +64,11 @@ impl LookTuning {
         decisions: &CameraDecisions,
     ) -> Self {
         let f = features(image, iso, as_shot, decisions);
-        let p = predict(&f);
+        let mut p = predict(&f);
+        let c = knn_correction(&f);
+        for (pi, ci) in p.iter_mut().zip(c.iter()) {
+            *pi += ci;
+        }
         Self {
             gain: p[0].clamp(-1.5, 1.5),
             contrast: p[1].clamp(-0.5, 0.5),
@@ -77,6 +81,52 @@ impl LookTuning {
             },
         }
     }
+}
+
+/// The tail of the predictor: a distance-weighted k-NN over the fitting
+/// corpus's residuals (what the MLP got wrong per training image).
+///
+/// The MLP fits the bulk; the camera's odd per-shot decisions — the
+/// Picture Control extremes on backlit fountains and UV-lit stages — recur
+/// as lookalike frames, and their residuals transfer. The correction fades
+/// to zero away from the corpus so an unfamiliar shoot falls back to the
+/// MLP alone.
+fn knn_correction(f: &[f32; data::N_FEATURES]) -> [f32; data::N_TUNING] {
+    let mut fw = [0.0f32; data::N_FEATURES];
+    for i in 0..data::N_FEATURES {
+        fw[i] = (f[i] - data::KNN_MU[i]) / data::KNN_SD[i];
+    }
+    // The K nearest training rows by L2, tracked as a tiny insertion sort.
+    let mut best = [(f32::INFINITY, 0usize); data::KNN_K];
+    for row in 0..data::KNN_N {
+        let base = row * data::N_FEATURES;
+        let mut d2 = 0.0f32;
+        for i in 0..data::N_FEATURES {
+            let d = fw[i] - data::KNN_X[base + i];
+            d2 += d * d;
+        }
+        if d2 < best[data::KNN_K - 1].0 {
+            best[data::KNN_K - 1] = (d2, row);
+            best.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        }
+    }
+    let mut out = [0.0f32; data::N_TUNING];
+    let mut wsum = 0.0f32;
+    let mut dmean = 0.0f32;
+    for (d2, row) in best {
+        let d = d2.sqrt();
+        dmean += d / data::KNN_K as f32;
+        let w = 1.0 / d.max(1e-6);
+        wsum += w;
+        for k in 0..data::N_TUNING {
+            out[k] += w * data::KNN_R[row * data::N_TUNING + k];
+        }
+    }
+    let fade = ((2.0 * data::KNN_FAR - dmean) / data::KNN_FAR).clamp(0.0, 1.0);
+    for o in out.iter_mut() {
+        *o *= fade / wsum.max(1e-6);
+    }
+    out
 }
 
 /// The fitted predictor: features → tuning, a tanh MLP small enough to live
@@ -472,14 +522,14 @@ mod tests {
 
     /// Refreshed by export_joint.py on every refit.
     const PIXEL_CASES: [([f32; 3], [f32; 3]); 8] = [
-        ([0.005, 0.004, 0.003], [0.0403308, 0.0382624, 0.0316762]),
-        ([0.18, 0.18, 0.18], [0.610412, 0.601482, 0.623849]),
-        ([0.6, 0.3, 0.1], [1.0, 0.705017, 0.442975]),
-        ([1.4, 1.1, 0.9], [0.998863, 0.995357, 0.978205]),
-        ([0.02, 0.3, 0.05], [0.160071, 0.706385, 0.180698]),
-        ([3.5, 3.2, 2.8], [0.99948, 0.999484, 0.999704]),
-        ([0.0, 0.0, 0.0], [0.00997629, 0.0100053, 0.00783893]),
-        ([0.09, 0.12, 0.35], [0.417214, 0.503026, 0.941361]),
+        ([0.005, 0.004, 0.003], [0.0392437, 0.0375651, 0.0316661]),
+        ([0.18, 0.18, 0.18], [0.603534, 0.599051, 0.616327]),
+        ([0.6, 0.3, 0.1], [0.998929, 0.70207, 0.430709]),
+        ([1.4, 1.1, 0.9], [0.998671, 0.995978, 0.980011]),
+        ([0.02, 0.3, 0.05], [0.135492, 0.702943, 0.186015]),
+        ([3.5, 3.2, 2.8], [1.0, 0.999261, 0.998954]),
+        ([0.0, 0.0, 0.0], [0.010591, 0.0102619, 0.00786233]),
+        ([0.09, 0.12, 0.35], [0.405606, 0.495327, 0.947634]),
     ];
 
     /// The predictor against a feature vector the fit computed for a real
@@ -503,7 +553,7 @@ mod tests {
         0.3644454, 0.001582824, 0.02344241, 0.06486858, -23.99266, 0.03806615,
         1.0, -0.24, 0.2, 1.0, 0.9, 0.2, -0.04, 0.0, 0.0, 0.8695994, 0.3333333,
     ];
-    const EXPECTED_TUNING: [f32; 4] = [-0.18259, -0.06403, -0.09011, -0.08157];
+    const EXPECTED_TUNING: [f32; 4] = [-0.19145, -0.08307, -0.09176, -0.06342];
 
     /// Grey through the look may take on the camera's own small cast — the
     /// per-channel curves measured that Nikon renders the decoder's neutral

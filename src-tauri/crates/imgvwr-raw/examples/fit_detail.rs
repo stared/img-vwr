@@ -179,6 +179,14 @@ fn run_one(raw: &Path) -> Result<(), String> {
                 grid.push(Knobs { lnr, cnr: defaults.1, sharp, detail: 0.0 });
             }
         }
+        // Measured against the fitted look, the camera still smooths MORE
+        // than our decode from ISO ~1000 up (edge-energy ratio 0.72-0.80),
+        // so probe the top of the NR range too.
+        for lnr in [0.85, 1.0] {
+            for sharp in [0.0, 0.4, 0.7] {
+                grid.push(Knobs { lnr, cnr: defaults.1, sharp, detail: 0.0 });
+            }
+        }
 
         for k in grid {
             let ours = render(k)?;
