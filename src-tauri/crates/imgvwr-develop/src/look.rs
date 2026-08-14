@@ -120,6 +120,17 @@ impl LookTuning {
     }
 }
 
+/// A short fingerprint of the fitted constants, for caches that store
+/// measured tunings: any refit changes it, invalidating them all at once.
+pub fn model_tag() -> String {
+    format!(
+        "{:.6}:{:.6}:{}",
+        data::MATRIX[0][0],
+        data::MLP_B2[0],
+        data::N_TUNING
+    )
+}
+
 /// The tail of the predictor: a distance-weighted k-NN over the fitting
 /// corpus's residuals (what the MLP got wrong per training image).
 ///

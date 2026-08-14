@@ -183,6 +183,25 @@ impl DevelopService {
                 }
             }
         }
+        // The camera look's measured per-image tuning, cached so a reopened
+        // file skips its 384px measuring render. Keyed by modification time;
+        // model_tag ties rows to the fitted constants that produced them, so
+        // a refit invalidates every cached tuning at once.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS look_tunings (
+                 path       TEXT PRIMARY KEY,
+                 mtime_ms   INTEGER NOT NULL,
+                 model_tag  TEXT NOT NULL,
+                 gain       REAL NOT NULL,
+                 contrast   REAL NOT NULL,
+                 wb_r       REAL NOT NULL,
+                 wb_b       REAL NOT NULL,
+                 saturation REAL NOT NULL,
+                 chroma_nr  REAL NOT NULL,
+                 luma_nr    REAL NOT NULL,
+                 sharpen    REAL NOT NULL
+             ) STRICT;",
+        )?;
         Ok(Self {
             registry,
             open: Mutex::new(VecDeque::new()),
@@ -253,7 +272,7 @@ impl DevelopService {
             },
             None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
         };
-        let tuning = measure_tuning(path, scene.as_ref());
+        let tuning = self.tuning_for(path, scene.as_ref());
         let entry = Arc::new(OpenScene {
             path: path.to_owned(),
             scene,
@@ -675,6 +694,77 @@ impl DevelopService {
             }
         }
         Ok(out)
+    }
+}
+
+impl DevelopService {
+    /// The look tuning for a path, measured once and cached in the DB.
+    ///
+    /// The 384px measuring render costs more than the whole open otherwise
+    /// does; the answer only changes when the file or the fitted model
+    /// does, and both are in the key.
+    fn tuning_for(&self, path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::LookTuning> {
+        if scene.rendering() != imgvwr_core::Rendering::SceneReferred {
+            return None;
+        }
+        let mtime_ms = std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let tag = imgvwr_develop::look::model_tag();
+
+        if let Ok(conn) = self.conn.lock() {
+            let cached = conn
+                .query_row(
+                    "SELECT gain, contrast, wb_r, wb_b, saturation,
+                            chroma_nr, luma_nr, sharpen
+                     FROM look_tunings
+                     WHERE path = ?1 AND mtime_ms = ?2 AND model_tag = ?3",
+                    rusqlite::params![path, mtime_ms, tag],
+                    |row| {
+                        Ok(imgvwr_develop::LookTuning {
+                            gain: row.get::<_, f64>(0)? as f32,
+                            contrast: row.get::<_, f64>(1)? as f32,
+                            wb_r: row.get::<_, f64>(2)? as f32,
+                            wb_b: row.get::<_, f64>(3)? as f32,
+                            saturation: row.get::<_, f64>(4)? as f32,
+                            chroma_nr: row.get::<_, f64>(5)? as f32,
+                            luma_nr: row.get::<_, f64>(6)? as f32,
+                            sharpen: row.get::<_, f64>(7)? as f32,
+                        })
+                    },
+                )
+                .ok();
+            if let Some(t) = cached {
+                return Some(t);
+            }
+        }
+
+        let t = measure_tuning(path, scene)?;
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO look_tunings
+                 (path, mtime_ms, model_tag, gain, contrast, wb_r, wb_b,
+                  saturation, chroma_nr, luma_nr, sharpen)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    path,
+                    mtime_ms,
+                    tag,
+                    t.gain as f64,
+                    t.contrast as f64,
+                    t.wb_r as f64,
+                    t.wb_b as f64,
+                    t.saturation as f64,
+                    t.chroma_nr as f64,
+                    t.luma_nr as f64,
+                    t.sharpen as f64,
+                ],
+            );
+        }
+        Some(t)
     }
 }
 
