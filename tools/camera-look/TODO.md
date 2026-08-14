@@ -50,9 +50,13 @@ baseline held-out.
 - [ ] **Tiny per-pixel MLP** (log-RGB in, RGB out) trained jointly, then
       distilled into a LUT for shipping: measures how much any fixed-size
       table leaves on the floor.
-- [ ] **Functional tone regression**: predict a whole per-image curve
-      (few PCA coefficients over oracle per-image display LUTs) instead of
-      just gain+contrast. The oracle-vs-model gap says ~0.3 lives here.
+- [x] **Functional tone regression** — probed as two per-image curve-shape
+      latents (shadow-lift / highlight-shift with the sliders' cubic masks):
+      held-out −0.02 in the fit, but END-TO-END it measured WORSE (3.43 vs
+      3.40) — the wilder 7-dof oracle latents make the k-NN residuals
+      poisonous through the real pipeline's clamps and the 384-vs-512
+      feature shift. Rust keeps the axes (inactive at N_TUNING=5); only
+      revisit with latent regularisation in phase A.
 
 ## 3. Per-image adaptation (Auto Picture Control emulation)
 

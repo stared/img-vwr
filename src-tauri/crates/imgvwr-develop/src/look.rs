@@ -45,6 +45,11 @@ pub struct LookTuning {
     pub wb_r: f32,
     pub wb_b: f32,
     pub saturation: f32,
+    /// Per-image curve shape in EV: the camera's Auto PC lifts shadows and
+    /// shifts highlights per shot beyond what one contrast number carries.
+    /// Applied with the same cubic luma masks the sliders use.
+    pub shadow_lift: f32,
+    pub highlight_shift: f32,
     /// Edge-preserving NR strengths for 1:1-scale renders, from the ISO
     /// ramps the patch measurements fitted — the camera smooths high-ISO
     /// frames far beyond what the decoder's own knobs reach.
@@ -64,6 +69,8 @@ impl LookTuning {
         wb_r: 0.0,
         wb_b: 0.0,
         saturation: 0.0,
+        shadow_lift: 0.0,
+        highlight_shift: 0.0,
         chroma_nr: 0.0,
         luma_nr: 0.0,
         sharpen: 0.0,
@@ -110,6 +117,16 @@ impl LookTuning {
             wb_b: p[3].clamp(-0.5, 0.5),
             saturation: if data::N_TUNING > 4 {
                 p[4].clamp(-1.0, 1.0)
+            } else {
+                0.0
+            },
+            shadow_lift: if data::N_TUNING >= 7 {
+                p[5].clamp(-1.5, 1.5)
+            } else {
+                0.0
+            },
+            highlight_shift: if data::N_TUNING >= 7 {
+                p[6].clamp(-1.5, 1.5)
             } else {
                 0.0
             },
@@ -217,6 +234,9 @@ pub struct LookTables {
     gains: [f32; 3],
     /// Chroma scale around luma, from the tuning's saturation (log2).
     sat: f32,
+    /// Per-image curve shape in EV (shadow lift, highlight shift).
+    shadow_lift: f32,
+    highlight_shift: f32,
 }
 
 const TABLE_LO: f32 = -16.0;
@@ -272,6 +292,8 @@ impl LookTables {
                 (tuning.gain + tuning.wb_b).exp2(),
             ],
             sat: tuning.saturation.exp2(),
+            shadow_lift: tuning.shadow_lift,
+            highlight_shift: tuning.highlight_shift,
         }
     }
 
@@ -330,6 +352,21 @@ pub fn apply_pixel(r: f32, g: f32, b: f32, tables: &LookTables) -> (f32, f32, f3
             (m[1][0] * r + m[1][1] * g + m[1][2] * b) * tables.gains[1],
             (m[2][0] * r + m[2][1] * g + m[2][2] * b) * tables.gains[2],
         )
+    };
+    // The per-image curve shape, before the contrast the tables fold in —
+    // the exact order the fit used. At the neutral tuning this is the
+    // identity.
+    let (r, g, b) = if tables.shadow_lift != 0.0 || tables.highlight_shift != 0.0 {
+        // Raw luma, exactly as the fit computed it — the clamp guards the
+        // division, not the channels.
+        let y = luma(r, g, b).max(1e-8);
+        let w = y / (y + PIVOT);
+        let f = (tables.shadow_lift * (1.0 - w).powi(3)
+            + tables.highlight_shift * w.powi(3))
+            .exp2();
+        (r * f, g * f, b * f)
+    } else {
+        (r, g, b)
     };
     let d = [
         tables.scalar(r, 0),
