@@ -538,6 +538,7 @@ mod tests {
             contrast: 0.0,
             wb_r: 0.0,
             wb_b: 0.0,
+            saturation: 0.0,
         });
         let (_, _, b) = crate::look::apply_pixel(0.02, -0.09, 0.35, &tables);
         assert!(b > 0.3, "and through the look too: {b}");

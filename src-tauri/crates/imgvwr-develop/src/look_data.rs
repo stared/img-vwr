@@ -1890,6 +1890,7 @@ pub const LUT: [f32; 14739] = [
     0.999684f32, 1.00196f32, 1.00165f32
 ];
 pub const N_FEATURES: usize = 41;
+pub const N_TUNING: usize = 4;
 pub const PREDICTOR_HIDDEN: usize = 16;
 pub const MLP_W1: [f32; 656] = [
     0.0694906f32, 0.128132f32, 0.0827165f32, 0.0382512f32, 0.0135866f32, 0.039214f32, -0.0228223f32, -0.0145681f32,

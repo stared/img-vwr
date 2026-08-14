@@ -34,14 +34,17 @@ use crate::pipeline::luma;
 /// Middle grey, the pivot the per-image contrast turns around.
 const PIVOT: f32 = 0.18;
 
-/// The per-image half of the look, in EV. Everything else in the look is a
-/// constant of the camera; these four follow the photograph.
+/// The per-image half of the look. Everything else in the look is a
+/// constant of the camera; these follow the photograph: gain, contrast and
+/// the white-balance nudges in EV, saturation as a log2 chroma scale (the
+/// camera's Auto Picture Control varies saturation per shot too).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LookTuning {
     pub gain: f32,
     pub contrast: f32,
     pub wb_r: f32,
     pub wb_b: f32,
+    pub saturation: f32,
 }
 
 impl LookTuning {
@@ -67,13 +70,18 @@ impl LookTuning {
             contrast: p[1].clamp(-0.5, 0.5),
             wb_r: p[2].clamp(-0.5, 0.5),
             wb_b: p[3].clamp(-0.5, 0.5),
+            saturation: if data::N_TUNING > 4 {
+                p[4].clamp(-1.0, 1.0)
+            } else {
+                0.0
+            },
         }
     }
 }
 
 /// The fitted predictor: features → tuning, a tanh MLP small enough to live
 /// in constants.
-fn predict(f: &[f32; data::N_FEATURES]) -> [f32; 4] {
+fn predict(f: &[f32; data::N_FEATURES]) -> [f32; data::N_TUNING] {
     const H: usize = data::PREDICTOR_HIDDEN;
     let mut hidden = [0.0f32; H];
     for (j, h) in hidden.iter_mut().enumerate() {
@@ -83,7 +91,7 @@ fn predict(f: &[f32; data::N_FEATURES]) -> [f32; 4] {
         }
         *h = acc.tanh();
     }
-    let mut out = [0.0f32; 4];
+    let mut out = [0.0f32; data::N_TUNING];
     for (k, o) in out.iter_mut().enumerate() {
         let mut acc = data::MLP_B2[k];
         for (j, h) in hidden.iter().enumerate() {
@@ -94,23 +102,29 @@ fn predict(f: &[f32; data::N_FEATURES]) -> [f32; 4] {
     out
 }
 
-/// The scalar chains (contrast → per-channel curve → sRGB encode) sampled
-/// densely over log2 of the channel value, so the per-pixel work is one
-/// log2 and a lerp per channel.
+/// The scalar chains (contrast → per-channel curve) sampled densely over
+/// log2 of the channel value, so the per-pixel work is one log2 and a lerp
+/// per channel. The sRGB encode that follows saturation gets its own small
+/// table over [0, 1].
 ///
 /// One set of tables per render rather than per pixel: the chain depends on
-/// the tuning, and 3×4096 samples cost microseconds.
+/// the tuning, and the samples cost microseconds.
 pub struct LookTables {
-    /// Display-encoded output over `log2(v)` ∈ [`TABLE_LO`, `TABLE_HI`],
+    /// Display-linear curve output over `log2(v)` ∈ [`TABLE_LO`, `TABLE_HI`],
     /// one table per channel.
-    enc: [Vec<f32>; 3],
+    lin: [Vec<f32>; 3],
+    /// sRGB encode over display-linear [0, 1].
+    enc: Vec<f32>,
     /// Channel gains folded from the tuning's gain and white-balance nudge.
     gains: [f32; 3],
+    /// Chroma scale around luma, from the tuning's saturation (log2).
+    sat: f32,
 }
 
 const TABLE_LO: f32 = -16.0;
 const TABLE_HI: f32 = 6.0;
 const TABLE_N: usize = 4096;
+const ENC_N: usize = 2048;
 
 /// sRGB encode, on already-clamped display-linear input.
 fn srgb_encode(v: f32) -> f32 {
@@ -144,19 +158,22 @@ impl LookTables {
                         ((l - data::CURVE_X0) / data::CURVE_DX).clamp(0.0, (knots.len() - 1) as f32);
                     let i0 = (pos as usize).min(knots.len() - 2);
                     let t = pos - i0 as f32;
-                    let display = (knots[i0] * (1.0 - t) + knots[i0 + 1] * t).clamp(0.0, 1.0);
-                    srgb_encode(display)
+                    (knots[i0] * (1.0 - t) + knots[i0 + 1] * t).clamp(0.0, 1.0)
                 })
                 .collect()
         };
         let curve = |c: usize| &data::CURVE_KNOTS[c.min(data::N_CURVES - 1)];
         Self {
-            enc: [channel(curve(0)), channel(curve(1)), channel(curve(2))],
+            lin: [channel(curve(0)), channel(curve(1)), channel(curve(2))],
+            enc: (0..ENC_N)
+                .map(|i| srgb_encode(i as f32 / (ENC_N - 1) as f32))
+                .collect(),
             gains: [
                 (tuning.gain + tuning.wb_r).exp2(),
                 tuning.gain.exp2(),
                 (tuning.gain + tuning.wb_b).exp2(),
             ],
+            sat: tuning.saturation.exp2(),
         }
     }
 
@@ -167,7 +184,16 @@ impl LookTables {
             .clamp(0.0, (TABLE_N - 1) as f32);
         let i0 = (pos as usize).min(TABLE_N - 2);
         let t = pos - i0 as f32;
-        self.enc[c][i0] * (1.0 - t) + self.enc[c][i0 + 1] * t
+        self.lin[c][i0] * (1.0 - t) + self.lin[c][i0 + 1] * t
+    }
+
+    /// sRGB encode of display-linear [0,1], via the sampled table.
+    #[inline]
+    fn encode(&self, v: f32) -> f32 {
+        let pos = (v.clamp(0.0, 1.0) * (ENC_N - 1) as f32).min((ENC_N - 1) as f32);
+        let i0 = (pos as usize).min(ENC_N - 2);
+        let t = pos - i0 as f32;
+        self.enc[i0] * (1.0 - t) + self.enc[i0 + 1] * t
     }
 }
 
@@ -207,11 +233,20 @@ pub fn apply_pixel(r: f32, g: f32, b: f32, tables: &LookTables) -> (f32, f32, f3
             (m[2][0] * r + m[2][1] * g + m[2][2] * b) * tables.gains[2],
         )
     };
-    let e = [
+    let d = [
         tables.scalar(r, 0),
         tables.scalar(g, 1),
         tables.scalar(b, 2),
     ];
+    // Per-image saturation around luma, in display-linear light. At the
+    // neutral tuning this is exactly the identity.
+    let y = luma(d[0], d[1], d[2]);
+    let d = [
+        (y + (d[0] - y) * tables.sat).clamp(0.0, 1.0),
+        (y + (d[1] - y) * tables.sat).clamp(0.0, 1.0),
+        (y + (d[2] - y) * tables.sat).clamp(0.0, 1.0),
+    ];
+    let e = [tables.encode(d[0]), tables.encode(d[1]), tables.encode(d[2])];
     let e = lattice(e);
     (srgb_decode(e[0]), srgb_decode(e[1]), srgb_decode(e[2]))
 }
@@ -418,6 +453,7 @@ mod tests {
             contrast: 0.07,
             wb_r: -0.05,
             wb_b: 0.03,
+            saturation: 0.0,
         };
         let tables = LookTables::new(&tuning);
         for (input, expected) in PIXEL_CASES {
@@ -479,6 +515,7 @@ mod tests {
             contrast: 0.0,
             wb_r: 0.0,
             wb_b: 0.0,
+            saturation: 0.0,
         });
         for v in [0.02f32, 0.18, 0.5, 0.9] {
             let (r, g, b) = apply_pixel(v, v, v, &tables);
