@@ -80,7 +80,7 @@ fn main() {
     let tuning = {
         let small = imgvwr_develop::render_linear(scene.as_ref(), &opening, 384, Region::FULL)
             .expect("measure render");
-        imgvwr_develop::LookTuning::measure(&small, None, scene.as_shot())
+        imgvwr_develop::LookTuning::measure(&small, None, scene.as_shot(), &imgvwr_core::read_camera_decisions(&input))
     };
     let mut worst = std::time::Duration::ZERO;
     for _ in 0..5 {

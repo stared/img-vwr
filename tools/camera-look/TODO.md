@@ -1,33 +1,32 @@
 # TODO: NEF / Nikon processing
 
-Where the match stands (held-out, mean |Δ| 8-bit sRGB vs the camera JPEG):
-shipped model **3.86**, per-image oracle ~3.6, ISO>12800 tail 5.5, eclipse
-folder ~4.1 excluding degenerate pairs. Every number below is measurable
-against `verify_look`; nothing ships without beating the baseline held-out.
+Where the match stands (held-out, mean |Δ| 8-bit sRGB vs the camera JPEG)
+after the 2026-08-14 joint-fit session: shipped model **3.28** held-out
+(**3.61** end-to-end over all 1115 pairs incl. degenerates; was 3.86/4.26),
+per-image oracle 2.82, oracle + coarse spatial field 2.68. Every number is
+measurable against `verify_look`; nothing ships without beating the
+baseline held-out.
 
 ## 1. Joint optimization (replace stage-wise greedy fitting)
 
-The shipped model was fitted stage by stage, each stage frozen before the
-next: a local-minimum machine. Untried and overdue:
-
-- [ ] **End-to-end differentiable fit (PyTorch, MPS)**: matrix, predictor
-      weights, contrast, curve knots (monotone via cumulative softplus),
-      LUT cells, trained jointly on train images with Huber loss in display
-      space. Init from the shipped model AND from random; **dozens of
-      restarts**; Adam, then L-BFGS polish. (Env + samples already prepped
-      in the session scratchpad; `samples2.npz` = current decoder.)
-- [ ] **Free the arbitrary constraints** inside the joint fit: three
-      independent per-channel curves instead of one shared; 11³/17³ LUT
-      with a stronger identity prior; predictor as a 2-layer MLP (31→16→4,
-      trivially portable to Rust consts).
-- [ ] **Per-image latents + distillation**: fit free per-image tunings
-      jointly with the global model, then train the predictor to imitate
-      them, then fine-tune end to end. Separates "what the camera did" from
-      "what we can predict" cleanly.
-- [ ] **CMA-ES / basin hopping** over the low-dimensional non-differentiable
-      pieces (decoder detail knobs, curve grid geometry, loss weights).
+- [x] **End-to-end differentiable fit (PyTorch, MPS)** — `fit_joint.py`;
+      multi-restart, shipped+random inits. 3.86 → 3.69 same architecture,
+      3.49 with freed constraints.
+- [x] **Free the arbitrary constraints**: three per-channel curves, 17³
+      LUT, MLP predictor. Shipped.
+- [x] **Per-image latents + distillation** — phase A latents, ridge
+      distill, end-to-end fine-tune. The gradient oracle (2.82) beat the
+      old coordinate-descent oracle (~3.6) by a wide margin.
+- [ ] **CMA-ES / basin hopping** over the non-differentiable pieces
+      (decoder detail knobs, curve grid geometry, loss weights).
 - [ ] Optimize **ΔE00 directly** as an alternative objective; compare which
       objective users actually prefer on A/Bs.
+- [x] **Per-shot camera decisions as features** (found mid-session): the
+      NEF's XMP packet carries Auto PC's Contrast/Saturation/Clarity/
+      Texture per shot; feeding them to the predictor was worth −0.19,
+      and the portable subset (no maker-note decryption) carries all of it.
+- [ ] Predictor still has the biggest headroom: 3.28 predicted vs 2.82
+      oracle. Faces/subject-detection features, deeper MLP, k-NN ensemble.
 
 ## 2. Different model families (not just deeper fitting of the same one)
 

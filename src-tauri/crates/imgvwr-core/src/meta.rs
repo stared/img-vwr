@@ -70,6 +70,102 @@ pub fn read_meta(path: &Path) -> std::io::Result<ImageMeta> {
     })
 }
 
+/// Per-shot rendering decisions the camera wrote into the file.
+///
+/// Nikon embeds an XMP packet near the start of every NEF with its Auto
+/// Picture Control choices translated into Adobe terms (`crd:Contrast2012`
+/// and friends vary shot by shot), and the standard EXIF exposure fields
+/// say how the meter treated the scene. Together they are direct inputs to
+/// the camera-look tuning predictor — the camera telling us what it did,
+/// rather than us guessing from pixels.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CameraDecisions {
+    pub contrast: Option<f64>,
+    pub saturation: Option<f64>,
+    pub clarity: Option<f64>,
+    pub texture: Option<f64>,
+    pub sharpness: Option<f64>,
+    pub luminance_smoothing: Option<f64>,
+    pub exposure_compensation: Option<f64>,
+    pub gain_control: Option<f64>,
+    pub exposure_program: Option<f64>,
+    /// log2(N²/t · 100/ISO) — the metered scene brightness.
+    pub light_value: Option<f64>,
+}
+
+/// The camera's per-shot decisions, from the XMP packet and EXIF.
+///
+/// The XMP packet sits in the first kilobytes of the file as plain XML, so
+/// a byte scan of the head is enough — no TIFF walking, no maker-note
+/// decryption. Fields degrade to None when absent.
+pub fn read_camera_decisions(path: &Path) -> CameraDecisions {
+    let head = read_head(path, 256 * 1024).unwrap_or_default();
+    let xmp = |name: &str| xmp_number(&head, name);
+
+    let mut d = CameraDecisions {
+        contrast: xmp("Contrast2012"),
+        saturation: xmp("Saturation"),
+        clarity: xmp("Clarity2012"),
+        texture: xmp("Texture"),
+        sharpness: xmp("Sharpness"),
+        luminance_smoothing: xmp("LuminanceSmoothing"),
+        ..Default::default()
+    };
+
+    if let Some(file) = File::open(path).ok() {
+        if let Ok(exif) = exif::Reader::new().read_from_container(&mut BufReader::new(file)) {
+            let signed = |tag: exif::Tag| {
+                exif.get_field(tag, exif::In::PRIMARY).and_then(|f| match &f.value {
+                    exif::Value::SRational(p) => p.first().map(|r| r.to_f64()),
+                    exif::Value::Rational(p) => p.first().map(|r| r.to_f64()),
+                    _ => None,
+                })
+            };
+            let uint = |tag: exif::Tag| {
+                exif.get_field(tag, exif::In::PRIMARY)
+                    .and_then(|f| f.value.get_uint(0))
+                    .map(f64::from)
+            };
+            d.exposure_compensation = signed(exif::Tag::ExposureBiasValue);
+            d.gain_control = uint(exif::Tag::GainControl);
+            d.exposure_program = uint(exif::Tag::ExposureProgram);
+            let t = signed(exif::Tag::ExposureTime).filter(|v| *v > 0.0);
+            let n = signed(exif::Tag::FNumber).filter(|v| *v > 0.0);
+            let iso = exif
+                .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
+                .and_then(|f| f.value.get_uint(0))
+                .map(f64::from)
+                .filter(|v| *v > 0.0);
+            if let (Some(t), Some(n), Some(iso)) = (t, n, iso) {
+                d.light_value = Some((n * n / t * 100.0 / iso).log2());
+            }
+        }
+    }
+    d
+}
+
+fn read_head(path: &Path, len: usize) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let mut buf = vec![0u8; len];
+    let mut file = File::open(path)?;
+    let n = file.read(&mut buf)?;
+    buf.truncate(n);
+    Ok(buf)
+}
+
+/// `<crd:Name>value</crd:Name>` from the XMP bytes, if present and numeric.
+fn xmp_number(head: &[u8], name: &str) -> Option<f64> {
+    let open = format!("<crd:{name}>");
+    let close = format!("</crd:{name}>");
+    let start = head
+        .windows(open.len())
+        .position(|w| w == open.as_bytes())?
+        + open.len();
+    let rest = &head[start..];
+    let end = rest.windows(close.len()).position(|w| w == close.as_bytes())?;
+    std::str::from_utf8(&rest[..end]).ok()?.trim().parse().ok()
+}
+
 fn read_exif(path: &Path) -> Option<ExifSubset> {
     let file = File::open(path).ok()?;
     let data = exif::Reader::new()
@@ -195,6 +291,24 @@ mod tests {
         assert_eq!(dms_to_degrees(&[r(1, 0)], "N", 90.0), None);
         assert_eq!(dms_to_degrees(&[r(91, 1)], "N", 90.0), None);
         assert_eq!(dms_to_degrees(&[], "N", 90.0), None);
+    }
+
+    #[test]
+    fn xmp_numbers_come_out_of_the_packet_bytes() {
+        let head = br#"<rdf:Description xmlns:crd="..."><crd:Contrast2012>-6</crd:Contrast2012><crd:Saturation>2</crd:Saturation><crd:Clarity2012>5</crd:Clarity2012><crd:CameraProfile>Camera Standard</crd:CameraProfile></rdf:Description>"#;
+        assert_eq!(xmp_number(head, "Contrast2012"), Some(-6.0));
+        assert_eq!(xmp_number(head, "Saturation"), Some(2.0));
+        assert_eq!(xmp_number(head, "Clarity2012"), Some(5.0));
+        assert_eq!(xmp_number(head, "Texture"), None, "absent field is None");
+        assert_eq!(xmp_number(head, "CameraProfile"), None, "non-numeric is None");
+    }
+
+    #[test]
+    fn camera_decisions_degrade_to_none_on_non_camera_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("img.png");
+        image::DynamicImage::new_rgb8(4, 4).save(&path).unwrap();
+        assert_eq!(read_camera_decisions(&path), CameraDecisions::default());
     }
 
     #[test]

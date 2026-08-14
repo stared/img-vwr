@@ -701,7 +701,13 @@ fn measure_tuning(path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::
         .ok()
         .and_then(|m| m.exif)
         .and_then(|e| e.iso);
-    Some(imgvwr_develop::LookTuning::measure(&linear, iso, scene.as_shot()))
+    let decisions = imgvwr_core::read_camera_decisions(Path::new(path));
+    Some(imgvwr_develop::LookTuning::measure(
+        &linear,
+        iso,
+        scene.as_shot(),
+        &decisions,
+    ))
 }
 
 /// Render one image straight to WebP thumbnail bytes, for formats the codec

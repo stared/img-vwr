@@ -40,11 +40,13 @@ impl Tone {
     fn new(p: &DevelopParams) -> Self {
         Self {
             exposure_gain: (p.exposure).exp2(),
-            // ±100 maps to ±0.8 of gain at the extreme of each mask, which is
-            // a strong but still recoverable move — the same feel as a photo
-            // editor's ±100 rather than a physically-derived number.
-            shadows: (p.shadows / 100.0) * 0.8,
-            highlights: (p.highlights / 100.0) * 0.8,
+            // ±100 maps to ±2.5 EV (shadows) / ±3.2 EV (highlights) at the
+            // extreme of each mask. The camera look's curve reaches white
+            // near scene 1.0 while the decoder keeps over two stops of
+            // headroom above it, so the highlight pull has to span that
+            // range or clipped skies stay clipped no matter the slider.
+            shadows: (p.shadows / 100.0) * 2.5,
+            highlights: (p.highlights / 100.0) * 3.2,
             whites: (p.whites / 100.0) * 0.5,
             black_shift: (p.blacks / 100.0) * 0.05,
             contrast_exp: (p.contrast / 100.0).exp2(),
@@ -88,11 +90,14 @@ fn tone_curve(y: f32, t: &Tone) -> f32 {
     // A tone-range weight that is 0 at black, 0.5 at middle grey and tends to
     // 1 in the highlights — bounded for any input, unlike a bare ratio.
     let w = y / (y + MID_GREY);
-    let shadow_mask = (1.0 - w) * (1.0 - w);
-    let highlight_mask = w * w;
+    let shadow_mask = (1.0 - w) * (1.0 - w) * (1.0 - w);
+    let highlight_mask = w * w * w;
 
-    let y = y * (1.0 + t.shadows * shadow_mask + t.highlights * highlight_mask);
-    let y = y * (1.0 + t.whites * highlight_mask);
+    // EV-based so the extremes stay strong where the masks saturate; the
+    // cubic masks keep middle grey out of both. Slope stays positive for
+    // any slider position: |y d(mask)/dy| <= 0.32, and 3.2 * ln2 * 0.32 < 1.
+    let y = y * (t.shadows * shadow_mask + t.highlights * highlight_mask).exp2();
+    let y = y * (1.0 + t.whites * w * w);
     let y = y + t.black_shift;
 
     if y <= 0.0 {

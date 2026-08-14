@@ -79,7 +79,7 @@ fn measure_one(raw: &Path) -> Result<f64, String> {
         .ok()
         .and_then(|m| m.exif)
         .and_then(|e| e.iso);
-    let tuning = LookTuning::measure(&scene, iso, opened.as_shot());
+    let tuning = LookTuning::measure(&scene, iso, opened.as_shot(), &imgvwr_core::read_camera_decisions(raw));
     let ours = develop_looked(&scene, &DevelopParams::default(), Some(&tuning));
 
     let (w, h) = (scene.width as usize, scene.height as usize);

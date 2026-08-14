@@ -9,7 +9,7 @@
 //! questions.
 //!
 //! ```sh
-//! cargo run --release -p imgvwr-develop --example match_camera -- ~/Pictures/Nikon_RAW/"20260802 bb"
+//! cargo run --release -p imgvwr-develop --example match_camera -- ~/Pictures/Nikon_RAW/"shoot-a"
 //! ```
 //!
 //! The camera writes a JPEG beside every raw frame, rendered by its own
