@@ -22,7 +22,7 @@ pub use crop::Crop;
 pub use look::LookTuning;
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use presets::{
-    baseline, is_camera_default, opening_params, opening_settings, preset, presets, Preset,
+    baseline, is_camera_default, opening_params, opening_settings, preset, presets, Preset, CAMERA,
 };
 pub use pipeline::{develop, develop_looked, MID_GREY};
 
@@ -132,7 +132,12 @@ pub fn render_looked(
     let settings = settings.clamped();
     let linear = render_linear(scene, &settings, max_edge, region)?;
 
-    let look = if settings.look == presets::DEFAULT_FOR_RAW {
+    // The `camera` look shows the camera's own JPEG only while every knob is
+    // untouched — the caller serves that file directly and never reaches
+    // here with it. The moment this function renders under that look, a knob
+    // has moved, and the fitted transform is the closest thing to the
+    // promise the label makes.
+    let look = if settings.look == presets::DEFAULT_FOR_RAW || settings.look == presets::CAMERA {
         tuning
     } else {
         None

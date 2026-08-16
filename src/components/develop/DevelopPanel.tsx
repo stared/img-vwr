@@ -458,6 +458,16 @@ export function DevelopPanel() {
             ))}
           </div>
         )}
+        {/* The frame says what produced its pixels, so the switch from the
+            camera's own JPEG to this app's raw develop is stated, never
+            inferred. The backend reports it per rendered frame. */}
+        {info.needsRender && session.frame && (
+          <p className="develop-note">
+            {session.frame.source === "cameraJpeg"
+              ? "showing the camera's own JPEG — exact until a knob moves"
+              : "showing this app's raw develop"}
+          </p>
+        )}
         {PARAM_SPECS.map((spec: ParamSpec) => {
           const value = settings.params[spec.key];
           // Zero level is the preset, not the bottom of the scale. So an

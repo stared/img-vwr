@@ -33,7 +33,13 @@ pub struct Preset {
     pub params: DevelopParams,
 }
 
-/// The look a raw file gets when nobody has said otherwise.
+/// The look a raw file opens under: the camera's own JPEG, shown as-is
+/// while every knob is untouched, with the fitted transform standing in
+/// the moment one moves. Named in the preset row — a state the panel says
+/// out loud, never a silent substitution.
+pub const CAMERA: &str = "camera";
+
+/// The fitted camera transform.
 pub const DEFAULT_FOR_RAW: &str = "nikon";
 
 /// The identity preset: no look, and the baseline everything measures against
@@ -44,9 +50,12 @@ pub const NONE: &str = "flat";
 pub fn presets() -> Vec<Preset> {
     vec![
         Preset {
-            id: NONE.into(),
-            label: "flat".into(),
-            note: "The decode as measured, with no look applied.".into(),
+            id: CAMERA.into(),
+            label: "camera jpeg".into(),
+            note: "The JPEG the camera itself wrote for this frame, shown \
+                   as-is while nothing is edited. The first moved slider \
+                   develops the raw instead, through the fitted look."
+                .into(),
             params: DevelopParams::default(),
         },
         Preset {
@@ -61,6 +70,12 @@ pub fn presets() -> Vec<Preset> {
             // zero so every one of them still means "as the camera would".
             params: DevelopParams::default(),
         },
+        Preset {
+            id: NONE.into(),
+            label: "flat".into(),
+            note: "The decode as measured, with no look applied.".into(),
+            params: DevelopParams::default(),
+        },
     ]
 }
 
@@ -71,12 +86,12 @@ pub fn preset(id: &str) -> Option<Preset> {
 /// Which preset an untouched image of this kind should open on.
 ///
 /// Scene-referred pixels are flat by construction and a camera would have
-/// applied a curve before showing them to anyone, so they open with the
-/// default look. Anything already rendered opens exactly as it was written —
-/// applying a look to a finished JPEG would apply one twice.
+/// applied a curve before showing them to anyone, so they open showing the
+/// camera's own picture. Anything already rendered opens exactly as it was
+/// written — applying a look to a finished JPEG would apply one twice.
 pub fn opening_preset(rendering: Rendering) -> &'static str {
     match rendering {
-        Rendering::SceneReferred => DEFAULT_FOR_RAW,
+        Rendering::SceneReferred => CAMERA,
         Rendering::AlreadyRendered => NONE,
     }
 }
@@ -103,14 +118,12 @@ pub fn opening_settings(
     }
 }
 
-/// Whether these settings still show the camera's own rendering: the look
-/// a raw opens with, every slider at zero, the as-shot balance, the full
-/// frame. In exactly this state the fitted look is a stand-in for a
-/// picture that already exists — the full-size JPEG the camera wrote into
-/// the raw file — and the caller can serve that instead, making the
-/// default rendering *exact* rather than fitted-close. The first touched
-/// knob leaves this state and hands over to the pipeline, whose fit to
-/// the camera is what keeps that handoff from jumping.
+/// Whether these settings can honestly show the camera's own JPEG: the
+/// `camera` look, every slider at zero, the as-shot balance, the full
+/// frame. The look names the state in the preset row; this predicate says
+/// when the promise can still be kept. The first touched knob leaves it,
+/// and the render develops the raw through the fitted look instead — with
+/// the frame reporting which of the two it served.
 pub fn is_camera_default(
     settings: &crate::params::DevelopSettings,
     as_shot: imgvwr_core::WhiteBalance,
@@ -123,7 +136,7 @@ pub fn is_camera_default(
     // precision a slider can express, not bit-for-bit.
     let wb_untouched = (settings.white_balance.temperature - as_shot.temperature).abs() < 0.5
         && (settings.white_balance.tint - as_shot.tint).abs() < 0.5;
-    settings.look == DEFAULT_FOR_RAW
+    settings.look == CAMERA
         && settings.params == opening_params(rendering)
         && settings.crop == crate::crop::Crop::FULL
         && wb_untouched
@@ -183,6 +196,10 @@ mod tests {
         let mut flat = opening.clone();
         flat.look = NONE.to_owned();
         assert!(!is_camera_default(&flat, as_shot, Rendering::SceneReferred));
+        // The fitted look is a different, deliberate choice — not this state.
+        let mut fitted = opening.clone();
+        fitted.look = DEFAULT_FOR_RAW.to_owned();
+        assert!(!is_camera_default(&fitted, as_shot, Rendering::SceneReferred));
 
         // A JPEG never has a camera default to fall back to — it IS one.
         assert!(!is_camera_default(
@@ -218,7 +235,7 @@ mod tests {
         assert!(opening_params(Rendering::SceneReferred).is_identity());
         assert!(opening_params(Rendering::AlreadyRendered).is_identity());
         let raw = opening_settings(imgvwr_core::WhiteBalance::D65, Rendering::SceneReferred);
-        assert_eq!(raw.look, DEFAULT_FOR_RAW);
+        assert_eq!(raw.look, CAMERA);
         let jpeg = opening_settings(imgvwr_core::WhiteBalance::D65, Rendering::AlreadyRendered);
         assert_eq!(jpeg.look, NONE);
     }
@@ -228,7 +245,7 @@ mod tests {
         // Every preset now shares the identity sliders, so params alone name
         // the first of them; which look is on is `DevelopSettings::look`'s
         // question, not the sliders'.
-        assert_eq!(matching(&DevelopParams::default()).map(|m| m.id), Some(NONE.to_owned()));
+        assert_eq!(matching(&DevelopParams::default()).map(|m| m.id), Some(CAMERA.to_owned()));
         let nudged = DevelopParams {
             exposure: 0.123,
             ..DevelopParams::default()
@@ -246,7 +263,7 @@ mod tests {
         // slider reads as unmoved even though none of them is at zero.
         let opened = opening_settings(as_shot, Rendering::SceneReferred);
         assert_eq!(baseline(&opened), nikon.params);
-        assert_eq!(opened.basis, DEFAULT_FOR_RAW);
+        assert_eq!(opened.basis, CAMERA);
 
         // Nudged off it: the baseline stays put, which is the whole point —
         // otherwise the deviation would follow the value and always be zero.

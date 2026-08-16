@@ -84,6 +84,19 @@ pub enum HdrOutcome {
     Refused { frames: u32, reason: String },
 }
 
+/// What produced a rendered frame's pixels. Reported per frame so the panel
+/// states it rather than the user inferring it — the `camera` look shows the
+/// camera's own JPEG only while nothing is edited, and the switch to the
+/// developed raw must be visible, not silent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum FrameSource {
+    /// The JPEG the camera itself wrote, served as-is.
+    CameraJpeg,
+    /// Pixels developed from the sensor data by this app.
+    RawDevelop,
+}
+
 /// A rendered preview: the pixels live in the service under `token` and are
 /// fetched by the `develop:` protocol; the histogram comes back inline.
 #[derive(Debug, Clone, Serialize, specta::Type)]
@@ -92,6 +105,7 @@ pub struct DevelopFrame {
     pub token: u64,
     pub width: u32,
     pub height: u32,
+    pub source: FrameSource,
     pub histogram: Histogram,
     /// The part of the frame these pixels cover, normalised. A full-frame
     /// preview reports the unit rect; a 1:1 detail render reports the crop it
@@ -128,15 +142,15 @@ impl OpenScene {
             .as_deref()
     }
 
-    /// What actually renders under these settings.
+    /// What actually renders under these settings, and which source it is.
     ///
-    /// At the camera default there is no need to approximate: the picture
-    /// the fitted look imitates already exists as the full-size JPEG inside
-    /// the raw file, so that is what renders — under its own neutral
-    /// settings, since its pixels are finished. The first touched knob
-    /// falls off this branch onto the fitted pipeline, whose closeness to
-    /// the camera is what keeps that handoff from jumping. A fused bracket
-    /// never swaps: the file's JPEG is one exposure, not the photograph.
+    /// Under the `camera` look with every knob untouched, the picture the
+    /// panel promises already exists — the JPEG the camera wrote — so that
+    /// is what renders, under its own neutral settings, since its pixels
+    /// are finished. The first touched knob falls off this branch onto the
+    /// fitted pipeline, and the returned [`FrameSource`] is how the panel
+    /// says so. A fused bracket never swaps: the file's JPEG is one
+    /// exposure, not the photograph.
     fn resolved(
         &self,
         settings: &DevelopSettings,
@@ -144,6 +158,7 @@ impl OpenScene {
         &dyn SceneImage,
         DevelopSettings,
         Option<&imgvwr_develop::LookTuning>,
+        FrameSource,
     ) {
         if self.hdr == HdrOutcome::Plain
             && imgvwr_develop::is_camera_default(
@@ -154,10 +169,15 @@ impl OpenScene {
         {
             if let Some(cam) = self.camera_scene() {
                 let neutral = imgvwr_develop::opening_settings(cam.as_shot(), cam.rendering());
-                return (cam, neutral, None);
+                return (cam, neutral, None, FrameSource::CameraJpeg);
             }
         }
-        (self.scene.as_ref(), settings.clone(), self.tuning.as_ref())
+        (
+            self.scene.as_ref(),
+            settings.clone(),
+            self.tuning.as_ref(),
+            FrameSource::RawDevelop,
+        )
     }
 }
 
@@ -490,7 +510,7 @@ impl DevelopService {
         region: Region,
     ) -> Result<DevelopFrame, String> {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
-        let (scene, settings, tuning) = entry.resolved(settings);
+        let (scene, settings, tuning, source) = entry.resolved(settings);
         let developed =
             imgvwr_develop::render_looked(scene, &settings, max_edge, overlay, region, tuning)
                 .map_err(|e| e.to_string())?;
@@ -508,6 +528,7 @@ impl DevelopService {
             token,
             width: developed.image.width,
             height: developed.image.height,
+            source,
             histogram: developed.histogram,
             region_x: region.x,
             region_y: region.y,
@@ -596,7 +617,7 @@ impl DevelopService {
                 });
                 // The same resolution the preview makes: an untouched raw
                 // exports the camera's own pixels, not an imitation of them.
-                let (scene, settings, tuning) = entry.resolved(&settings);
+                let (scene, settings, tuning, _source) = entry.resolved(&settings);
                 let developed = imgvwr_develop::render_looked(
                     scene,
                     &settings,
@@ -1292,8 +1313,8 @@ mod tests {
         let opened = svc.state(raw_like.to_str().unwrap()).unwrap();
         assert_eq!(
             opened.settings.look,
-            imgvwr_develop::presets::DEFAULT_FOR_RAW,
-            "a flat decode should open under the camera look, not flat"
+            imgvwr_develop::CAMERA,
+            "sensor pixels should open under the camera-jpeg look, not flat"
         );
         assert!(
             opened.settings.params.is_identity(),

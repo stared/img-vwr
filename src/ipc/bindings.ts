@@ -414,7 +414,7 @@ angle: number }
  * A rendered preview: the pixels live in the service under `token` and are
  * fetched by the `develop:` protocol; the histogram comes back inline.
  */
-export type DevelopFrame = { token: number; width: number; height: number; histogram: Histogram; 
+export type DevelopFrame = { token: number; width: number; height: number; source: FrameSource; histogram: Histogram; 
 /**
  * The part of the frame these pixels cover, normalised. A full-frame
  * preview reports the unit rect; a 1:1 detail render reports the crop it
@@ -654,6 +654,21 @@ formatHint: string }
  * separately, and would get wrong whenever events were coalesced or dropped.
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
+/**
+ * What produced a rendered frame's pixels. Reported per frame so the panel
+ * states it rather than the user inferring it — the `camera` look shows the
+ * camera's own JPEG only while nothing is edited, and the switch to the
+ * developed raw must be visible, not silent.
+ */
+export type FrameSource = 
+/**
+ * The JPEG the camera itself wrote, served as-is.
+ */
+"cameraJpeg" | 
+/**
+ * Pixels developed from the sensor data by this app.
+ */
+"rawDevelop"
 /**
  * Everything a path needs to open as a merge: which frames, and how they
  * become one photograph.
