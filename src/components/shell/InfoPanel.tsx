@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ImageStats } from "../../ipc";
-import { formatAperture, formatShutter } from "../../facts/builtin";
+import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
 import { formatBytes } from "../../state/stats";
 import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
@@ -189,7 +189,20 @@ export function InfoPanel() {
     exif?.exposureTime != null ? formatShutter(exif.exposureTime) : "",
     exif?.fNumber != null ? formatAperture(exif.fNumber) : "",
     exif?.iso != null ? `ISO ${exif.iso}` : "",
+    exif?.exposureBias != null && exif.exposureBias !== 0
+      ? `${formatSigned(exif.exposureBias)} EV`
+      : "",
   ].filter(Boolean);
+  // The camera's own per-shot grade, when the file carries one — the answer
+  // to "why do these two neighbouring shots look different".
+  const grade = meta?.grade
+    ? [
+        meta.grade.contrast !== 0 ? `contrast ${formatSigned(meta.grade.contrast)}` : "",
+        meta.grade.saturation !== 0 ? `sat ${formatSigned(meta.grade.saturation)}` : "",
+        meta.grade.clarity !== 0 ? `clarity ${formatSigned(meta.grade.clarity)}` : "",
+        meta.grade.texture !== 0 ? `texture ${formatSigned(meta.grade.texture)}` : "",
+      ].filter(Boolean)
+    : [];
 
   return (
     <div className="info-panel">
@@ -210,6 +223,7 @@ export function InfoPanel() {
           {exif.focalLength !== null && (
             <Fact label="focal length" value={`${Math.round(exif.focalLength)} mm`} />
           )}
+          {grade.length > 0 && <Fact label="camera grade" value={grade.join("   ")} />}
           {exif.dateTime !== null && <Fact label="taken" value={exif.dateTime} />}
           {exif.gpsLat !== null && exif.gpsLon !== null && (
             <Fact label="location" value={`${exif.gpsLat.toFixed(5)}, ${exif.gpsLon.toFixed(5)}`} />

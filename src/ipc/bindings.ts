@@ -398,6 +398,13 @@ thumbnailReady: "thumbnail-ready"
 /** user-defined types **/
 
 /**
+ * The camera's own per-shot grade: how far its auto processing pushed this
+ * frame off the base profile, in the Adobe-unit recipe it writes into the
+ * raw file's XMP packet. Two frames shot seconds apart can carry different
+ * grades — this is the answer to "why do these neighbours look different".
+ */
+export type CameraGrade = { contrast: number; saturation: number; clarity: number; texture: number }
+/**
  * The photograph within the frame: a rectangle, and the angle it sits at.
  * 
  * `x`, `y`, `width` and `height` are the rectangle in normalised coordinates
@@ -576,6 +583,11 @@ export type ExifSubset = { orientation: number; dateTime: string | null; camera:
  */
 exposureTime: number | null; fNumber: number | null; iso: number | null; 
 /**
+ * The exposure-compensation dial, in EV. Zero is a real reading — the
+ * dial at its detent — distinct from a file that never recorded one.
+ */
+exposureBias: number | null; 
+/**
  * Millimetres, as marked on the lens.
  */
 focalLength: number | null; 
@@ -734,7 +746,11 @@ export type ImageMeta = {
  * None when no Rust decoder knows the format (e.g. AVIF) — the webview
  * can still measure the image it renders natively.
  */
-width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null }
+width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null; 
+/**
+ * Present only for files carrying the camera's XMP recipe (raw files).
+ */
+grade: CameraGrade | null }
 /**
  * Per-image pixel statistics for the info panel, computed from the cached
  * thumbnail (256 px is plenty for distribution shapes and it is already on

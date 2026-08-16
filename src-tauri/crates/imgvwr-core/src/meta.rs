@@ -18,11 +18,27 @@ pub struct ExifSubset {
     pub exposure_time: Option<f64>,
     pub f_number: Option<f64>,
     pub iso: Option<u32>,
+    /// The exposure-compensation dial, in EV. Zero is a real reading — the
+    /// dial at its detent — distinct from a file that never recorded one.
+    pub exposure_bias: Option<f64>,
     /// Millimetres, as marked on the lens.
     pub focal_length: Option<f64>,
     /// Decimal degrees; positive = north/east.
     pub gps_lat: Option<f64>,
     pub gps_lon: Option<f64>,
+}
+
+/// The camera's own per-shot grade: how far its auto processing pushed this
+/// frame off the base profile, in the Adobe-unit recipe it writes into the
+/// raw file's XMP packet. Two frames shot seconds apart can carry different
+/// grades — this is the answer to "why do these neighbours look different".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraGrade {
+    pub contrast: f64,
+    pub saturation: f64,
+    pub clarity: f64,
+    pub texture: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -36,6 +52,8 @@ pub struct ImageMeta {
     pub file_size: u64,
     pub modified_ms: u64,
     pub exif: Option<ExifSubset>,
+    /// Present only for files carrying the camera's XMP recipe (raw files).
+    pub grade: Option<CameraGrade>,
 }
 
 /// Header-only metadata read: image dimensions without a full decode, plus a
@@ -63,10 +81,28 @@ pub fn read_meta(path: &Path) -> std::io::Result<ImageMeta> {
     Ok(ImageMeta {
         width: dims.map(|(w, _)| w),
         height: dims.map(|(_, h)| h),
+        exif: read_exif(path),
+        grade: read_grade(path, &format),
         format,
         file_size: fs_meta.len(),
         modified_ms,
-        exif: read_exif(path),
+    })
+}
+
+/// The XMP grade, for formats that can carry one. Gated by extension so a
+/// folder of JPEGs does not pay a head-read per file for a packet only raw
+/// files have.
+fn read_grade(path: &Path, format: &str) -> Option<CameraGrade> {
+    const RAW_LIKE: [&str; 8] = ["nef", "nrw", "arw", "cr3", "raf", "orf", "rw2", "dng"];
+    if !RAW_LIKE.contains(&format) {
+        return None;
+    }
+    let head = read_head(path, 256 * 1024).ok()?;
+    Some(CameraGrade {
+        contrast: xmp_number(&head, "Contrast2012")?,
+        saturation: xmp_number(&head, "Saturation").unwrap_or(0.0),
+        clarity: xmp_number(&head, "Clarity2012").unwrap_or(0.0),
+        texture: xmp_number(&head, "Texture").unwrap_or(0.0),
     })
 }
 
@@ -197,6 +233,17 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
         lens: field_string(exif::Tag::LensModel).and_then(|s| clean_lens(&s)),
         exposure_time: rational(exif::Tag::ExposureTime),
         f_number: rational(exif::Tag::FNumber),
+        // Signed and allowed to be zero: the dial at its detent is a
+        // reading, not an absence — the positive-only helper above is for
+        // quantities that cannot meaningfully be zero or negative.
+        exposure_bias: data
+            .get_field(exif::Tag::ExposureBiasValue, exif::In::PRIMARY)
+            .and_then(|f| match &f.value {
+                exif::Value::SRational(p) => p.first().map(|r| r.to_f64()),
+                exif::Value::Rational(p) => p.first().map(|r| r.to_f64()),
+                _ => None,
+            })
+            .filter(|v| v.is_finite()),
         // The modern tag, falling back to the one film-era cameras wrote.
         iso: data
             .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)

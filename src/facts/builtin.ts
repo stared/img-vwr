@@ -31,6 +31,17 @@ export function formatAperture(fNumber: number): string {
   return `f/${Number(fNumber.toFixed(1))}`;
 }
 
+/**
+ * A signed reading with its sign always spoken — "+10", "−1.3" — because
+ * these numbers are deviations from a zero, and "10" would leave the
+ * direction to be guessed. Thirds are rounded to one decimal, whole stops
+ * stay whole.
+ */
+export function formatSigned(value: number): string {
+  const rounded = Number(value.toFixed(1));
+  return rounded < 0 ? `−${Math.abs(rounded)}` : `+${rounded}`;
+}
+
 export function registerBuiltinFacts(): void {
   registerFact({
     id: "name",
@@ -94,6 +105,46 @@ export function registerBuiltinFacts(): void {
   });
 
   registerFact({
+    id: "ev",
+    label: "EV",
+    group: "exposure",
+    value: ({ meta }) => {
+      const ev = meta?.exif?.exposureBias;
+      // Zero is the dial at its detent — a fact, but not one worth a slot
+      // over the photograph; the interesting readings are the moved ones.
+      if (ev === undefined || ev === null || ev === 0) return null;
+      return `${formatSigned(ev)} EV`;
+    },
+  });
+
+  registerFact({
+    id: "whiteBalance",
+    label: "white balance",
+    group: "grade",
+    value: ({ asShot }) =>
+      asShot === null
+        ? null
+        : `${Math.round(asShot.temperature)} K ${formatSigned(asShot.tint)}`,
+  });
+
+  registerFact({
+    id: "grade",
+    label: "camera grade",
+    group: "grade",
+    value: ({ meta }) => {
+      const g = meta?.grade;
+      if (g === undefined || g === null) return null;
+      const parts = [
+        g.contrast !== 0 ? `contrast ${formatSigned(g.contrast)}` : "",
+        g.saturation !== 0 ? `sat ${formatSigned(g.saturation)}` : "",
+        g.clarity !== 0 ? `clarity ${formatSigned(g.clarity)}` : "",
+        g.texture !== 0 ? `texture ${formatSigned(g.texture)}` : "",
+      ].filter((p) => p !== "");
+      return parts.length > 0 ? parts.join(" ") : null;
+    },
+  });
+
+  registerFact({
     id: "taken",
     label: "taken",
     group: "file",
@@ -133,4 +184,7 @@ export const DEFAULT_OVERLAY_FACTS = [
   "shutter",
   "aperture",
   "iso",
+  "ev",
+  "whiteBalance",
+  "grade",
 ] as const;

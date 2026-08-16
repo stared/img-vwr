@@ -33,6 +33,7 @@ function metaOf(exposures: Record<string, Exposure>): (path: string) => ImageMet
       format: "jpg",
       fileSize: 1,
       modifiedMs: 0,
+      grade: null,
       exif: {
         orientation: 1,
         dateTime: exposure.at,
@@ -41,6 +42,7 @@ function metaOf(exposures: Record<string, Exposure>): (path: string) => ImageMet
         exposureTime: exposure.t,
         fNumber: 1.8,
         iso: exposure.iso ?? 100,
+        exposureBias: null,
         focalLength: exposure.focal ?? 120,
         gpsLat: null,
         gpsLon: null,

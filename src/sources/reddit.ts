@@ -70,6 +70,7 @@ export function parseRedditFeed(xml: string): SourceItem[] {
         fileSize: 0,
         modifiedMs,
         exif: null,
+        grade: null,
       },
     });
   }

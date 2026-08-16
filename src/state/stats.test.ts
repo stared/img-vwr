@@ -30,6 +30,7 @@ function meta(overrides: Partial<ImageMeta>): ImageMeta {
     height: 100,
     format: "jpg",
     fileSize: 1000,
+    grade: null,
     modifiedMs: 0,
     exif: null,
     ...overrides,
@@ -47,6 +48,7 @@ const NO_EXIF = {
   fNumber: null,
   iso: null,
   focalLength: null,
+  exposureBias: null,
   gpsLat: null,
   gpsLon: null,
 };

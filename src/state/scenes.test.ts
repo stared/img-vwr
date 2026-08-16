@@ -31,6 +31,7 @@ function exifAt(ms: number): ImageMeta {
     format: "jpeg",
     fileSize: 1,
     modifiedMs: 0,
+    grade: null,
     exif: {
       orientation: 1,
       dateTime,
@@ -40,6 +41,7 @@ function exifAt(ms: number): ImageMeta {
       fNumber: null,
       iso: null,
       focalLength: null,
+      exposureBias: null,
       gpsLat: null,
       gpsLon: null,
     },

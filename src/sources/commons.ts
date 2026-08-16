@@ -94,6 +94,7 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
         format,
         fileSize: info.size,
         modifiedMs,
+        grade: null,
         // Every field, because ExifSubset is a total contract: a remote
         // photograph that carries no exposure data says so, rather than
         // leaving the question open.
@@ -107,6 +108,7 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
                 exposureTime: null,
                 fNumber: null,
                 iso: null,
+                exposureBias: null,
                 focalLength: null,
                 gpsLat,
                 gpsLon,

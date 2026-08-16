@@ -26,6 +26,13 @@ import { useAppStore } from "../../state/store";
 export function ImageCaption({ entry }: { entry: FileEntry }) {
   const mode = useDevelopStore((s) => s.caption);
   const meta = useAppStore((s) => s.meta[entry.path]);
+  // The camera's own white balance solve, once the develop session for this
+  // photograph has loaded it. Guarded by path: the session lags navigation,
+  // and a stale one would caption this frame with the previous frame's
+  // reading.
+  const asShot = useDevelopStore((s) =>
+    s.session?.path === entry.path ? s.session.info.asShot : null,
+  );
   const [showing, setShowing] = useState(true);
 
   // Every arrival at a photograph starts the clock again — that is what makes
@@ -45,7 +52,7 @@ export function ImageCaption({ entry }: { entry: FileEntry }) {
 
   if (mode === "off") return null;
 
-  const lines = factLines(DEFAULT_OVERLAY_FACTS, { entry, meta });
+  const lines = factLines(DEFAULT_OVERLAY_FACTS, { entry, meta, asShot });
   if (lines.length === 0) return null;
 
   return (

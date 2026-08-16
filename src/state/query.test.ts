@@ -184,6 +184,7 @@ const NO_EXIF = {
   focalLength: null,
   gpsLat: null,
   gpsLon: null,
+  exposureBias: null,
 };
 
 function imageMeta(overrides: Partial<ImageMeta>): ImageMeta {
@@ -193,6 +194,7 @@ function imageMeta(overrides: Partial<ImageMeta>): ImageMeta {
     format: "jpg",
     fileSize: 300,
     modifiedMs: 0,
+    grade: null,
     exif: null,
     ...overrides,
   };

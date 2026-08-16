@@ -1,4 +1,4 @@
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageMeta, WhiteBalance } from "../ipc";
 
 /**
  * Fact registry — the things that can be *said* about one photograph.
@@ -18,6 +18,13 @@ export interface FactContext {
   entry: FileEntry;
   /** Undefined until the background metadata read reaches this file. */
   meta: ImageMeta | undefined;
+  /**
+   * The white balance the camera chose for this frame, when a develop
+   * session knows it; null for finished files and before the session
+   * loads. Auto WB re-solves every shot, so this is per-frame data the
+   * way shutter speed is, not a setting.
+   */
+  asShot: WhiteBalance | null;
 }
 
 export interface ImageFact {
@@ -32,9 +39,10 @@ export interface ImageFact {
   value: (ctx: FactContext) => string | null;
   /**
    * Facts that belong on one line together — filename alone, then the body,
-   * then the exposure. Ordering within a group follows registration order.
+   * then the exposure, then what the camera's processing decided. Ordering
+   * within a group follows registration order.
    */
-  group: "identity" | "camera" | "exposure" | "file";
+  group: "identity" | "camera" | "exposure" | "grade" | "file";
 }
 
 const registry = new Map<string, ImageFact>();
@@ -70,7 +78,7 @@ export function factLines(
   ids: readonly string[],
   ctx: FactContext,
 ): { group: ImageFact["group"]; parts: string[] }[] {
-  const order: ImageFact["group"][] = ["identity", "camera", "exposure", "file"];
+  const order: ImageFact["group"][] = ["identity", "camera", "exposure", "grade", "file"];
   return order
     .map((group) => ({
       group,
