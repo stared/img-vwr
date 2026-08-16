@@ -145,12 +145,24 @@ correction, see below) is the number to shrink next.
       (dump_patches --at): corners align to ~1 native px, spread <1 px.
       Distortion correction matches; full-frame 1:1 fitting is NOT
       geometry-blocked (the old ±14 px was the active-area offset).
-- [ ] **Lateral CA is unmeasured** (user saw fringes vs the JPEG,
-      2026-08-16): the geometry check was patch alignment, not
-      per-channel. The camera JPEG applies lateral-CA correction; whether
-      CIRAW does (and how well) needs a per-channel corner alignment
-      measurement. Only affects the edited path now — the default serves
-      the camera's own pixels.
+- [x] **Lateral CA — measured, matched** (2026-08-16): per-channel phase
+      correlation on 768² corner patches (shoot-a + shoot-b, 4 corners + centre):
+      R−G and B−G offsets < 0.01 px in BOTH our decode and the camera
+      JPEG. CIRAW corrects lateral CA. The "fringes" seen by eye are the
+      edited path's chroma-noise/violet-tail speckle on speculars, not
+      optics.
+- [ ] **The NEF carries an ACR recipe** (found 2026-08-16): the XMP
+      packet is namespace `crd = camera-raw-defaults` — Nikon writes the
+      Adobe Camera Raw defaults that reproduce its JPEG, including
+      `CameraProfile = "Camera Standard"` (Adobe's camera-matching DCP
+      for the Z6 III: dual-illuminant matrices + HueSatDelta lattice +
+      look table + tone curve) plus per-shot 2012-process slider values.
+      Extracting that DCP (ships free inside Adobe DNG Converter;
+      `dcamprof dcp2json` reads it) would replace our fitted matrix+LUT
+      with Adobe's measured reverse-engineering of Nikon's colour.
+      Blocked locally: downloading the DNG Converter needs the user
+      (permission classifier denied it); NX Studio as Nikon's own oracle
+      likewise needs a user install.
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 
