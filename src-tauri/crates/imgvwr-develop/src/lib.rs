@@ -21,7 +21,9 @@ pub use analysis::{
 pub use crop::Crop;
 pub use look::LookTuning;
 pub use params::{DevelopParams, DevelopSettings, Overlay};
-pub use presets::{baseline, opening_params, opening_settings, preset, presets, Preset};
+pub use presets::{
+    baseline, is_camera_default, opening_params, opening_settings, preset, presets, Preset,
+};
 pub use pipeline::{develop, develop_looked, MID_GREY};
 
 use imgvwr_core::{DecodedImage, Region, RenderRequest, SceneError, SceneImage};
@@ -164,4 +166,46 @@ pub fn render_looked(
         image,
         histogram: hist,
     })
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+
+    /// The exact-default path serves the camera's embedded JPEG through this
+    /// very call, and "exact" is only a true word for it if a finished
+    /// picture passes through the identity develop byte-for-byte — every
+    /// sRGB value surviving the decode to linear and back.
+    #[test]
+    fn a_finished_picture_renders_back_byte_for_byte() {
+        let (w, h) = (64u32, 48u32);
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for i in 0..(w * h) {
+            // Sweeps all 256 values through all three channels.
+            let v = (i % 256) as u8;
+            rgba.extend_from_slice(&[v, v.wrapping_add(85), v.wrapping_add(170), 255]);
+        }
+        let img = image::RgbaImage::from_raw(w, h, rgba.clone()).unwrap();
+        let scene = imgvwr_core::image_scene::scene_from_rgba(img);
+        let settings =
+            opening_settings(
+                imgvwr_core::WhiteBalance::D65,
+                imgvwr_core::Rendering::AlreadyRendered,
+            );
+        let developed = render_looked(
+            scene.as_ref(),
+            &settings,
+            w.max(h),
+            Overlay::None,
+            Region::FULL,
+            None,
+        )
+        .unwrap();
+        assert_eq!((developed.image.width, developed.image.height), (w, h));
+        let off: Vec<usize> = (0..rgba.len())
+            .filter(|&i| developed.image.rgba[i] != rgba[i])
+            .take(8)
+            .collect();
+        assert!(off.is_empty(), "first differing bytes at {off:?}");
+    }
 }

@@ -9,7 +9,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use imgvwr_core::{Region, SceneError, SceneImage, SceneRegistry, WhiteBalance};
 use imgvwr_develop::{DevelopParams, DevelopSettings, Histogram, Overlay};
@@ -113,6 +113,52 @@ struct OpenScene {
     /// render call so a preview, the loupe and the export all agree on what
     /// the camera would have decided for this frame.
     tuning: Option<imgvwr_develop::LookTuning>,
+    /// The camera's own full-size JPEG out of the raw file, decoded lazily
+    /// the first time a render finds the settings at the camera default.
+    /// In exactly that state the fitted look is a stand-in for this picture,
+    /// so this is what gets shown — exact rather than fitted-close.
+    camera: OnceLock<Option<Box<dyn SceneImage>>>,
+}
+
+impl OpenScene {
+    /// The camera's own JPEG for this file as a scene, if it has one.
+    fn camera_scene(&self) -> Option<&dyn SceneImage> {
+        self.camera
+            .get_or_init(|| camera_jpeg_scene(&self.path))
+            .as_deref()
+    }
+
+    /// What actually renders under these settings.
+    ///
+    /// At the camera default there is no need to approximate: the picture
+    /// the fitted look imitates already exists as the full-size JPEG inside
+    /// the raw file, so that is what renders — under its own neutral
+    /// settings, since its pixels are finished. The first touched knob
+    /// falls off this branch onto the fitted pipeline, whose closeness to
+    /// the camera is what keeps that handoff from jumping. A fused bracket
+    /// never swaps: the file's JPEG is one exposure, not the photograph.
+    fn resolved(
+        &self,
+        settings: &DevelopSettings,
+    ) -> (
+        &dyn SceneImage,
+        DevelopSettings,
+        Option<&imgvwr_develop::LookTuning>,
+    ) {
+        if self.hdr == HdrOutcome::Plain
+            && imgvwr_develop::is_camera_default(
+                settings,
+                self.scene.as_shot(),
+                self.scene.rendering(),
+            )
+        {
+            if let Some(cam) = self.camera_scene() {
+                let neutral = imgvwr_develop::opening_settings(cam.as_shot(), cam.rendering());
+                return (cam, neutral, None);
+            }
+        }
+        (self.scene.as_ref(), settings.clone(), self.tuning.as_ref())
+    }
 }
 
 pub struct DevelopService {
@@ -299,6 +345,7 @@ impl DevelopService {
             scene,
             hdr,
             tuning,
+            camera: OnceLock::new(),
         });
 
         let mut open = self.open.lock().unwrap();
@@ -443,15 +490,10 @@ impl DevelopService {
         region: Region,
     ) -> Result<DevelopFrame, String> {
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
-        let developed = imgvwr_develop::render_looked(
-            entry.scene.as_ref(),
-            settings,
-            max_edge,
-            overlay,
-            region,
-            entry.tuning.as_ref(),
-        )
-        .map_err(|e| e.to_string())?;
+        let (scene, settings, tuning) = entry.resolved(settings);
+        let developed =
+            imgvwr_develop::render_looked(scene, &settings, max_edge, overlay, region, tuning)
+                .map_err(|e| e.to_string())?;
 
         let jpeg = encode_jpeg(&developed.image, PREVIEW_QUALITY)?;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
@@ -552,13 +594,16 @@ impl DevelopService {
                 let settings = self.stored_settings(path)?.unwrap_or_else(|| {
                     imgvwr_develop::opening_settings(entry.scene.as_shot(), entry.scene.rendering())
                 });
+                // The same resolution the preview makes: an untouched raw
+                // exports the camera's own pixels, not an imitation of them.
+                let (scene, settings, tuning) = entry.resolved(&settings);
                 let developed = imgvwr_develop::render_looked(
-                    entry.scene.as_ref(),
+                    scene,
                     &settings,
                     plan.size.edge(w.max(h)),
                     Overlay::None,
                     Region::FULL,
-                    entry.tuning.as_ref(),
+                    tuning,
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -852,6 +897,42 @@ fn measure_tuning_checked(
     ))
 }
 
+/// The camera's own rendering of a raw frame, as a scene: the paired .JPG
+/// the camera wrote beside it when shooting RAW+JPEG — those very bytes
+/// are what Nikon makes of this frame — or, failing that, the full-size
+/// JPEG embedded in the raw file itself, which is the same rendering at a
+/// lower codec quality.
+fn camera_jpeg_scene(path: &str) -> Option<Box<dyn SceneImage>> {
+    sibling_camera_jpeg(path).or_else(|| embedded_fallback(path))
+}
+
+/// The camera-written .JPG beside a raw file. Same stem is not enough — a
+/// stranger's JPG that merely shares the name is not this photograph — so
+/// the EXIF capture time has to agree too.
+fn sibling_camera_jpeg(path: &str) -> Option<Box<dyn SceneImage>> {
+    let raw = Path::new(path);
+    if !imgvwr_raw::is_raw_extension(&extension_of(path)) {
+        return None;
+    }
+    let taken = imgvwr_core::read_meta(raw).ok()?.exif?.date_time?;
+    for ext in ["JPG", "jpg", "JPEG", "jpeg"] {
+        let candidate = raw.with_extension(ext);
+        if !candidate.is_file() {
+            continue;
+        }
+        let Some(exif) = imgvwr_core::read_meta(&candidate).ok().and_then(|m| m.exif) else {
+            continue;
+        };
+        if exif.date_time.as_deref() != Some(taken.as_str()) {
+            continue;
+        }
+        let img = image::open(&candidate).ok()?;
+        let rgba = oriented(img.to_rgba8(), exif.orientation);
+        return Some(imgvwr_core::image_scene::scene_from_rgba(rgba));
+    }
+    None
+}
+
 /// The camera's own JPEG out of a raw file whose decode came back flat,
 /// as a scene — oriented, already rendered, honest pixels instead of a
 /// black rectangle.
@@ -863,13 +944,20 @@ fn embedded_fallback(path: &str) -> Option<Box<dyn SceneImage>> {
         .and_then(|m| m.exif)
         .map(|e| e.orientation)
         .unwrap_or(1);
-    let rgba = match orientation {
-        6 => image::imageops::rotate90(&img.to_rgba8()),
-        8 => image::imageops::rotate270(&img.to_rgba8()),
-        3 => image::imageops::rotate180(&img.to_rgba8()),
-        _ => img.to_rgba8(),
-    };
-    Some(imgvwr_core::image_scene::scene_from_rgba(rgba))
+    Some(imgvwr_core::image_scene::scene_from_rgba(oriented(
+        img.to_rgba8(),
+        orientation,
+    )))
+}
+
+/// A decoded image turned the way its EXIF says it was shot.
+fn oriented(rgba: image::RgbaImage, orientation: u32) -> image::RgbaImage {
+    match orientation {
+        6 => image::imageops::rotate90(&rgba),
+        8 => image::imageops::rotate270(&rgba),
+        3 => image::imageops::rotate180(&rgba),
+        _ => rgba,
+    }
 }
 
 /// Render one image straight to WebP thumbnail bytes, for formats the codec

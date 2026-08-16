@@ -7,6 +7,19 @@ per-image oracle 2.81, oracle + coarse spatial field 2.68, LOFO ≈4.4. Every nu
 measurable against `verify_look`; nothing ships without beating the
 baseline held-out.
 
+**Default rendering is now EXACT, not fitted** (2026-08-16): at the
+camera default (nikon look, sliders at zero, as-shot balance, full frame)
+the app serves the camera's own JPEG — the paired .JPG beside the NEF
+(EXIF capture time must agree), else the full-size JpgFromRaw embedded in
+the NEF (same rendering, ~1 MB codec quality, mean |Δ| 1.0–1.7 to the
+FINE pair). `is_camera_default` in presets.rs is the gate;
+`OpenScene::resolved` in services/develop.rs the switch; render and
+export both go through it. A finished picture passes the identity develop
+byte-for-byte (unit-tested), so a PNG export at default is Nikon's exact
+pixels. The fitted 3.26/3.40 numbers now describe the FIRST KNOB TOUCH
+handoff, not the default view. The handoff jump (~3.4/255 + camera CA
+correction, see below) is the number to shrink next.
+
 ## 1. Joint optimization (replace stage-wise greedy fitting)
 
 - [x] **End-to-end differentiable fit (PyTorch, MPS)** — `fit_joint.py`;
@@ -40,6 +53,11 @@ baseline held-out.
       where the camera desaturates. Thin-data LUT corner; needs either
       anchor data (ColorChecker + deep-red patches) or a wider clamp
       there specifically.
+- [ ] User-confirmed by eye (2026-08-16, now only on the edited path):
+      per-image brightness/saturation offsets (the predictor→oracle gap),
+      backlit-fountain brightness, and residual UV-violet green leak —
+      the cross-channel clip is a symptom clamp; a hue-preserving gamut
+      mapping for out-of-range blue/violet is the honest fix.
 
 ## 2. Different model families (not just deeper fitting of the same one)
 
@@ -127,6 +145,12 @@ baseline held-out.
       (dump_patches --at): corners align to ~1 native px, spread <1 px.
       Distortion correction matches; full-frame 1:1 fitting is NOT
       geometry-blocked (the old ±14 px was the active-area offset).
+- [ ] **Lateral CA is unmeasured** (user saw fringes vs the JPEG,
+      2026-08-16): the geometry check was patch alignment, not
+      per-channel. The camera JPEG applies lateral-CA correction; whether
+      CIRAW does (and how well) needs a per-channel corner alignment
+      measurement. Only affects the edited path now — the default serves
+      the camera's own pixels.
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 

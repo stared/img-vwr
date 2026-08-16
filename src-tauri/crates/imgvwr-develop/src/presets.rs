@@ -103,6 +103,32 @@ pub fn opening_settings(
     }
 }
 
+/// Whether these settings still show the camera's own rendering: the look
+/// a raw opens with, every slider at zero, the as-shot balance, the full
+/// frame. In exactly this state the fitted look is a stand-in for a
+/// picture that already exists — the full-size JPEG the camera wrote into
+/// the raw file — and the caller can serve that instead, making the
+/// default rendering *exact* rather than fitted-close. The first touched
+/// knob leaves this state and hands over to the pipeline, whose fit to
+/// the camera is what keeps that handoff from jumping.
+pub fn is_camera_default(
+    settings: &crate::params::DevelopSettings,
+    as_shot: imgvwr_core::WhiteBalance,
+    rendering: Rendering,
+) -> bool {
+    if rendering != Rendering::SceneReferred {
+        return false;
+    }
+    // The balance round-trips through the database as text; compare to the
+    // precision a slider can express, not bit-for-bit.
+    let wb_untouched = (settings.white_balance.temperature - as_shot.temperature).abs() < 0.5
+        && (settings.white_balance.tint - as_shot.tint).abs() < 0.5;
+    settings.look == DEFAULT_FOR_RAW
+        && settings.params == opening_params(rendering)
+        && settings.crop == crate::crop::Crop::FULL
+        && wb_untouched
+}
+
 /// The params a set of settings measures its deviation from.
 ///
 /// Sitting exactly on some preset makes that one the baseline, whatever the
@@ -128,6 +154,43 @@ pub fn matching(params: &DevelopParams) -> Option<Preset> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_default_holds_until_any_knob_moves() {
+        let as_shot = imgvwr_core::WhiteBalance {
+            temperature: 5099.3,
+            tint: 17.2,
+        };
+        let opening = opening_settings(as_shot, Rendering::SceneReferred);
+        assert!(is_camera_default(&opening, as_shot, Rendering::SceneReferred));
+
+        // Tiny storage round-trip wobble on the balance is still default.
+        let mut wobbled = opening.clone();
+        wobbled.white_balance.temperature += 0.2;
+        assert!(is_camera_default(&wobbled, as_shot, Rendering::SceneReferred));
+
+        // Any real edit leaves the state: a slider, the balance, the crop,
+        // the look itself.
+        let mut edited = opening.clone();
+        edited.params.exposure = 0.1;
+        assert!(!is_camera_default(&edited, as_shot, Rendering::SceneReferred));
+        let mut warmed = opening.clone();
+        warmed.white_balance.temperature += 100.0;
+        assert!(!is_camera_default(&warmed, as_shot, Rendering::SceneReferred));
+        let mut cropped = opening.clone();
+        cropped.crop.width = 0.5;
+        assert!(!is_camera_default(&cropped, as_shot, Rendering::SceneReferred));
+        let mut flat = opening.clone();
+        flat.look = NONE.to_owned();
+        assert!(!is_camera_default(&flat, as_shot, Rendering::SceneReferred));
+
+        // A JPEG never has a camera default to fall back to — it IS one.
+        assert!(!is_camera_default(
+            &opening_settings(as_shot, Rendering::AlreadyRendered),
+            as_shot,
+            Rendering::AlreadyRendered
+        ));
+    }
 
     #[test]
     fn every_preset_has_a_distinct_id_and_survives_clamping() {
