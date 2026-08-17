@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { GalleryGrid } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
 import { MapGallery } from "./components/gallery/MapGallery";
+import { MosaicGallery } from "./components/gallery/MosaicGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { ExportDialog } from "./components/shell/ExportDialog";
@@ -153,6 +154,8 @@ function App() {
           {count > 0 && viewMode === "gallery" && (
             galleryLayout === "map" ? (
               <MapGallery />
+            ) : galleryLayout === "mosaic" ? (
+              <MosaicGallery />
             ) : galleryLayout === "timeline" ? (
               <TimelineGallery />
             ) : galleryLayout === "darkroom" ? (

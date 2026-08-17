@@ -31,6 +31,7 @@ interface SavedSession {
   gridColumns: number;
   timelineOrientation: TimelineOrientation;
   timelineThumbPx: number;
+  mosaicRowPx: number;
   statsVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
@@ -58,6 +59,7 @@ function snapshot(): SavedSession {
     gridColumns: s.gridColumns,
     timelineOrientation: s.timelineOrientation,
     timelineThumbPx: s.timelineThumbPx,
+    mosaicRowPx: s.mosaicRowPx,
     statsVisible: s.statsVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
@@ -83,7 +85,14 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 const oneOf = <T extends string>(v: unknown, all: readonly T[]): v is T =>
   isString(v) && (all as readonly string[]).includes(v);
 
-const LAYOUTS: readonly GalleryLayout[] = ["grid", "timeline", "map", "darkroom", "scenes"];
+const LAYOUTS: readonly GalleryLayout[] = [
+  "grid",
+  "mosaic",
+  "timeline",
+  "map",
+  "darkroom",
+  "scenes",
+];
 
 function readScope(v: unknown): Scope | null {
   if (typeof v !== "object" || v === null) return null;
@@ -172,6 +181,7 @@ export function restoreSession(): boolean {
       ? o.timelineOrientation
       : app.timelineOrientation,
     timelineThumbPx: isNum(o.timelineThumbPx) ? o.timelineThumbPx : app.timelineThumbPx,
+    mosaicRowPx: isNum(o.mosaicRowPx) ? o.mosaicRowPx : app.mosaicRowPx,
     statsVisible: isBool(o.statsVisible) ? o.statsVisible : app.statsVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,

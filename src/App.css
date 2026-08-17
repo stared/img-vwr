@@ -2020,6 +2020,66 @@ button.stats-row:hover .stats-label {
   height: 100%;
 }
 
+/* ---- Mosaic ---- */
+
+/* Justified rows: every cell's width and height are computed, so the row
+   meets both edges and the layout has no empty space to style. */
+.mosaic-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+.mosaic-cell {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  background: var(--bg-raised);
+  cursor: pointer;
+  user-select: none;
+  /* A size container, so a cropped miniature can fill it with the same
+     container-query sizing it uses everywhere else. */
+  container-type: size;
+}
+
+.mosaic-cell img {
+  width: 100%;
+  height: 100%;
+  /* The cell already has the photograph's shape, so cover neither crops
+     nor stretches — it only absorbs the row's rounding pixel. */
+  object-fit: cover;
+  display: block;
+}
+
+/* The selection rides above the picture, as in the filmstrip. */
+.mosaic-cell.selected::before,
+.mosaic-cell.lead::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 1px solid var(--accent);
+  pointer-events: none;
+}
+
+.mosaic-cell.lead::before {
+  border-width: 2px;
+}
+
+.mosaic-cell .thumb-pending,
+.mosaic-cell .thumb-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ---- Cropped miniatures ---- */
 
 /* The photo boxes are size containers, so a crop-shaped box below can
