@@ -183,13 +183,20 @@ correction, see below) is the number to shrink next.
       RGBTone(exposure_tone ∘ curve; max/min through curve, mid
       interpolated) → ProPhoto→output. No decompilation needed for this
       layer.
-- [ ] **DNG Converter as data + oracle** (app extracted to scratchpad,
-      runs without install): converting one NEF exposes the converter's
-      per-camera assumptions as DNG tags (BaselineExposure!), and
-      `-p2` embeds a full-size ACR-rendered default preview = a second
-      oracle rendered with the NEF's own crd recipe. Blocked for the
-      agent by the Gatekeeper quarantine strip — needs Piotr to run
-      once. Ghidra only if the 2012 operators ever need exact math.
+- [x] **DNG Converter as data + oracle — run, measured, decisive**
+      (2026-08-17; the extracted app runs from scratchpad with no
+      install and no quarantine). One conversion exposed Adobe's camera
+      database for the Z6 III: **BaselineExposure +0.25**, BlackLevel
+      1008, WhiteLevel 15892, BaselineNoise 0.6, CameraCalibration
+      identity; ColorMatrix1/2 identical to the DCP's. The `-p2`
+      preview is ACR's own default render (Adobe decode + camera
+      profile + the NEF's crd recipe). **Measured vs the camera JPG on
+      6 diverse frames: mean |Δ| ≈ 7.1, range 2.1–12.7 (center crops
+      similar).** Our fitted pipeline is at 3.33 uniformly — ~2× closer
+      to the camera than Adobe's own official emulation. This BOUNDS
+      any ACR-exact effort (Ghidra on the 2012 operators included) at
+      ~7: demonstrably not worth pursuing for camera matching. "Beyond
+      Lightroom" on the match-the-camera axis: measured, achieved.
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 
