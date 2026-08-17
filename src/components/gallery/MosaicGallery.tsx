@@ -7,7 +7,7 @@ import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { parseNumber, Slider } from "../shell/Slider";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
-import { mosaicAspects, mosaicRows, packedOrder } from "./mosaic";
+import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands } from "./mosaic";
 
 /**
  * The mosaic: the grid's photographs without the grid's empty space. Rows
@@ -51,56 +51,49 @@ export function MosaicGallery() {
     if (missing.length > 0) void requestMeta(missing, epoch);
   }, [status, remote, allEntries, epoch]);
 
-  // The display order: the sort's own, or repacked so every photograph
-  // reads at (nearly) one scale. `order[displayPos]` is the index into the
-  // visible list — the selection's coordinate system stays untouched.
-  const { rows, order } = useMemo(() => {
+  // Both modes come out as bands: justified rows are bands one photograph
+  // deep; one-scale packs bands three rows tall from vertical stacks. The
+  // cells carry indices into the visible list — packing moves pixels,
+  // never the selection's coordinates.
+  const bands = useMemo(() => {
     const aspects = mosaicAspects(entries, meta, crops);
-    const order =
-      packing === "packed" && rowPx > 0
-        ? packedOrder(aspects, width / rowPx, 0)
-        : aspects.map((_, i) => i);
-    const shown = order.map((i) => aspects[i] ?? 1);
-    return { rows: mosaicRows(shown, width, rowPx, 0), order };
+    return packing === "packed" && rowPx > 0
+      ? bandedMosaic(aspects, width, rowPx)
+      : rowsToBands(mosaicRows(aspects, width, rowPx, 0));
   }, [entries, meta, crops, width, rowPx, packing]);
 
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: bands.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => rows[i]?.height ?? rowPx,
+    estimateSize: (i) => bands[i]?.height ?? rowPx,
     overscan: OVERSCAN_ROWS,
   });
 
-  // Row heights move with the pane, the slider and the streaming metadata;
+  // Band heights move with the pane, the slider and the streaming metadata;
   // the virtualizer caches measurements, so it has to be told.
   useEffect(() => {
     virtualizer.measure();
-  }, [virtualizer, rows]);
+  }, [virtualizer, bands]);
 
-  // Keep the lead photograph on screen as the arrows walk the selection —
-  // by its display position, which packing may have moved.
+  // Keep the lead photograph on screen as the arrows walk the selection.
   useEffect(() => {
     if (selectedIndex === null) return;
-    const pos = order.indexOf(selectedIndex);
-    if (pos < 0) return;
-    const at = rows.findIndex((r) => pos >= r.firstIndex && pos < r.firstIndex + r.count);
+    const at = bands.findIndex((b) => b.cells.some((c) => c.index === selectedIndex));
     if (at >= 0) virtualizer.scrollToIndex(at, { align: "auto" });
-  }, [selectedIndex, rows, order, virtualizer]);
+  }, [selectedIndex, bands, virtualizer]);
 
   const virtualRows = virtualizer.getVirtualItems();
 
-  // Ask Rust for thumbnails of the visible rows (debounced while scrolling).
-  const firstRow = virtualRows[0]?.index ?? 0;
-  const lastRow = virtualRows[virtualRows.length - 1]?.index ?? 0;
+  // Ask Rust for thumbnails of the visible bands (debounced while scrolling).
+  const firstBand = virtualRows[0]?.index ?? 0;
+  const lastBand = virtualRows[virtualRows.length - 1]?.index ?? 0;
   useEffect(() => {
     const timer = setTimeout(() => {
       const { thumbs, thumbErrors } = useAppStore.getState();
       const wanted: string[] = [];
-      for (let i = firstRow; i <= lastRow; i += 1) {
-        const row = rows[i];
-        if (row === undefined) continue;
-        for (let pos = row.firstIndex; pos < row.firstIndex + row.count; pos += 1) {
-          const e = entries[order[pos] ?? -1];
+      for (let i = firstBand; i <= lastBand; i += 1) {
+        for (const cell of bands[i]?.cells ?? []) {
+          const e = entries[cell.index];
           if (e !== undefined && !(e.path in thumbs) && !(e.path in thumbErrors)) {
             wanted.push(e.path);
           }
@@ -109,7 +102,7 @@ export function MosaicGallery() {
       if (wanted.length > 0) void requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [entries, rows, order, epoch, firstRow, lastRow]);
+  }, [entries, bands, epoch, firstBand, lastBand]);
 
   return (
     <>
@@ -161,28 +154,29 @@ export function MosaicGallery() {
           }}
         >
           {virtualRows.map((virtualRow) => {
-            const row = rows[virtualRow.index];
-            if (row === undefined) return null;
+            const band = bands[virtualRow.index];
+            if (band === undefined) return null;
             return (
               <div
                 key={virtualRow.key}
                 className="mosaic-row"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                style={{ transform: `translateY(${virtualRow.start}px)`, height: band.height }}
                 onClick={(e) => {
                   if (e.target === e.currentTarget) select(null);
                 }}
               >
-                {Array.from({ length: row.count }, (_, i) => {
-                  const index = order[row.firstIndex + i] ?? -1;
-                  const entry = entries[index];
+                {band.cells.map((cell) => {
+                  const entry = entries[cell.index];
                   if (entry === undefined) return null;
                   return (
                     <MosaicCell
                       key={entry.path}
                       entry={entry}
-                      index={index}
-                      width={row.widths[i] ?? row.height}
-                      height={row.height}
+                      index={cell.index}
+                      x={cell.x}
+                      y={cell.y}
+                      width={cell.width}
+                      height={cell.height}
                     />
                   );
                 })}
@@ -198,11 +192,15 @@ export function MosaicGallery() {
 function MosaicCell({
   entry,
   index,
+  x,
+  y,
   width,
   height,
 }: {
   entry: FileEntry;
   index: number;
+  x: number;
+  y: number;
   width: number;
   height: number;
 }) {
@@ -218,7 +216,7 @@ function MosaicCell({
   return (
     <button
       className={`mosaic-cell ${selected ? "selected" : ""} ${lead ? "lead" : ""}`}
-      style={{ width, height }}
+      style={{ left: x, top: y, width, height }}
       title={entry.name}
       onClick={(e) => useAppStore.getState().selectAt(index, selectMode(e))}
       onDoubleClick={() => openViewer(index)}

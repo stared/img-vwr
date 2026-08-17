@@ -39,71 +39,154 @@ export function mosaicAspects(
   });
 }
 
+/* ---- Bands: the true one-scale packing ---- */
+
 /**
- * A display order that keeps every photograph at (nearly) one scale.
- *
- * In-order rows must stretch or shrink to meet the right edge, so their
- * scales drift with whatever run of shapes the sort dealt them. Reordering
- * fixes that: each row starts with the oldest photograph still waiting —
- * chronology stays the anchor — and then fills from a small look-ahead
- * window, always taking the widest photograph that still fits. Rows come
- * out almost exactly full, so the justify step barely scales anything and
- * the whole mosaic reads at one size.
- *
- * `rowAspect` is the row's capacity in aspect units (width over target
- * height); `gapAspect` is what each additional photograph's gap costs in
- * the same units. Returns a permutation of indices.
+ * One placed photograph: where it sits within its band, which entry it is.
+ * `index` is the index into the visible list — packing moves pixels, never
+ * the selection's coordinates.
  */
-export function packedOrder(
+export interface BandCell {
+  index: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One horizontal band of the mosaic, fully tiled by its cells. */
+export interface MosaicBand {
+  height: number;
+  cells: BandCell[];
+}
+
+/** Justified rows re-expressed as bands, so one renderer draws both modes. */
+export function rowsToBands(rows: readonly MosaicRow[]): MosaicBand[] {
+  return rows.map((row) => {
+    let x = 0;
+    const cells = row.widths.map((width, i) => {
+      const cell = { index: row.firstIndex + i, x, y: 0, width, height: row.height };
+      x += width;
+      return cell;
+    });
+    return { height: row.height, cells };
+  });
+}
+
+/**
+ * The one-scale packing: bands three landscape-rows tall, tiled by vertical
+ * stacks.
+ *
+ * A row of one height cannot show a rotated sensor honestly: the portrait
+ * next to a landscape comes out at two thirds the scale. Equal scale means
+ * the portrait stands taller — so the layout goes two-dimensional. Each
+ * band is `3 × rowHeight` tall and fills with columns; a column is a stack
+ * of same-orientation photographs whose heights must sum to the band's
+ * exactly, which pins its width at `band / Σ(1/aspect)` — no holes, by
+ * construction. Three landscapes stack to a column of the familiar row
+ * height; two portraits stack half again as tall and narrower — and those
+ * two cells have the same diagonal, which for a rotated sensor is the same
+ * scale. Odd shapes (crops, squares, panoramas) pick their own stack count,
+ * whichever brings their diagonal closest to nominal: squares pair up
+ * exactly, a tall crop stands alone, panoramas stack three.
+ *
+ * Chronology anchors it: every column starts with the oldest photograph
+ * still waiting and fills from a small look-ahead window, so order bends
+ * only locally. A band that overshoots the width is justified by one small
+ * uniform scale — the whole wall still reads at one size.
+ */
+export function bandedMosaic(
   aspects: readonly number[],
-  rowAspect: number,
-  gapAspect: number,
+  width: number,
+  rowHeight: number,
   window = 16,
-): number[] {
+): MosaicBand[] {
+  const bands: MosaicBand[] = [];
+  if (width <= 0 || rowHeight <= 0 || aspects.length === 0) return bands;
+
+  const aspectOf = (i: number) => Math.max(0.1, Math.min(10, aspects[i] ?? DEFAULT_ASPECT));
+  const B = 3 * rowHeight;
+  // The nominal cell diagonal: a 3:2 landscape at the familiar row height.
+  const diagonal = Math.hypot(1.5, 1) * rowHeight;
   const pool = aspects.map((_, i) => i);
-  const order: number[] = [];
-  const aspectOf = (i: number) => Math.max(0.1, aspects[i] ?? DEFAULT_ASPECT);
+
   while (pool.length > 0) {
-    let cap = rowAspect - aspectOf(pool[0] ?? 0);
-    order.push(pool.shift() ?? 0);
-    for (;;) {
-      let best = -1;
-      let bestCost = -Infinity;
+    // Columns laid at nominal scale; justified to the width afterwards.
+    const columns: { width: number; picks: number[] }[] = [];
+    let x = 0;
+    while (pool.length > 0 && x < width) {
+      const landscape = aspectOf(pool[0] ?? 0) >= 1;
+      // The column's candidates: the anchor's orientation, in order, from
+      // the look-ahead window.
+      const candidates: number[] = [];
       const lookahead = Math.min(window, pool.length);
-      for (let j = 0; j < lookahead; j += 1) {
-        const cost = aspectOf(pool[j] ?? 0) + gapAspect;
-        // A hair of tolerance, so a row can end a whisker over-full and be
-        // scaled down a touch rather than leaving a portrait-wide hole.
-        if (cost <= cap + 0.05 && cost > bestCost) {
-          bestCost = cost;
-          best = j;
+      for (let j = 0; j < lookahead && candidates.length < 4; j += 1) {
+        if (aspectOf(pool[j] ?? 0) >= 1 === landscape) candidates.push(j);
+      }
+      // Stack size: whichever count lands the cells' diagonal nearest the
+      // nominal one. The column must fill the band top to bottom, so its
+      // width is a consequence of what it holds, never a free choice —
+      // every column in a band holds the same scale, and the band as a
+      // whole takes one small justify correction at its edge.
+      let take = 1;
+      let bestErr = Infinity;
+      let inv = 0;
+      for (let k = 1; k <= candidates.length; k += 1) {
+        inv += 1 / aspectOf(pool[candidates[k - 1] ?? 0] ?? 0);
+        const w = B / inv;
+        const mean = k / inv;
+        const err = Math.abs(w * Math.hypot(1, 1 / mean) - diagonal);
+        if (err < bestErr) {
+          bestErr = err;
+          take = k;
         }
       }
-      if (best === -1) {
-        // Nothing fits whole. Close the row on whichever reads truer: the
-        // hole it would leave, or the squeeze of the narrowest photograph
-        // still waiting. A row always slightly over-full justifies with a
-        // small scale-down — and it keeps the row boundaries here agreeing
-        // with the ones `mosaicRows` finds again on the reordered list.
-        let narrow = -1;
-        let narrowCost = Infinity;
-        for (let j = 0; j < lookahead; j += 1) {
-          const cost = aspectOf(pool[j] ?? 0) + gapAspect;
-          if (cost < narrowCost) {
-            narrowCost = cost;
-            narrow = j;
-          }
-        }
-        if (narrow !== -1 && narrowCost - cap < cap) {
-          order.push(pool.splice(narrow, 1)[0] ?? 0);
-        }
-        break;
-      }
-      cap -= bestCost;
-      order.push(pool.splice(best, 1)[0] ?? 0);
+      const picks = candidates
+        .slice(0, take)
+        // Splice from the back so earlier positions stay valid.
+        .reverse()
+        .map((j) => pool.splice(j, 1)[0] ?? 0)
+        .reverse();
+      const colInv = picks.reduce((sum, i) => sum + 1 / aspectOf(i), 0);
+      const colWidth = B / colInv;
+      columns.push({ width: colWidth, picks });
+      x += colWidth;
     }
+
+    // Close the band on whichever reads truer: squeezing the overshooting
+    // column in, or handing it back and stretching without it. Either way
+    // the correction stays well under half a column, so band-to-band scale
+    // barely moves.
+    const last = columns[columns.length - 1];
+    if (columns.length > 1 && last !== undefined && x > width) {
+      const withoutX = x - last.width;
+      if (x - width > width - withoutX) {
+        pool.unshift(...last.picks);
+        columns.pop();
+        x = withoutX;
+      }
+    }
+    const scale = pool.length === 0 && x < width ? 1 : width / x;
+    const cells: BandCell[] = [];
+    let atX = 0;
+    for (const [c, column] of columns.entries()) {
+      const left = Math.round(atX * scale);
+      const right =
+        c === columns.length - 1 && scale !== 1
+          ? width
+          : Math.round((atX + column.width) * scale);
+      let atY = 0;
+      for (const [r, index] of column.picks.entries()) {
+        const top = Math.round(atY * scale);
+        atY += column.width / aspectOf(index);
+        const bottom = r === column.picks.length - 1 ? Math.round(B * scale) : Math.round(atY * scale);
+        cells.push({ index, x: left, y: top, width: right - left, height: bottom - top });
+      }
+      atX += column.width;
+    }
+    bands.push({ height: Math.round(B * scale), cells });
   }
-  return order;
+  return bands;
 }
 
 /**

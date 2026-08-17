@@ -2022,20 +2022,18 @@ button.stats-row:hover .stats-label {
 
 /* ---- Mosaic ---- */
 
-/* Justified rows: every cell's width and height are computed, so the row
-   meets both edges and the layout has no empty space to style. */
+/* One band of the wall: cells sit at computed positions within it — a
+   justified row one photograph deep, or a one-scale band of stacks — so
+   the band meets both edges and the layout has no empty space to style. */
 .mosaic-row {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  display: flex;
-  align-items: flex-start;
 }
 
 .mosaic-cell {
-  position: relative;
-  flex: none;
+  position: absolute;
   overflow: hidden;
   padding: 0;
   border: none;
