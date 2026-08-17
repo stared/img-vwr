@@ -1880,8 +1880,9 @@ button.stats-row:hover .stats-label {
 }
 
 .filmstrip-cell {
-  position: relative; /* so a rating can sit in the corner, as in the grid */
+  position: relative; /* so the badges can sit in the corners, as in the grid */
   display: flex;
+  flex-direction: column; /* picture above, its name on its own line below */
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -1891,6 +1892,25 @@ button.stats-row:hover .stats-label {
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
+}
+
+/* The picture's share of the cell: everything the name line leaves. The
+   deck's prints position against this box, so they stay on the picture. */
+.filmstrip-photo {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The rating rides the photograph's top edge; the bottom line is the name's. */
+.filmstrip-cell .thumb-stars {
+  top: 3px;
+  left: 4px;
+  bottom: auto;
 }
 
 .filmstrip-cell:hover {
@@ -1928,31 +1948,17 @@ button.stats-row:hover .stats-label {
   transform: translate(6px, -6px);
 }
 
-/* Every cell says which file it is — in the darkroom the strip is the only
-   list there is, and a pair reads as one name: "DSC_1234.JPG+NEF". */
+/* Every cell says which file it is, on its own line under the picture —
+   in the darkroom the strip is the only list there is, and a pair reads
+   as one name: "DSC_1234.JPG+NEF". In flow, not an overlay: it takes no
+   pixels off the photograph and paints no bar over it. */
 .filmstrip-name {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  gap: 3px;
+  flex: none;
+  max-width: 100%;
   font-size: 9px;
   line-height: 12px;
-  padding: 1px 3px;
-  color: var(--text);
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.filmstrip-name-stars {
-  flex: none;
-  color: var(--accent);
-}
-
-.filmstrip-name-text {
-  min-width: 0;
+  padding: 0 3px 1px;
+  color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

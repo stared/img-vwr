@@ -228,33 +228,34 @@ export function Filmstrip({ height }: { height: number }) {
             }}
           >
             {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
-            {/* One bottom line carries both facts: the rating (culling
-                happens here as much as in the grid) and which file this is
-                — a collapsed pair as one name, "DSC_1234.JPG+NEF". */}
-            <span className="filmstrip-name">
-              {stars !== null && (
-                <span className="filmstrip-name-stars">{"★".repeat(stars)}</span>
+            {/* The rating rides on the photograph, at its top — the bottom
+                edge belongs to the name. Same mark as the grid's. */}
+            {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
+            <span className="filmstrip-photo">
+              {/* The pile is the photograph itself, repeated: one print
+                  behind for a pair, two for anything deeper. No painted
+                  card — the deck is made of the picture, and its depth is
+                  honest. */}
+              {thumb !== undefined && siblings.length > 0 && !spread && (
+                <>
+                  {siblings.length >= 2 && (
+                    <img className="filmstrip-card deep" src={fileUrl(thumb)} alt="" draggable={false} />
+                  )}
+                  <img className="filmstrip-card" src={fileUrl(thumb)} alt="" draggable={false} />
+                </>
               )}
-              <span className="filmstrip-name-text">
-                {siblings.length > 0 && !spread ? pairedName(entry, siblings) : entry.name}
-              </span>
+              {thumb === undefined ? (
+                <span className="filmstrip-placeholder" />
+              ) : (
+                <img src={fileUrl(thumb)} alt={entry.name} draggable={false} />
+              )}
             </span>
-            {/* The pile is the photograph itself, repeated: one print behind
-                for a pair, two for anything deeper. No painted card — the
-                deck is made of the picture, and its depth is honest. */}
-            {thumb !== undefined && siblings.length > 0 && !spread && (
-              <>
-                {siblings.length >= 2 && (
-                  <img className="filmstrip-card deep" src={fileUrl(thumb)} alt="" draggable={false} />
-                )}
-                <img className="filmstrip-card" src={fileUrl(thumb)} alt="" draggable={false} />
-              </>
-            )}
-            {thumb === undefined ? (
-              <span className="filmstrip-placeholder" />
-            ) : (
-              <img src={fileUrl(thumb)} alt={entry.name} draggable={false} />
-            )}
+            {/* Which file this is, on its own line under the picture — the
+                strip is the darkroom's only list. A collapsed pair is one
+                name carrying both formats: "DSC_1234.JPG+NEF". */}
+            <span className="filmstrip-name">
+              {siblings.length > 0 && !spread ? pairedName(entry, siblings) : entry.name}
+            </span>
           </button>
         );
       })}
