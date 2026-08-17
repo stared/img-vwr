@@ -58,6 +58,18 @@ correction, see below) is the number to shrink next.
       backlit-fountain brightness, and residual UV-violet green leak —
       the cross-channel clip is a symptom clamp; a hue-preserving gamut
       mapping for out-of-range blue/violet is the honest fix.
+- [ ] **UV bleach, root-caused and partially solved (2026-08-17)** —
+      the fix the DCP taught: a FITTED hue-indexed HSV twist lattice
+      (45×8×8, tanh-bounded hue/sat/val scales) instead of the 9³ RGB
+      cube, + oversampling high-chroma train pixels ×4. Measured on the
+      UV subset (scene B > 1.5·G, 169k px): predicted 7.56 → 7.08,
+      overall held-out **3.32 → 3.24 — the first architecture win past
+      the RGB-cube floor; ship candidate** (needs look.rs HSV-lattice
+      apply + export_joint changes). But the UV ceiling is hard:
+      oracle-UV = 6.19 vs oracle-overall 2.79 — per-pixel mapping
+      cannot go below ~6 there. The rest is spatial (blooming, local
+      desaturation) or lives before Apple's decode. fit_dcp.py --model
+      hsv [--chroma-boost N].
 
 ## 2. Different model families (not just deeper fitting of the same one)
 

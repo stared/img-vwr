@@ -256,6 +256,86 @@ class DcpLook(torch.nn.Module):
         return srgb_encode(disp)
 
 
+class HsvLook(torch.nn.Module):
+    """The free model's slots, with the RGB-cube lattice replaced by a
+    FREE hue-indexed twist table (Adobe's structure, our data): matrix ->
+    per-image tuning -> free per-channel curves (display linear) -> free
+    HSV lattice (hueShift deg, log satScale, log valScale) -> encode.
+    Hue-indexed so out-of-gamut violet has its own cells instead of
+    sharing clamped RGB-cube cells with the rest of the picture."""
+
+    def __init__(self, n_img, n_feats, nh=45, ns=8, nv=8, hidden=16, seed=0):
+        super().__init__()
+        g = torch.Generator().manual_seed(seed)
+        self.m_free = torch.nn.Parameter(torch.eye(3)[:, :2].clone())
+        self.curvesmod = MonoCurves()
+        self.nh, self.ns, self.nv = nh, ns, nv
+        # identity init; components (hueShift deg, log satScale, log valScale)
+        self.lut_free = torch.nn.Parameter(torch.zeros(nv, nh, ns, 3))
+        self.latent_dim = 5
+        self.sat_dim = 4
+        self.latents = torch.nn.Parameter(torch.zeros(n_img, self.latent_dim))
+        self.mlp1 = torch.nn.Linear(n_feats, hidden)
+        self.mlp2 = torch.nn.Linear(hidden, self.latent_dim)
+        torch.nn.init.normal_(self.mlp1.weight, 0, 0.05, generator=g)
+        torch.nn.init.zeros_(self.mlp1.bias)
+        torch.nn.init.zeros_(self.mlp2.weight)
+        torch.nn.init.zeros_(self.mlp2.bias)
+
+    def matrix(self):
+        a = self.m_free
+        return torch.cat([a, 1.0 - a.sum(1, keepdim=True)], 1)
+
+    def predict(self, feats):
+        return self.mlp2(torch.tanh(self.mlp1(feats)))
+
+    def table(self):
+        t = self.lut_free
+        return torch.stack([45.0 * torch.tanh(t[..., 0]),
+                            torch.exp(0.7 * torch.tanh(t[..., 1])),
+                            torch.exp(0.35 * torch.tanh(t[..., 2]))], -1)
+
+    def look_up(self, table, h, s, v):
+        nv, nh, ns = self.nv, self.nh, self.ns
+        fv = v.clamp(0, 1) * (nv - 1)
+        fh = (h % 360.0) / 360.0 * nh
+        fs = s.clamp(0, 1) * (ns - 1)
+        iv0 = fv.floor().long().clamp(max=nv - 2)
+        ih0 = fh.floor().long() % nh
+        is0 = fs.floor().long().clamp(max=ns - 2)
+        tv, th, ts = fv - iv0.float(), fh - fh.floor(), fs - is0.float()
+        out = torch.zeros(len(h), 3, device=h.device)
+        for dv in (0, 1):
+            for dh in (0, 1):
+                for ds in (0, 1):
+                    w = ((tv if dv else 1 - tv) * (th if dh else 1 - th)
+                         * (ts if ds else 1 - ts))
+                    cell = table[(iv0 + dv).clamp(max=nv - 1),
+                                 (ih0 + dh) % nh,
+                                 (is0 + ds).clamp(max=ns - 1)]
+                    out = out + w.unsqueeze(1) * cell
+        return out[:, 0], out[:, 1], out[:, 2]
+
+    def forward(self, scene, tun, img_idx=None):
+        sc = scene.clamp(max=CLIP_SCENE)
+        M = self.matrix()
+        x = sc @ M.T + (scene - sc) * torch.diagonal(M)
+        gains = 2.0 ** torch.stack(
+            [tun[:, 0] + tun[:, 2], tun[:, 0], tun[:, 0] + tun[:, 3]], 1)
+        x = x * gains
+        x = MID * (x.clamp_min(1e-9) / MID) ** (2.0 ** tun[:, 1:2])
+        disp = self.curvesmod(x).clamp(0.0, 1.0)
+        y = (0.2126 * disp[:, 0] + 0.7152 * disp[:, 1]
+             + 0.0722 * disp[:, 2]).unsqueeze(1)
+        disp = (y + (disp - y) * 2.0 ** tun[:, self.sat_dim:self.sat_dim + 1]).clamp(0, 1)
+        h, s, v = rgb_to_hsv(disp)
+        v_enc = srgb_encode(v.unsqueeze(1)).squeeze(1)
+        hs, ss, vs = self.look_up(self.table(), h, s, v_enc)
+        v2 = srgb_decode_t((v_enc * vs).clamp(0, 1))
+        out = hsv_to_rgb(h + hs, (s * ss).clamp(0, 1), v2).clamp(0, 1)
+        return srgb_encode(out)
+
+
 def fake_ship():
     """Grid geometry for the free model when no shipped snapshot exists."""
     K = 77
@@ -268,7 +348,9 @@ def fake_ship():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="dcp", choices=["dcp", "free"])
+    ap.add_argument("--model", default="dcp", choices=["dcp", "free", "hsv"])
+    ap.add_argument("--chroma-boost", type=float, default=0.0,
+                    help="oversample high-chroma train pixels by this factor")
     ap.add_argument("--variant", default="fixed",
                     choices=["fixed", "freecurve", "precurve"])
     ap.add_argument("--restarts", type=int, default=2)
@@ -295,17 +377,65 @@ def main():
         if args.model == "dcp":
             return DcpLook(data["n_img"], data["feats_np"].shape[1],
                            table, tone, seed=seed, variant=args.variant).to(dev)
+        if args.model == "hsv":
+            return HsvLook(data["n_img"], data["feats_np"].shape[1],
+                           seed=seed).to(dev)
         m = fit_joint.Look(fake_ship(), data["n_img"], data["feats_np"],
                            curves=3, lut_n=9, predictor="mlp", init="random",
                            seed=seed, latent_extra=1, clip_scene=CLIP_SCENE,
                            clip_cross=True)
         return m.to(dev)
 
+    # the UV corner: scene pixels whose blue dominates far beyond any
+    # broadband light. Rare, so the mean loss barely sees them; report
+    # them separately and optionally oversample high-chroma pixels.
+    sc_np = data["scene"].cpu().numpy()
+    uv_px = (sc_np[:, 2] > 1.5 * sc_np[:, 1]) & (sc_np[:, 2] > 0.05)
+    uv_test = uv_px & test_px
+    print(f"UV-ish pixels: {uv_px.sum()} total, {uv_test.sum()} in test")
+    if args.chroma_boost > 0:
+        mx = sc_np.max(1); mn = sc_np.min(1)
+        chroma = (mx - mn) / np.maximum(mx, 1e-6)
+        hi = (chroma > 0.6) & (mx > 0.02) & train_px
+        reps = int(args.chroma_boost)
+        train_px = train_px.copy()
+        # duplicate by index-weighting: run_phase samples uniformly from
+        # train_px indices, so append duplicates via a fattened selector
+        extra = np.where(hi)[0]
+        print(f"chroma-boost: {len(extra)} high-chroma px oversampled x{reps}")
+        aug = np.concatenate([np.where(train_px)[0]] + [extra] * reps)
+        train_sel = np.zeros(len(train_px) + 0, bool)  # placeholder
+        # run_phase takes a bool mask; emulate oversampling by a mask over
+        # a repeated index array is not possible - instead patch run_phase's
+        # idx directly via a wrapper.
+        import fit_joint as fj
+        orig_run = fj.run_phase
+        def boosted_run(model, data_, sel, steps, lr, use_pred, **kw):
+            idx = torch.tensor(aug).to(data_["scene"].device)
+            params = [p for n, p in model.named_parameters() if n != "latents"]
+            groups = [{"params": params, "lr": lr}]
+            if not use_pred:
+                groups.append({"params": [model.latents], "lr": lr * 10})
+            opt = torch.optim.Adam(groups)
+            B = 262144
+            g2 = torch.Generator(device="cpu").manual_seed(1234)
+            for step in range(steps):
+                b = idx[torch.randint(len(idx), (B,), generator=g2).to(idx.device)]
+                scene, cam, im = data_["scene"][b], data_["cam_enc"][b], data_["img"][b]
+                tun = model.predict(data_["feats"])[im] if use_pred else model.latents[im]
+                out = model(scene, tun, im)
+                loss = fj.huber(255.0 * (out - cam), delta=kw.get("delta", 3.0)).mean()                        + 1e-3 * model.lut_free.pow(2).mean()
+                opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
+            return model
+        globals()["run_phase_local"] = boosted_run
+    else:
+        globals()["run_phase_local"] = run_phase
+
     best = (1e9, None)
     for r in range(args.restarts):
         t0 = time.time()
         model = make(100 + r)
-        run_phase(model, data, train_px, args.steps_a, args.lr, False,
+        globals()["run_phase_local"](model, data, train_px, args.steps_a, args.lr, False,
                   tag=f"r{r}/A")
         X = data["feats_np"][rows]
         Y = model.latents.detach().cpu().numpy()[rows]
@@ -319,14 +449,15 @@ def main():
             model.mlp1.bias.zero_()
             k = min(model.mlp1.out_features, X.shape[1])
             model.mlp2.weight[:, :k] = torch.tensor(Wr.T[:, :k], dtype=torch.float32)
-        run_phase(model, data, train_px, args.steps_c, args.lr * 0.5, True,
+        globals()["run_phase_local"](model, data, train_px, args.steps_c, args.lr * 0.5, True,
                   tag=f"r{r}/C", delta=3.0)
         with torch.no_grad():
             tun = model.predict(data["feats"])
         err = evaluate(model, data, test_px, tun)
         err_tr = evaluate(model, data, train_px, tun)
+        err_uv = evaluate(model, data, uv_test, tun) if uv_test.sum() else float("nan")
         print(f"restart {r}: held-out {err:.3f} train {err_tr:.3f} "
-              f"({time.time() - t0:.0f}s)", flush=True)
+              f"UV {err_uv:.3f} ({time.time() - t0:.0f}s)", flush=True)
         if err < best[0]:
             best = (err, {k: v.detach().cpu().numpy()
                           for k, v in model.state_dict().items()})
