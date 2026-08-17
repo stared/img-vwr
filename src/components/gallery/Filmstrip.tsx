@@ -227,16 +227,17 @@ export function Filmstrip({ height }: { height: number }) {
               useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            {/* The same mark the grid puts on a thumbnail. Culling happens
-                here as much as there, and a rating you cannot see while
-                working through a sequence may as well not exist. */}
-            {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
             {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
-            {/* Which file this is, on the cell itself — the strip is the
-                darkroom's only list. A collapsed pair is one name carrying
-                both its formats: "DSC_1234.JPG+NEF". */}
+            {/* One bottom line carries both facts: the rating (culling
+                happens here as much as in the grid) and which file this is
+                — a collapsed pair as one name, "DSC_1234.JPG+NEF". */}
             <span className="filmstrip-name">
-              {siblings.length > 0 && !spread ? pairedName(entry, siblings) : entry.name}
+              {stars !== null && (
+                <span className="filmstrip-name-stars">{"★".repeat(stars)}</span>
+              )}
+              <span className="filmstrip-name-text">
+                {siblings.length > 0 && !spread ? pairedName(entry, siblings) : entry.name}
+              </span>
             </span>
             {/* The pile is the photograph itself, repeated: one print behind
                 for a pair, two for anything deeper. No painted card — the
