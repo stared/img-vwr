@@ -207,3 +207,18 @@ export function stackFormats(entry: FileEntry, siblings: FileEntry[]): string {
     .sort();
   return [shown, ...others].join("+");
 }
+
+/**
+ * The photograph's name in every format it exists in: "DSC_1234.JPG+NEF",
+ * the shown file's format first.
+ *
+ * For the status bar, where the name answers "which file am I on" — a
+ * raw+JPEG pair is one photograph in two files, and naming only the shown
+ * one would hide the other's existence exactly where you decide what to
+ * edit or delete.
+ */
+export function pairedName(entry: FileEntry, siblings: FileEntry[]): string {
+  if (siblings.length === 0) return entry.name;
+  const stem = entry.name.replace(/\.[^.]+$/, "");
+  return `${stem}.${stackFormats(entry, siblings)}`;
+}

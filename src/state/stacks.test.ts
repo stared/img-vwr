@@ -5,6 +5,7 @@ import {
   collapseStacks,
   isRawEntry,
   leadOf,
+  pairedName,
   siblingsOf,
   stackCaption,
   stackFormats,
@@ -145,5 +146,17 @@ describe("siblingsOf and stackCaption", () => {
     expect(stackFormats(file("/p/DSC_0001.JPG"), [file("/p/DSC_0001.NEF")])).toBe("JPG+NEF");
     expect(stackFormats(file("/p/DSC_0001.NEF"), [file("/p/DSC_0001.JPG")])).toBe("NEF+JPG");
     expect(stackFormats(file("/p/DSC_0002.JPG"), [])).toBe("JPG");
+  });
+
+  it("names the photograph in every format it exists in", () => {
+    // The status bar's wording: one photograph, two files, both said.
+    expect(pairedName(file("/p/DSC_1234.JPG"), [file("/p/DSC_1234.NEF")])).toBe(
+      "DSC_1234.JPG+NEF",
+    );
+    expect(pairedName(file("/p/DSC_1234.NEF"), [file("/p/DSC_1234.JPG")])).toBe(
+      "DSC_1234.NEF+JPG",
+    );
+    // Alone, a file is just its name — no invented decoration.
+    expect(pairedName(file("/p/DSC_0002.JPG"), [])).toBe("DSC_0002.JPG");
   });
 });
