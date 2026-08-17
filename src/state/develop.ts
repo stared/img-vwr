@@ -856,7 +856,10 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     comparing: false,
     cropping: false,
     cropWas: null,
-    cropChoice: "free",
+    // "as shot" by default: most crops are a tighter framing of the same
+    // picture, and the frame's own proportions are the ones every other
+    // frame of the shoot will match. "free" stays one click away.
+    cropChoice: "original",
     cropPortrait: false,
     original: null,
     setOriginal: (original) => set({ original }),
