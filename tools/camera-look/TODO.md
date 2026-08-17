@@ -151,18 +151,25 @@ correction, see below) is the number to shrink next.
       JPEG. CIRAW corrects lateral CA. The "fringes" seen by eye are the
       edited path's chroma-noise/violet-tail speckle on speculars, not
       optics.
-- [ ] **The NEF carries an ACR recipe** (found 2026-08-16): the XMP
-      packet is namespace `crd = camera-raw-defaults` — Nikon writes the
-      Adobe Camera Raw defaults that reproduce its JPEG, including
-      `CameraProfile = "Camera Standard"` (Adobe's camera-matching DCP
-      for the Z6 III: dual-illuminant matrices + HueSatDelta lattice +
-      look table + tone curve) plus per-shot 2012-process slider values.
-      Extracting that DCP (ships free inside Adobe DNG Converter;
-      `dcamprof dcp2json` reads it) would replace our fitted matrix+LUT
-      with Adobe's measured reverse-engineering of Nikon's colour.
-      Blocked locally: downloading the DNG Converter needs the user
-      (permission classifier denied it); NX Studio as Nikon's own oracle
-      likewise needs a user install.
+- [x] **The NEF carries an ACR recipe → DCP extracted → measured**
+      (2026-08-17): the XMP packet is namespace `crd =
+      camera-raw-defaults` — Nikon names `CameraProfile = "Camera
+      Standard"` plus per-shot 2012 slider values. All 20 Z6 III DCPs
+      extracted from the DNG Converter pkg (no install; kept LOCAL-ONLY
+      under gitignored profiles/ — Adobe's copyrighted data, never
+      committed; read_dcp.py documents the extraction). Camera Standard
+      = dual-illuminant matrices, 125-pt
+      tone curve, 90×16×16 HSV look table (layout [val][hue][sat],
+      verified by hue-smoothness). **A/B on the rebuilt 1490-pair corpus
+      (fit_dcp.py): Adobe's structures FIXED (fitted matrix + 5-axis
+      tuning around them, DNG-SDK RGBTone semantics) = 5.01 held-out;
+      the free model on identical samples = 3.33 (oracle 2.84).** The
+      fixed tables lose by 1.7: they are calibrated for ACR's own decode
+      and engine (baseline exposure, 2012 operators, Adobe demosaic),
+      and a 3×3 cannot bridge Apple's decode into that space — plus the
+      JPEGs are Auto PC, not Standard. Free fitting on our own decode
+      remains the right architecture; the DCP's value is reference
+      structure (hue-twist resolution), not drop-in truth.
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 

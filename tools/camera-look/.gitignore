@@ -1,0 +1,20 @@
+# Local-only data. Two kinds, both kept out of a public repo on purpose:
+#
+# 1. Vendor-copyrighted material. Adobe's DCP camera profiles (and anything
+#    derived from them, like the parsed dcp_standard.json) are Adobe's
+#    copyrighted data extracted from the DNG Converter for local research.
+#    Redistributing them would be infringement - the parser and fit scripts
+#    are ours, the tables are not. Same rule for anything of Nikon's.
+# 2. Personal corpus derivatives: pair dumps, sample tensors and per-shot
+#    EXIF/XMP features carry shoot names and metadata from private photos.
+profiles
+*.dcp
+dcp_standard.json
+pairs2
+*.npz
+features2.json
+images2.json
+maker_features.json
+makernotes_all.json
+faces.jsonl
+__pycache__/
