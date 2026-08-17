@@ -18,6 +18,7 @@ import { developSetFusions, events, requestMeta, type FusionRecipe } from "./ipc
 import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
+import { restoreSession, startSessionPersistence } from "./state/session";
 import { hdrOf, useAppStore } from "./state/store";
 import "./App.css";
 
@@ -89,12 +90,15 @@ function App() {
   useSceneRefinement();
   useHdrDetection();
 
-  // Start in the default folder (testing convenience; see config.ts).
+  // Start where the last sitting ended — same folder, view and filters —
+  // and only failing that, in the configured default folder (a testing
+  // convenience; see config.ts). Then keep the saved session current.
   useEffect(() => {
     const { status, openFolder } = useAppStore.getState();
-    if (DEFAULT_START_FOLDER && status === "idle") {
+    if (status === "idle" && !restoreSession() && DEFAULT_START_FOLDER) {
       void openFolder(DEFAULT_START_FOLDER, false);
     }
+    return startSessionPersistence();
   }, []);
 
   // Stream thumbnail, folder-count and metadata results from Rust into the store.
