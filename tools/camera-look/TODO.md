@@ -102,9 +102,19 @@ correction, see below) is the number to shrink next.
 - [ ] **Controlled anchor shoot**: ColorChecker under daylight/tungsten/LED
       at an ISO ladder, RAW+JPEG. Chart patches give per-hue ground truth
       that 1062 uncontrolled frames cannot.
-- [ ] **NX Studio as a second oracle**: batch-export Nikon's own TIFF
-      renders for a sample; separates "Apple's decode differs" from "our
-      transform differs". Free, and bounds the decoder's share of the error.
+- [x] **NX Studio as a second oracle — measured** (2026-08-17, GUI
+      automated via accessibility; test copies in Nikon_RAW/test/
+      nx_oracle/, exports at q100): Nikon's own desktop engine at
+      default settings vs the in-camera JPEG = **1.35 / 2.52 / 3.78
+      mean |Δ| on three diverse frames (≈2.6 avg)** — of which ~0.7–1.0
+      is pure JPEG codec noise. So even Nikon's own software does NOT
+      reproduce the camera exactly; "zero difference via re-processing"
+      is unattainable, which is what makes the camera-JPEG-at-default
+      design the only exact path. Ranking vs camera: NX Studio ≈2.6 <
+      ours 3.33 < ACR ≈7.1 — our fit sits within ~0.8 of Nikon's own
+      renderer's agreement. NX Studio's remaining oracle value: renders
+      at MODIFIED settings (edited-path ground truth the camera JPGs
+      cannot give) and Picture Controls we lack corpus for.
 - [ ] **Sub-pixel + distortion-aware alignment** (fit a radial term): makes
       full-frame 1:1 comparisons valid, which unlocks fitting texture and
       vignetting on the whole frame instead of centre patches.
