@@ -108,6 +108,33 @@ describe("banded one-scale packing", () => {
     expect(portrait && landscape && portrait.height > landscape.height).toBe(true);
   });
 
+  it("never zooms an orphan: a lone portrait finds its partner beyond the window", () => {
+    // One portrait, twenty landscapes, then its only partner. The window
+    // (16) cannot see it — the packing must look further rather than blow
+    // the portrait up past its thumbnail.
+    const aspects = [2 / 3, ...Array<number>(20).fill(1.5), 2 / 3];
+    const bands = bandedMosaic(aspects, W, L);
+    const nominal = Math.hypot(1.5, 1) * L;
+    for (const band of bands.slice(0, -1)) {
+      for (const cell of band.cells) {
+        expect(Math.hypot(cell.width, cell.height)).toBeLessThan(nominal * 1.25);
+      }
+    }
+  });
+
+  it("shares a mixed column when no partner exists at all, rather than doubling", () => {
+    const aspects = [2 / 3, ...Array<number>(11).fill(1.5)];
+    const bands = bandedMosaic(aspects, W, L);
+    const nominal = Math.hypot(1.5, 1) * L;
+    const portrait = bands
+      .flatMap((b) => b.cells)
+      .find((c) => (aspects[c.index] ?? 0) < 1);
+    expect(portrait).toBeDefined();
+    if (portrait) {
+      expect(Math.hypot(portrait.width, portrait.height)).toBeLessThan(nominal * 1.25);
+    }
+  });
+
   it("keeps chronology as the anchor: the first cell is the first photograph", () => {
     const aspects = [2 / 3, 1.5, 1.5, 2 / 3, 1.5, 2 / 3, 1.5];
     const bands = bandedMosaic(aspects, W, L);

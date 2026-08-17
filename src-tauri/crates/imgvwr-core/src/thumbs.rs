@@ -2,7 +2,12 @@ use image::RgbaImage;
 
 use crate::codec::{CodecError, CodecRegistry};
 
-pub const THUMB_MAX_EDGE: u32 = 256;
+/// 512, not 256: the mosaic and a wide grid draw cells past 400 px, and a
+/// thumbnail smaller than its cell is a photograph shown out of focus.
+/// Bumping this re-keys the display-thumbnail cache (old files are simply
+/// orphaned); the face-sidecar and vector caches deliberately pin their own
+/// identity salt so they survive it.
+pub const THUMB_MAX_EDGE: u32 = 512;
 pub const THUMB_WEBP_QUALITY: f32 = 80.0;
 
 #[derive(Debug)]

@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
+
+/// The vector cache's identity salt — pinned like the face sidecars', so a
+/// display-thumbnail resolution bump does not re-embed every corpus.
+const VECTOR_KEY_EDGE: u32 = 256;
 use imgvwr_embed::{dot, is_downloaded, model_spec, EmbedModelInfo, Embedder, MODELS};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
@@ -286,6 +290,9 @@ impl EmbeddingService {
     }
 
     /// The vector cache file for one image, from the file's identity on disk.
+    /// Salted with the pinned edge, like the face sidecars: a vector encodes
+    /// the photograph, and a display-thumbnail bump must not re-embed a
+    /// whole corpus.
     fn vector_file(&self, embedder: &Embedder, path: &str) -> Result<PathBuf, String> {
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
         let mtime_ms = meta
@@ -294,7 +301,7 @@ impl EmbeddingService {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        let key = thumb_cache_key(path, mtime_ms, meta.len(), VECTOR_KEY_EDGE);
         Ok(self
             .vectors_dir
             .join(format!("{key}-{}.vec", embedder.model_id)))
@@ -329,11 +336,10 @@ impl EmbeddingService {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
+        let vec_file = self.vector_file(embedder, path)?;
+        // The pixels come from the live display-thumbnail cache, whichever
+        // size that is today; the vector's identity does not care.
         let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
-        let vec_file = self
-            .vectors_dir
-            .join(format!("{key}-{}.vec", embedder.model_id));
-
         let thumb = self.thumb_file(path, &key)?;
         let vector = embedder
             .embed_image_file(&thumb)

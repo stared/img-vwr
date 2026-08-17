@@ -108,6 +108,9 @@ export function bandedMosaic(
   const B = 3 * rowHeight;
   // The nominal cell diagonal: a 3:2 landscape at the familiar row height.
   const diagonal = Math.hypot(1.5, 1) * rowHeight;
+  // Past this a cell reads as zoomed — bigger than the wall's scale, and
+  // bigger than its thumbnail has pixels for.
+  const ZOOM_CAP = 1.2;
   const pool = aspects.map((_, i) => i);
 
   while (pool.length > 0) {
@@ -115,34 +118,68 @@ export function bandedMosaic(
     const columns: { width: number; picks: number[] }[] = [];
     let x = 0;
     while (pool.length > 0 && x < width) {
-      const landscape = aspectOf(pool[0] ?? 0) >= 1;
-      // The column's candidates: the anchor's orientation, in order, from
-      // the look-ahead window.
-      const candidates: number[] = [];
-      const lookahead = Math.min(window, pool.length);
-      for (let j = 0; j < lookahead && candidates.length < 4; j += 1) {
-        if (aspectOf(pool[j] ?? 0) >= 1 === landscape) candidates.push(j);
+      // Stack size: whichever count lands its worst cell's diagonal nearest
+      // the nominal one. The column must fill the band top to bottom, so
+      // its width is a consequence of what it holds, never a free choice —
+      // and a cell blown past nominal is a photograph zoomed beyond its
+      // thumbnail, which is the one thing this layout must never do.
+      const evaluate = (cands: number[]) => {
+        let take = 1;
+        let bestErr = Infinity;
+        let zoom = Infinity;
+        let inv = 0;
+        for (let k = 1; k <= cands.length; k += 1) {
+          inv += 1 / aspectOf(pool[cands[k - 1] ?? 0] ?? 0);
+          const w = B / inv;
+          let err = 0;
+          let widest = 0;
+          for (let i = 0; i < k; i += 1) {
+            const d = w * Math.hypot(1, 1 / aspectOf(pool[cands[i] ?? 0] ?? 0));
+            err = Math.max(err, Math.abs(d - diagonal));
+            widest = Math.max(widest, d);
+          }
+          if (err < bestErr) {
+            bestErr = err;
+            take = k;
+            zoom = widest;
+          }
+        }
+        return { take, err: bestErr, zoom };
+      };
+      const sameClass = (limit: number): number[] => {
+        const landscape = aspectOf(pool[0] ?? 0) >= 1;
+        const out: number[] = [];
+        for (let j = 0; j < limit && out.length < 4; j += 1) {
+          if (aspectOf(pool[j] ?? 0) >= 1 === landscape) out.push(j);
+        }
+        return out;
+      };
+
+      // The anchor's orientation, from the look-ahead window first. An
+      // orphan — no partner in the window — would zoom; before letting it,
+      // look for partners anywhere later, and failing that share a mixed
+      // column with whatever comes next: an orientation shown a little
+      // small beats one blown up soft.
+      let candidates = sameClass(Math.min(window, pool.length));
+      let pick = evaluate(candidates);
+      if (pick.zoom > diagonal * ZOOM_CAP) {
+        const extended = sameClass(pool.length);
+        const far = evaluate(extended);
+        if (far.err < pick.err) {
+          candidates = extended;
+          pick = far;
+        }
       }
-      // Stack size: whichever count lands the cells' diagonal nearest the
-      // nominal one. The column must fill the band top to bottom, so its
-      // width is a consequence of what it holds, never a free choice —
-      // every column in a band holds the same scale, and the band as a
-      // whole takes one small justify correction at its edge.
-      let take = 1;
-      let bestErr = Infinity;
-      let inv = 0;
-      for (let k = 1; k <= candidates.length; k += 1) {
-        inv += 1 / aspectOf(pool[candidates[k - 1] ?? 0] ?? 0);
-        const w = B / inv;
-        const mean = k / inv;
-        const err = Math.abs(w * Math.hypot(1, 1 / mean) - diagonal);
-        if (err < bestErr) {
-          bestErr = err;
-          take = k;
+      if (pick.zoom > diagonal * ZOOM_CAP) {
+        const mixed = Array.from({ length: Math.min(4, pool.length) }, (_, j) => j);
+        const near = evaluate(mixed);
+        if (near.err < pick.err) {
+          candidates = mixed;
+          pick = near;
         }
       }
       const picks = candidates
-        .slice(0, take)
+        .slice(0, pick.take)
         // Splice from the back so earlier positions stay valid.
         .reverse()
         .map((j) => pool.splice(j, 1)[0] ?? 0)

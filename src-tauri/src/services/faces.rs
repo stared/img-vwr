@@ -834,7 +834,14 @@ fn norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6)
 }
 
-/// The same identity key the thumbnail and vector caches use.
+/// The sidecar's identity salt. Historically the thumbnail edge; pinned so
+/// a display-thumbnail resolution bump cannot orphan every detected face —
+/// and with them the names the user has hung on people.
+const SIDECAR_KEY_EDGE: u32 = 256;
+
+/// The face sidecar's identity key: the file's path, mtime and size, plus
+/// the pinned salt above. Detection decodes the original file, so no
+/// thumbnail size belongs in this identity.
 fn cache_key_of(path: &str) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
     let mtime_ms = meta
@@ -847,7 +854,7 @@ fn cache_key_of(path: &str) -> Result<String, String> {
         path,
         mtime_ms,
         meta.len(),
-        imgvwr_core::THUMB_MAX_EDGE,
+        SIDECAR_KEY_EDGE,
     ))
 }
 
