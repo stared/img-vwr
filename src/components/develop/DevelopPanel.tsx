@@ -51,6 +51,37 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/* The two shot readings that are bare numbers get an icon; everything else
+ * in the row names itself with its unit. Stroke-drawn at the text's own
+ * dim weight, so they read as marks, not decoration. */
+
+/** Shutter speed: a stopwatch. */
+function ShutterIcon() {
+  return (
+    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="14" r="8" />
+      <path d="M12 10v4l2.8 2" />
+      <path d="M9 2h6" />
+      <path d="M12 2v4" />
+    </svg>
+  );
+}
+
+/** Aperture: the iris, six blades. */
+function ApertureIcon() {
+  return (
+    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
+      <line x1="9.69" y1="8" x2="21.17" y2="8" />
+      <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
+      <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
+      <line x1="14.31" y1="16" x2="2.83" y2="16" />
+      <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
+    </svg>
+  );
+}
+
 /**
  * The develop panel: white balance, tone and colour for the selected image,
  * with the histogram of what those settings actually produce.
@@ -149,39 +180,69 @@ export function DevelopPanel() {
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
-  // The shot: what the camera did, each fact wearing its name — "1/2000"
-  // alone is dial-speak you had to already know. Same formatters as the
-  // caption and info panel, so no two surfaces word the exposure
-  // differently. EV always speaks, zero included: the compensation you
-  // *didn't* dial in is part of reading the frame.
+  // The shot: what the camera did. Most readings carry their own unit —
+  // "ISO 500", "+0.3 EV", "50 mm", "6048 × 4032" say what they are — so
+  // they get no label at all. The two bare numbers, shutter and aperture,
+  // wear a small icon each; the words live in the tooltips. EV always
+  // speaks, zero included: the compensation you *didn't* dial in is part
+  // of reading the frame.
   const exif = allMeta[entry.path]?.exif ?? null;
-  const shotFacts: Array<{ label: string; value: string }> = [];
+  const shotFacts: Array<{
+    key: string;
+    title: string;
+    icon: ReactNode;
+    text: string;
+  }> = [];
   if (exif?.exposureTime != null) {
-    shotFacts.push({ label: "shutter", value: formatShutter(exif.exposureTime) });
+    shotFacts.push({
+      key: "shutter",
+      title: "shutter speed",
+      icon: <ShutterIcon />,
+      text: formatShutter(exif.exposureTime),
+    });
   }
   if (exif?.fNumber != null) {
-    shotFacts.push({ label: "aperture", value: formatAperture(exif.fNumber) });
+    shotFacts.push({
+      key: "aperture",
+      title: "aperture",
+      icon: <ApertureIcon />,
+      text: formatAperture(exif.fNumber),
+    });
   }
-  if (exif?.iso != null) shotFacts.push({ label: "ISO", value: String(exif.iso) });
+  if (exif?.iso != null) {
+    shotFacts.push({ key: "iso", title: "sensitivity", icon: null, text: `ISO ${exif.iso}` });
+  }
   if (exif?.exposureBias != null) {
     shotFacts.push({
-      label: "EV",
-      value: exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias),
+      key: "ev",
+      title: "exposure compensation, as dialed on the camera",
+      icon: null,
+      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
     });
   }
   if (exif?.focalLength != null) {
-    shotFacts.push({ label: "lens", value: `${Math.round(exif.focalLength)} mm` });
+    shotFacts.push({
+      key: "focal",
+      title: exif.lens ?? "focal length",
+      icon: null,
+      text: `${Math.round(exif.focalLength)} mm`,
+    });
   }
-  shotFacts.push({ label: "frame", value: `${info.width} × ${info.height}` });
+  shotFacts.push({
+    key: "frame",
+    title: "frame size in pixels",
+    icon: null,
+    text: `${info.width} × ${info.height}`,
+  });
 
   return (
     <div className="develop-panel">
       <Group title="Shot">
-        <p className="develop-shot" title={exif?.lens ?? undefined}>
+        <p className="develop-shot">
           {shotFacts.map((fact) => (
-            <span key={fact.label} className="develop-shot-fact">
-              <span className="develop-shot-label">{fact.label}</span>
-              {fact.value}
+            <span key={fact.key} className="develop-shot-fact" title={fact.title}>
+              {fact.icon}
+              {fact.text}
             </span>
           ))}
         </p>
