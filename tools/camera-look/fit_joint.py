@@ -28,7 +28,6 @@ import torch
 HERE = Path(__file__).parent
 MID = 0.18
 LUT_CLAMP = 0.15
-REPO = Path("/Users/pmigdal/my_repos/vibe_coding/img-vwr-fable")
 
 
 def load_shipped():

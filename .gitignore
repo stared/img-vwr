@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private machine-local notes — never committed
+PRIVATE_NOTES.md

@@ -16,7 +16,8 @@ from pathlib import Path
 import exifread
 
 HERE = Path(__file__).parent
-ROOT = Path("/Users/pmigdal/Pictures/Nikon_RAW")
+# The corpus location is machine-local; see PRIVATE_NOTES.md (gitignored).
+ROOT = Path.home() / "Pictures" / "Nikon_RAW"
 
 XMP_FIELDS = {
     "Contrast2012": "Contrast2012",
