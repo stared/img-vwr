@@ -240,9 +240,11 @@ export interface DevelopStore {
    * it by zooming means leaving the view you were judging the picture in,
    * checking, and coming back — for every frame of a shoot. Both at once
    * costs a corner of the canvas and no mode changes at all.
+   *
+   * Always armed: it has no switch of its own, because folding its section
+   * away is already the way to put it down, and dragging the photograph has
+   * no other meaning to conflict with.
    */
-  loupe: boolean;
-  toggleLoupe: () => void;
   /**
    * Where the loupe is pointed, in the cropped image's coordinates, or null
    * to mean "wherever this frame is sharpest".
@@ -1148,13 +1150,11 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       set({ session: { ...session, detail: null } });
     },
 
-    loupe: false,
     loupeAt: null,
     loupeAimedByUser: false,
     loupeSide: 240,
     loupeAiming: false,
 
-    toggleLoupe: () => set((s) => ({ loupe: !s.loupe })),
     setLoupeSide: (side) => set({ loupeSide: side }),
     setLoupeAiming: (aiming) => set({ loupeAiming: aiming }),
 
@@ -1175,7 +1175,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
     requestLoupe: (edge) => {
       const session = get().session;
-      if (!session || session.louping || !get().loupe) return;
+      if (!session || session.louping) return;
       const { path, settings, overlay } = session;
       const image = displayedSize(session.info, settings.crop);
       set({ session: { ...session, louping: true } });

@@ -63,7 +63,6 @@ export function ImageCanvas() {
   const img = useAppStore((s) => s.viewerImg);
   const gridlines = useDevelopStore((s) => s.gridlines);
 
-  const loupe = useDevelopStore((s) => s.loupe);
   const aimLoupe = useDevelopStore((s) => s.aimLoupe);
 
   const cropping = useDevelopStore((s) => s.cropping);
@@ -241,7 +240,7 @@ export function ImageCanvas() {
     aimingRef.current = on;
     setLoupeAiming(on);
   };
-  const aimsLoupe = loupe && !cropping && session?.picking !== true;
+  const aimsLoupe = !cropping && session?.picking !== true;
 
   /* Pointer capture is what keeps a drag alive once it wanders off the canvas,
    * and it is deliberately never load-bearing: the state is set first and

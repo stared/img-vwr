@@ -19,7 +19,6 @@ import {
  * looking".
  */
 export function DevelopLoupe() {
-  const loupe = useDevelopStore((s) => s.loupe);
   const session = useDevelopStore((s) => s.session);
   const aimed = useDevelopStore((s) => s.loupeAt);
   const aimedByUser = useDevelopStore((s) => s.loupeAimedByUser);
@@ -42,7 +41,7 @@ export function DevelopLoupe() {
     observer.observe(el);
     measure();
     return () => observer.disconnect();
-  }, [setLoupeSide, loupe]);
+  }, [setLoupeSide]);
 
   // Ask for pixels when there is nothing to show — on opening, on a new
   // photograph, after an edit — and when the aim has been dragged past the
@@ -55,15 +54,12 @@ export function DevelopLoupe() {
       ? loupeRegion(aimed, shown, Math.round(side * devicePixelRatio))
       : null;
   const needs =
-    loupe &&
     session !== null &&
     (frame === null || want === null || !loupeCovers(frame.region, want));
   useEffect(() => {
     if (!needs) return;
     requestLoupe(Math.round(side * devicePixelRatio));
   }, [needs, aimed, side, requestLoupe]);
-
-  if (!loupe) return null;
 
   return (
     <div ref={boxRef} className={aiming ? "develop-loupe aiming" : "develop-loupe"}>
@@ -86,9 +82,9 @@ export function DevelopLoupe() {
       ) : (
         <span className="develop-loupe-waiting" />
       )}
-      {/* Says where it is looking, not just that it is at 1:1 — which of the
-          two is the interesting fact while stepping through. */}
-      <span className="develop-loupe-note">{aimedByUser ? "1:1" : "sharpest"}</span>
+      {/* Everyone knows a loupe is 1:1; the only fact worth a word is that
+          the aim was measured, not chosen. Aimed by hand, it says nothing. */}
+      {!aimedByUser && <span className="develop-loupe-note">sharpest</span>}
     </div>
   );
 }

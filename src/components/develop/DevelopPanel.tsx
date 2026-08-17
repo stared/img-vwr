@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from "react";
 
+import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
 import { exposureValue, hdrLabel } from "../../state/hdr";
@@ -93,8 +94,6 @@ export function DevelopPanel() {
   const toggleStacking = useAppStore((s) => s.toggleStacking);
   const stackLead = useAppStore((s) => s.stackLead);
   const toggleStackLead = useAppStore((s) => s.toggleStackLead);
-  const loupe = useDevelopStore((s) => s.loupe);
-  const toggleLoupe = useDevelopStore((s) => s.toggleLoupe);
   const caption = useDevelopStore((s) => s.caption);
   const setCaption = useDevelopStore((s) => s.setCaption);
   // The set this photograph belongs to, from either side: the face fronts
@@ -150,29 +149,32 @@ export function DevelopPanel() {
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
+  // How the frame was exposed, one line at the top: the facts you read
+  // before deciding what the sliders owe the picture. Same formatters as the
+  // caption and info panel, so no two surfaces word the exposure differently.
+  const exif = allMeta[entry.path]?.exif ?? null;
+  const exposure = [
+    exif?.exposureTime != null ? formatShutter(exif.exposureTime) : "",
+    exif?.fNumber != null ? formatAperture(exif.fNumber) : "",
+    exif?.iso != null ? `ISO ${exif.iso}` : "",
+    exif?.exposureBias != null && exif.exposureBias !== 0
+      ? `${formatSigned(exif.exposureBias)} EV`
+      : "",
+    exif?.focalLength != null ? `${Math.round(exif.focalLength)} mm` : "",
+  ].filter(Boolean);
+
   return (
     <div className="develop-panel">
+      {exposure.length > 0 && (
+        <p className="develop-note develop-exif" title={exif?.lens ?? undefined}>
+          {exposure.join("   ")}
+        </p>
+      )}
       {/* First, because it is the one part of the panel that is picture
-          rather than controls: pixels you glance at while working. */}
+          rather than controls: pixels you glance at while working. No switch
+          — the loupe costs nothing while you work, and folding the section
+          is already the way to put it away. Drag the photograph to aim it. */}
       <Group title="Loupe">
-        <div
-          className="develop-switch"
-          title="actual pixels of one small region; drag the photograph to aim it"
-        >
-          <span className="develop-switch-label">loupe</span>
-          <button
-            className={loupe ? "develop-toggle on" : "develop-toggle"}
-            onClick={() => !loupe && toggleLoupe()}
-          >
-            on
-          </button>
-          <button
-            className={loupe ? "develop-toggle" : "develop-toggle on"}
-            onClick={() => loupe && toggleLoupe()}
-          >
-            off
-          </button>
-        </div>
         <DevelopLoupe />
       </Group>
 
@@ -638,18 +640,13 @@ export function DevelopPanel() {
           ))}
         </div>
         {/* Guides are geometry, not pixels: independent of the above, and free
-            to leave on while you work. */}
+            to leave on while you work. One button, lit when the lines are up
+            — an "off" beside it would be a second name for the same fact. */}
         <div className="develop-switch">
           <span className="develop-switch-label">guides</span>
           <button
-            className={gridlines ? "develop-toggle" : "develop-toggle on"}
-            onClick={() => gridlines && toggleGridlines()}
-          >
-            off
-          </button>
-          <button
             className={gridlines ? "develop-toggle on" : "develop-toggle"}
-            onClick={() => !gridlines && toggleGridlines()}
+            onClick={toggleGridlines}
           >
             thirds
           </button>

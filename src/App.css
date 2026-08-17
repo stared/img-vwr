@@ -1555,6 +1555,13 @@ button.stats-row:hover .stats-label {
   line-height: 1.4;
 }
 
+/* The exposure line at the head of the panel: the frame's own facts, spaced
+   as written rather than collapsed to single gaps. */
+.develop-exif {
+  white-space: pre-wrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- Sliders ----
    One control for every continuous quantity in the app, so they line up
    wherever two of them sit together: one track height, one thumb, one place
