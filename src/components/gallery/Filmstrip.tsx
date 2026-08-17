@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
+import { effectiveDims } from "../../state/derived";
 import { hdrLabel } from "../../state/hdr";
 import { pairedName, photographKeyOf, siblingsOf, stackCaption } from "../../state/stacks";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 /**
  * The darkroom's strip of the whole collection, running under the main image.
@@ -99,6 +101,8 @@ export function Filmstrip({ height }: { height: number }) {
   const epoch = useAppStore((s) => s.epoch);
   const thumbs = useAppStore((s) => s.thumbs);
   const labels = useAppStore((s) => s.labels);
+  const crops = useAppStore((s) => s.crops);
+  const meta = useAppStore((s) => s.meta);
   // Every file in the collection, so a collapsed cell can say what else is
   // in its stack — the strip itself is showing one member of each.
   const allEntries = useAppStore((s) => s.entries);
@@ -171,6 +175,19 @@ export function Filmstrip({ height }: { height: number }) {
         const member = index === null;
         const siblings =
           stacking && !member ? siblingsOf(allEntries, entry, hdr.keyByStack) : [];
+        // A collapsed pair is one photograph, so a crop stored on either of
+        // its files crops the cell; a spread member shows only its own.
+        const crop =
+          crops[entry.path] ??
+          (siblings.length > 0 && !spread
+            ? siblings.map((s) => crops[s.path]).find((c) => c !== undefined)
+            : undefined);
+        const cellMeta = meta[entry.path];
+        const dims = cellMeta === undefined ? null : effectiveDims(cellMeta);
+        const cropped =
+          crop !== undefined && dims !== null
+            ? { crop, frame: dims.width / dims.height }
+            : null;
         return (
           <button
             key={entry.path}
@@ -235,20 +252,31 @@ export function Filmstrip({ height }: { height: number }) {
                 edge belongs to the name. Same mark as the grid's. */}
             {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
             <span className="filmstrip-photo">
+              {cropped !== null && <CropBadge />}
               {/* The pile is the photograph itself, repeated: one print
                   behind for a pair, two for anything deeper. No painted
                   card — the deck is made of the picture, and its depth is
-                  honest. */}
+                  honest. A cropped photograph's pile is cropped prints:
+                  the whole deck is the same picture. */}
               {thumb !== undefined && siblings.length > 0 && !spread && (
                 <>
-                  {siblings.length >= 2 && (
-                    <img className="filmstrip-card deep" src={fileUrl(thumb)} alt="" draggable={false} />
+                  {siblings.length >= 2 &&
+                    (cropped !== null ? (
+                      <CroppedThumb className="filmstrip-card deep" src={fileUrl(thumb)} alt="" crop={cropped.crop} frame={cropped.frame} />
+                    ) : (
+                      <img className="filmstrip-card deep" src={fileUrl(thumb)} alt="" draggable={false} />
+                    ))}
+                  {cropped !== null ? (
+                    <CroppedThumb className="filmstrip-card" src={fileUrl(thumb)} alt="" crop={cropped.crop} frame={cropped.frame} />
+                  ) : (
+                    <img className="filmstrip-card" src={fileUrl(thumb)} alt="" draggable={false} />
                   )}
-                  <img className="filmstrip-card" src={fileUrl(thumb)} alt="" draggable={false} />
                 </>
               )}
               {thumb === undefined ? (
                 <span className="filmstrip-placeholder" />
+              ) : cropped !== null ? (
+                <CroppedThumb src={fileUrl(thumb)} alt={entry.name} crop={cropped.crop} frame={cropped.frame} />
               ) : (
                 <img src={fileUrl(thumb)} alt={entry.name} draggable={false} />
               )}

@@ -591,6 +591,21 @@ pub async fn develop_edited_paths(
         .map_err(|e| e.to_string())?
 }
 
+/// The stored crops among these paths, so the gallery can draw a cropped
+/// photograph's miniature already cropped. Whole-frame edits are left out:
+/// only paths whose crop actually takes something are returned.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_crops(
+    service: State<'_, Arc<DevelopService>>,
+    paths: Vec<String>,
+) -> Result<HashMap<String, imgvwr_develop::Crop>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.crops(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Install which paths open as fused exposure brackets — the face frame's
 /// path mapped to every frame of its bracket, the whole folder at once.
 ///

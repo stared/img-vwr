@@ -2020,6 +2020,69 @@ button.stats-row:hover .stats-label {
   height: 100%;
 }
 
+/* ---- Cropped miniatures ---- */
+
+/* The photo boxes are size containers, so a crop-shaped box below can
+   contain-fit itself with container-query units — no measuring, no JS. */
+.thumb-frame,
+.filmstrip-photo {
+  container-type: size;
+}
+
+/* The box wears the crop's shape (--crop-ar, width over height) and fits
+   the photo area the way object-fit: contain would. */
+.thumb-cropped {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  width: min(100cqw, calc(100cqh * var(--crop-ar)));
+  height: min(100cqh, calc(100cqw / var(--crop-ar)));
+}
+
+/* The full thumbnail behind the box, sized and shifted by the crop (inline
+   styles carry the numbers) so exactly the cropped pixels show. */
+.thumb-frame .thumb-cropped img,
+.filmstrip-cell .thumb-cropped img {
+  position: absolute;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+}
+
+/* A cropped stack's deck: the same crop-shaped prints, centred like the
+   front one and offset like the plain-image cards above. */
+.filmstrip-cell.stacked .thumb-cropped.filmstrip-card {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transform: translate(3px, -3px);
+  box-shadow: 0 0 0 1px var(--bg);
+  border-radius: 4px;
+}
+
+.filmstrip-cell.stacked .thumb-cropped.filmstrip-card.deep {
+  transform: translate(6px, -6px);
+}
+
+/* The mark that says the miniature is the crop, not the whole file. */
+.thumb-crop {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  z-index: 1;
+  display: flex;
+  pointer-events: none;
+}
+
+.thumb-crop svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--text);
+  stroke-width: 2;
+  fill: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+
 /* The 1:1 detail crop sits over the preview it refines; no transform, it is
    already positioned and sized in screen pixels. */
 .viewer-detail {

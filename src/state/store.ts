@@ -11,6 +11,7 @@ import {
   type Point,
 } from "../components/viewer/viewport";
 import type {
+  Crop,
   EmbedModelInfo,
   FileEntry,
   HdrMethod,
@@ -104,6 +105,9 @@ export interface AppState {
   /** path → user labels (stars, tags), loaded per scope from the app-local
    * label store; absent = unlabeled. */
   labels: Record<string, ImageLabels>;
+  /** path → stored develop crop, for miniatures: a cropped photograph
+   * should look cropped everywhere it appears. Absent = whole frame. */
+  crops: Record<string, Crop>;
   statsVisible: boolean;
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
@@ -286,6 +290,10 @@ interface AppActions {
   /** Labels changed (rate/tag) on one image or on a whole selection; mirror
    * the store's response for exactly the paths it answered for. */
   labelsApplied: (labels: Record<string, ImageLabels>) => void;
+  /** Install stored crops for a scope's paths (epoch-guarded, like labels). */
+  cropsLoaded: (crops: Record<string, Crop>, epoch: number) => void;
+  /** One photograph's crop changed in the darkroom; null = back to whole. */
+  cropApplied: (path: string, crop: Crop | null) => void;
   toggleStats: () => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
@@ -368,6 +376,7 @@ export const initialState: AppState = {
   dirCounts: {},
   meta: {},
   labels: {},
+  crops: {},
   statsVisible: true,
   viewMode: "gallery",
   galleryLayout: "grid",
@@ -925,6 +934,17 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   labelsApplied: (labels) => set({ labels: { ...get().labels, ...labels } }),
+
+  cropsLoaded: (crops, epoch) => {
+    if (epoch === get().epoch) set({ crops: { ...get().crops, ...crops } });
+  },
+
+  cropApplied: (path, crop) => {
+    const crops = { ...get().crops };
+    if (crop === null) delete crops[path];
+    else crops[path] = crop;
+    set({ crops });
+  },
 
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
 

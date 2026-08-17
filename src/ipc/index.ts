@@ -213,10 +213,10 @@ export async function labelsToggleTag(
 }
 
 /** specta types HashMap values as possibly-undefined; entries never are. */
-function defined(map: Partial<Record<string, ImageLabels>>): Record<string, ImageLabels> {
-  const out: Record<string, ImageLabels> = {};
-  for (const [path, labels] of Object.entries(map)) {
-    if (labels !== undefined) out[path] = labels;
+function defined<T>(map: Partial<Record<string, T>>): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [path, value] of Object.entries(map)) {
+    if (value !== undefined) out[path] = value;
   }
   return out;
 }
@@ -285,6 +285,11 @@ export async function developReset(path: string): Promise<DevelopState> {
 
 export async function developEditedPaths(paths: string[]): Promise<string[]> {
   return unwrap(await commands.developEditedPaths(paths));
+}
+
+/** The stored crops among these paths, for drawing miniatures cropped. */
+export async function developCrops(paths: string[]): Promise<Record<string, Crop>> {
+  return defined(unwrap(await commands.developCrops(paths)));
 }
 
 /** Carry out one photograph's export; the caller drives the batch. */

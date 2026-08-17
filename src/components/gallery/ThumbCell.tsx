@@ -1,7 +1,9 @@
 import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
+import { effectiveDims } from "../../state/derived";
 import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore } from "../../state/store";
+import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 interface ThumbCellProps {
   entry: FileEntry;
@@ -21,6 +23,11 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   // The face of an HDR set wears the set's name: this cell is not one file
   // but the photograph fused from its bracket.
   const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
+  // A stored crop draws the miniature cropped; the frame's pixel aspect is
+  // needed to give the crop box its shape, so it waits for the metadata.
+  const crop = useAppStore((s) => s.crops[entry.path]);
+  const meta = useAppStore((s) => s.meta[entry.path]);
+  const dims = meta === undefined ? null : effectiveDims(meta);
 
   return (
     <figure
@@ -44,8 +51,18 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
             HDR ×{hdr.frames.length}
           </span>
         )}
+        {crop !== undefined && <CropBadge />}
         {cacheFile !== undefined ? (
-          <img src={fileUrl(cacheFile)} alt={entry.name} loading="lazy" draggable={false} />
+          crop !== undefined && dims !== null ? (
+            <CroppedThumb
+              src={fileUrl(cacheFile)}
+              alt={entry.name}
+              crop={crop}
+              frame={dims.width / dims.height}
+            />
+          ) : (
+            <img src={fileUrl(cacheFile)} alt={entry.name} loading="lazy" draggable={false} />
+          )
         ) : error !== undefined ? (
           <span className="thumb-error" title={error}>
             ⚠

@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use imgvwr_core::{Region, SceneError, SceneImage, SceneRegistry, WhiteBalance};
-use imgvwr_develop::{DevelopParams, DevelopSettings, Histogram, Overlay};
+use imgvwr_develop::{Crop, DevelopParams, DevelopSettings, Histogram, Overlay};
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -778,6 +778,47 @@ impl DevelopService {
                 .map_err(|e| e.to_string())?;
             for row in rows {
                 out.push(row.map_err(|e| e.to_string())?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The stored crop of every path among `paths` that has one, for the
+    /// gallery's miniatures: a cropped photograph should look cropped
+    /// everywhere it appears, not only where the develop pipeline renders
+    /// it. A straight DB read — nothing here opens an image.
+    pub fn crops(&self, paths: &[String]) -> Result<HashMap<String, Crop>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut out = HashMap::new();
+        for chunk in paths.chunks(512) {
+            let marks = vec!["?"; chunk.len()].join(",");
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT path, crop_x, crop_y, crop_w, crop_h, crop_angle \
+                     FROM develop WHERE path IN ({marks})"
+                ))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(chunk), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        Crop {
+                            x: row.get::<_, f64>(1)? as f32,
+                            y: row.get::<_, f64>(2)? as f32,
+                            width: row.get::<_, f64>(3)? as f32,
+                            height: row.get::<_, f64>(4)? as f32,
+                            angle: row.get::<_, f64>(5)? as f32,
+                        },
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                let (path, crop) = row.map_err(|e| e.to_string())?;
+                // A stored edit whose crop is the whole frame is not a crop;
+                // the miniature has nothing to say about it.
+                if !crop.is_full() {
+                    out.insert(path, crop);
+                }
             }
         }
         Ok(out)

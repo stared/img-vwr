@@ -326,6 +326,19 @@ async developEditedPaths(paths: string[]) : Promise<Result<string[], string>> {
 }
 },
 /**
+ * The stored crops among these paths, so the gallery can draw a cropped
+ * photograph's miniature already cropped. Whole-frame edits are left out:
+ * only paths whose crop actually takes something are returned.
+ */
+async developCrops(paths: string[]) : Promise<Result<Partial<{ [key in string]: Crop }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_crops", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Export one photograph into the folder the plan names.
  * 
  * One file per call rather than a whole batch, so the UI owns the progress,
