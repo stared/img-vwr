@@ -40,6 +40,73 @@ export function mosaicAspects(
 }
 
 /**
+ * A display order that keeps every photograph at (nearly) one scale.
+ *
+ * In-order rows must stretch or shrink to meet the right edge, so their
+ * scales drift with whatever run of shapes the sort dealt them. Reordering
+ * fixes that: each row starts with the oldest photograph still waiting —
+ * chronology stays the anchor — and then fills from a small look-ahead
+ * window, always taking the widest photograph that still fits. Rows come
+ * out almost exactly full, so the justify step barely scales anything and
+ * the whole mosaic reads at one size.
+ *
+ * `rowAspect` is the row's capacity in aspect units (width over target
+ * height); `gapAspect` is what each additional photograph's gap costs in
+ * the same units. Returns a permutation of indices.
+ */
+export function packedOrder(
+  aspects: readonly number[],
+  rowAspect: number,
+  gapAspect: number,
+  window = 16,
+): number[] {
+  const pool = aspects.map((_, i) => i);
+  const order: number[] = [];
+  const aspectOf = (i: number) => Math.max(0.1, aspects[i] ?? DEFAULT_ASPECT);
+  while (pool.length > 0) {
+    let cap = rowAspect - aspectOf(pool[0] ?? 0);
+    order.push(pool.shift() ?? 0);
+    for (;;) {
+      let best = -1;
+      let bestCost = -Infinity;
+      const lookahead = Math.min(window, pool.length);
+      for (let j = 0; j < lookahead; j += 1) {
+        const cost = aspectOf(pool[j] ?? 0) + gapAspect;
+        // A hair of tolerance, so a row can end a whisker over-full and be
+        // scaled down a touch rather than leaving a portrait-wide hole.
+        if (cost <= cap + 0.05 && cost > bestCost) {
+          bestCost = cost;
+          best = j;
+        }
+      }
+      if (best === -1) {
+        // Nothing fits whole. Close the row on whichever reads truer: the
+        // hole it would leave, or the squeeze of the narrowest photograph
+        // still waiting. A row always slightly over-full justifies with a
+        // small scale-down — and it keeps the row boundaries here agreeing
+        // with the ones `mosaicRows` finds again on the reordered list.
+        let narrow = -1;
+        let narrowCost = Infinity;
+        for (let j = 0; j < lookahead; j += 1) {
+          const cost = aspectOf(pool[j] ?? 0) + gapAspect;
+          if (cost < narrowCost) {
+            narrowCost = cost;
+            narrow = j;
+          }
+        }
+        if (narrow !== -1 && narrowCost - cap < cap) {
+          order.push(pool.splice(narrow, 1)[0] ?? 0);
+        }
+        break;
+      }
+      cap -= bestCost;
+      order.push(pool.splice(best, 1)[0] ?? 0);
+    }
+  }
+  return order;
+}
+
+/**
  * Pack aspects into justified rows.
  *
  * Greedy: a row takes photographs until they would have to shrink below the

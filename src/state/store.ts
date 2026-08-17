@@ -65,6 +65,8 @@ import {
 
 export type ViewMode = "gallery" | "viewer";
 export type GalleryLayout = "grid" | "mosaic" | "timeline" | "map" | "darkroom" | "scenes";
+
+export type MosaicPacking = "order" | "packed";
 export type TimelineOrientation = "vertical" | "horizontal";
 
 export type { FolderStatus, Scope } from "./collection";
@@ -118,6 +120,9 @@ export interface AppState {
   timelineThumbPx: number;
   /** The mosaic's target row height, px — presentation only. */
   mosaicRowPx: number;
+  /** How the mosaic orders its rows: the sort's order (rows vary a little
+   * in scale to justify) or repacked so everything reads at one scale. */
+  mosaicPacking: MosaicPacking;
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
@@ -301,6 +306,7 @@ interface AppActions {
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
   setMosaicRowPx: (px: number) => void;
+  setMosaicPacking: (packing: MosaicPacking) => void;
   setGridColumns: (columns: number) => void;
   setSceneGap: (min: number) => void;
   setSceneContentWeight: (weight: number) => void;
@@ -386,6 +392,7 @@ export const initialState: AppState = {
   timelineOrientation: "vertical",
   timelineThumbPx: 64,
   mosaicRowPx: 180,
+  mosaicPacking: "order",
   gridColumns: 6,
   sceneGapMin: 2,
   sceneContentWeight: 1,
@@ -960,6 +967,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setTimelineThumbPx: (px) => set({ timelineThumbPx: px }),
   setMosaicRowPx: (px) => set({ mosaicRowPx: px }),
+  setMosaicPacking: (packing) => set({ mosaicPacking: packing }),
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
 

@@ -4,6 +4,7 @@ import type { StackLead } from "./stacks";
 import {
   useAppStore,
   type GalleryLayout,
+  type MosaicPacking,
   type Scope,
   type TimelineOrientation,
 } from "./store";
@@ -32,6 +33,7 @@ interface SavedSession {
   timelineOrientation: TimelineOrientation;
   timelineThumbPx: number;
   mosaicRowPx: number;
+  mosaicPacking: MosaicPacking;
   statsVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
@@ -60,6 +62,7 @@ function snapshot(): SavedSession {
     timelineOrientation: s.timelineOrientation,
     timelineThumbPx: s.timelineThumbPx,
     mosaicRowPx: s.mosaicRowPx,
+    mosaicPacking: s.mosaicPacking,
     statsVisible: s.statsVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
@@ -182,6 +185,9 @@ export function restoreSession(): boolean {
       : app.timelineOrientation,
     timelineThumbPx: isNum(o.timelineThumbPx) ? o.timelineThumbPx : app.timelineThumbPx,
     mosaicRowPx: isNum(o.mosaicRowPx) ? o.mosaicRowPx : app.mosaicRowPx,
+    mosaicPacking: oneOf(o.mosaicPacking, ["order", "packed"] as const)
+      ? o.mosaicPacking
+      : app.mosaicPacking,
     statsVisible: isBool(o.statsVisible) ? o.statsVisible : app.statsVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,

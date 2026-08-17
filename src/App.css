@@ -2039,7 +2039,9 @@ button.stats-row:hover .stats-label {
   overflow: hidden;
   padding: 0;
   border: none;
-  background: var(--bg-raised);
+  /* Transparent, not raised: any background here reads as a border around
+     every photograph, and the mosaic's whole point is nothing but picture. */
+  background: transparent;
   cursor: pointer;
   user-select: none;
   /* A size container, so a cropped miniature can fill it with the same
@@ -2078,6 +2080,9 @@ button.stats-row:hover .stats-label {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Only the not-yet-loaded cell paints a ground; a loaded one is all
+     photograph. */
+  background: var(--bg-raised);
 }
 
 /* ---- Cropped miniatures ---- */

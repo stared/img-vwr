@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mosaicRows } from "./mosaic";
+import { mosaicRows, packedOrder } from "./mosaic";
 
 const GAP = 4;
 
@@ -51,5 +51,41 @@ describe("mosaic rows", () => {
   it("shows nothing for an empty folder or an unmeasured pane", () => {
     expect(mosaicRows([], 900, 180, GAP)).toEqual([]);
     expect(mosaicRows([1.5], 0, 180, GAP)).toEqual([]);
+  });
+});
+
+describe("packed order", () => {
+  it("is a permutation — every photograph shown exactly once", () => {
+    const aspects = Array.from({ length: 40 }, (_, i) => (i % 5 === 0 ? 0.66 : 1.5));
+    const order = packedOrder(aspects, 5, 0.02);
+    expect([...order].sort((a, b) => a - b)).toEqual(aspects.map((_, i) => i));
+  });
+
+  it("holds one scale where the sort's own order could not", () => {
+    // The adversarial deal: a run of landscapes, then a run of portraits —
+    // in order, rows are all-landscape then all-portrait, and their
+    // justified heights land far apart.
+    const aspects = [...Array<number>(8).fill(1.5), ...Array<number>(8).fill(2 / 3)];
+    const width = 900;
+    const target = 180;
+    const heights = (rows: ReturnType<typeof mosaicRows>) =>
+      rows.slice(0, -1).map((r) => r.height);
+
+    const order = packedOrder(aspects, width / target, GAP / target);
+    const packed = heights(mosaicRows(order.map((i) => aspects[i] ?? 1.5), width, target, GAP));
+    for (const h of packed) {
+      expect(Math.abs(h - target) / target).toBeLessThan(0.12);
+    }
+
+    const plain = heights(mosaicRows(aspects, width, target, GAP));
+    const worst = Math.max(...plain.map((h) => Math.abs(h - target) / target));
+    const packedWorst = Math.max(...packed.map((h) => Math.abs(h - target) / target));
+    expect(packedWorst).toBeLessThanOrEqual(worst);
+  });
+
+  it("keeps chronology as the anchor: each row starts with the oldest waiting", () => {
+    const aspects = [1.5, 0.66, 1.5, 0.66, 1.5, 0.66];
+    const order = packedOrder(aspects, 4, 0.02);
+    expect(order[0]).toBe(0);
   });
 });

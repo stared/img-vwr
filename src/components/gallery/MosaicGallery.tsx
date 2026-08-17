@@ -7,18 +7,18 @@ import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { parseNumber, Slider } from "../shell/Slider";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
-import { mosaicAspects, mosaicRows } from "./mosaic";
+import { mosaicAspects, mosaicRows, packedOrder } from "./mosaic";
 
 /**
  * The mosaic: the grid's photographs without the grid's empty space. Rows
  * are justified — every photograph keeps its own shape, scaled so each row
  * fills the width edge to edge — so the layout is all picture: no
- * letterboxing, no dead cell corners, no captions. Names stay the grid's
- * and the strip's job; here a tooltip answers.
+ * letterboxing, no dead cell corners, no captions, and by default no gaps
+ * either, a seamless wall of prints (the spacing slider adds air back for
+ * whoever wants it). Names stay the grid's and the strip's job; here a
+ * tooltip answers.
  */
 
-const ROW_GAP = 4;
-const CELL_GAP = 4;
 const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
 
@@ -35,6 +35,8 @@ export function MosaicGallery() {
   const crops = useAppStore((s) => s.crops);
   const rowPx = useAppStore((s) => s.mosaicRowPx);
   const setRowPx = useAppStore((s) => s.setMosaicRowPx);
+  const packing = useAppStore((s) => s.mosaicPacking);
+  const setPacking = useAppStore((s) => s.setMosaicPacking);
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,15 +51,23 @@ export function MosaicGallery() {
     if (missing.length > 0) void requestMeta(missing, epoch);
   }, [status, remote, allEntries, epoch]);
 
-  const rows = useMemo(
-    () => mosaicRows(mosaicAspects(entries, meta, crops), width, rowPx, CELL_GAP),
-    [entries, meta, crops, width, rowPx],
-  );
+  // The display order: the sort's own, or repacked so every photograph
+  // reads at (nearly) one scale. `order[displayPos]` is the index into the
+  // visible list — the selection's coordinate system stays untouched.
+  const { rows, order } = useMemo(() => {
+    const aspects = mosaicAspects(entries, meta, crops);
+    const order =
+      packing === "packed" && rowPx > 0
+        ? packedOrder(aspects, width / rowPx, 0)
+        : aspects.map((_, i) => i);
+    const shown = order.map((i) => aspects[i] ?? 1);
+    return { rows: mosaicRows(shown, width, rowPx, 0), order };
+  }, [entries, meta, crops, width, rowPx, packing]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]?.height ?? rowPx) + ROW_GAP,
+    estimateSize: (i) => rows[i]?.height ?? rowPx,
     overscan: OVERSCAN_ROWS,
   });
 
@@ -67,14 +77,15 @@ export function MosaicGallery() {
     virtualizer.measure();
   }, [virtualizer, rows]);
 
-  // Keep the lead photograph on screen as the arrows walk the selection.
+  // Keep the lead photograph on screen as the arrows walk the selection —
+  // by its display position, which packing may have moved.
   useEffect(() => {
     if (selectedIndex === null) return;
-    const at = rows.findIndex(
-      (r) => selectedIndex >= r.firstIndex && selectedIndex < r.firstIndex + r.count,
-    );
+    const pos = order.indexOf(selectedIndex);
+    if (pos < 0) return;
+    const at = rows.findIndex((r) => pos >= r.firstIndex && pos < r.firstIndex + r.count);
     if (at >= 0) virtualizer.scrollToIndex(at, { align: "auto" });
-  }, [selectedIndex, rows, virtualizer]);
+  }, [selectedIndex, rows, order, virtualizer]);
 
   const virtualRows = virtualizer.getVirtualItems();
 
@@ -88,14 +99,17 @@ export function MosaicGallery() {
       for (let i = firstRow; i <= lastRow; i += 1) {
         const row = rows[i];
         if (row === undefined) continue;
-        for (const e of entries.slice(row.firstIndex, row.firstIndex + row.count)) {
-          if (!(e.path in thumbs) && !(e.path in thumbErrors)) wanted.push(e.path);
+        for (let pos = row.firstIndex; pos < row.firstIndex + row.count; pos += 1) {
+          const e = entries[order[pos] ?? -1];
+          if (e !== undefined && !(e.path in thumbs) && !(e.path in thumbErrors)) {
+            wanted.push(e.path);
+          }
         }
       }
       if (wanted.length > 0) void requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [entries, rows, epoch, firstRow, lastRow]);
+  }, [entries, rows, order, epoch, firstRow, lastRow]);
 
   return (
     <>
@@ -114,6 +128,22 @@ export function MosaicGallery() {
           title="how tall the rows aim to be — each row then fills the width exactly"
           onChange={setRowPx}
         />
+        <div className="develop-choices">
+          <button
+            className={packing === "order" ? "develop-choice on" : "develop-choice"}
+            title="The sort's own order, row by row; rows vary a little in scale to fill the width."
+            onClick={() => setPacking("order")}
+          >
+            as sorted
+          </button>
+          <button
+            className={packing === "packed" ? "develop-choice on" : "develop-choice"}
+            title="Every photograph at one scale: rows start in order but fill from the next few, so each comes out full without rescaling."
+            onClick={() => setPacking("packed")}
+          >
+            one scale
+          </button>
+        </div>
       </div>
       {entries.length === 0 && <p className="hint">Nothing matches these filters.</p>}
       <div
@@ -137,22 +167,25 @@ export function MosaicGallery() {
               <div
                 key={virtualRow.key}
                 className="mosaic-row"
-                style={{ transform: `translateY(${virtualRow.start}px)`, gap: CELL_GAP }}
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
                 onClick={(e) => {
                   if (e.target === e.currentTarget) select(null);
                 }}
               >
-                {entries
-                  .slice(row.firstIndex, row.firstIndex + row.count)
-                  .map((entry, i) => (
+                {Array.from({ length: row.count }, (_, i) => {
+                  const index = order[row.firstIndex + i] ?? -1;
+                  const entry = entries[index];
+                  if (entry === undefined) return null;
+                  return (
                     <MosaicCell
                       key={entry.path}
                       entry={entry}
-                      index={row.firstIndex + i}
+                      index={index}
                       width={row.widths[i] ?? row.height}
                       height={row.height}
                     />
-                  ))}
+                  );
+                })}
               </div>
             );
           })}
