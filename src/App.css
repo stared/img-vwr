@@ -1937,6 +1937,7 @@ button.stats-row:hover .stats-label {
   bottom: 0;
   z-index: 1;
   font-size: 9px;
+  line-height: 12px;
   padding: 1px 3px;
   color: var(--text);
   background: rgba(0, 0, 0, 0.55);
@@ -1944,6 +1945,13 @@ button.stats-row:hover .stats-label {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
+}
+
+/* The name bar owns the strip cell's bottom edge, so the rating the grid
+   draws there steps up to sit clear of it — burying stars under a caption
+   would be losing the one mark culling runs on. */
+.filmstrip-cell .thumb-stars {
+  bottom: 15px;
 }
 
 /* The badge is shared with the grid, but a strip cell is smaller. */
