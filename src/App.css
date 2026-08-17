@@ -1991,12 +1991,22 @@ button.stats-row:hover .stats-label {
   opacity: 1;
 }
 
-.filmstrip-cell.selected {
-  border-color: var(--accent);
+/* The selection frame is an overlay, not the cell's border: a stacked
+   cell's prints spill past the edge and were painting over the frame —
+   what marks the selection must sit above the picture, always. */
+.filmstrip-cell.selected::before,
+.filmstrip-cell.lead::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
 }
 
-.filmstrip-cell.lead {
-  box-shadow: 0 0 0 2px var(--accent);
+.filmstrip-cell.lead::before {
+  border-width: 2px;
 }
 
 .filmstrip-cell img {

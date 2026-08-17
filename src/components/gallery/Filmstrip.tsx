@@ -195,9 +195,9 @@ export function Filmstrip({ height }: { height: number }) {
                 : spread
                   ? `${entry.name} — the one in front; click to restack`
                   : hdrSet
-                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; click again to spread its frames`
+                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; click to spread its frames`
                     : siblings.length > 0
-                      ? `${stackCaption(entry, siblings)} — click again to spread the stack`
+                      ? `${stackCaption(entry, siblings)} — click to spread the stack`
                       : stacking
                         ? stackCaption(entry, siblings)
                         : entry.name
@@ -210,9 +210,12 @@ export function Filmstrip({ height }: { height: number }) {
                 useAppStore.getState().preferMember(entry.path);
                 return;
               }
-              // The second plain click on a stacked lead spreads the pile;
-              // the next one folds it back.
-              if (mode === "replace" && index === selectedIndex && (siblings.length > 0 || spread)) {
+              // One plain click does the whole move: the pile you click is
+              // the pile you meant to look inside, so it selects and spreads
+              // at once — select-then-click-again made every look cost two.
+              // On a spread lead the same click folds it back.
+              if (mode === "replace" && (siblings.length > 0 || spread)) {
+                useAppStore.getState().selectAt(index, mode);
                 useAppStore.getState().toggleStackExpanded(key);
                 return;
               }
