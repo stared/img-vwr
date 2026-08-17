@@ -160,16 +160,36 @@ correction, see below) is the number to shrink next.
       committed; read_dcp.py documents the extraction). Camera Standard
       = dual-illuminant matrices, 125-pt
       tone curve, 90×16×16 HSV look table (layout [val][hue][sat],
-      verified by hue-smoothness). **A/B on the rebuilt 1490-pair corpus
-      (fit_dcp.py): Adobe's structures FIXED (fitted matrix + 5-axis
-      tuning around them, DNG-SDK RGBTone semantics) = 5.01 held-out;
-      the free model on identical samples = 3.33 (oracle 2.84).** The
-      fixed tables lose by 1.7: they are calibrated for ACR's own decode
-      and engine (baseline exposure, 2012 operators, Adobe demosaic),
-      and a 3×3 cannot bridge Apple's decode into that space — plus the
-      JPEGs are Auto PC, not Standard. Free fitting on our own decode
-      remains the right architecture; the DCP's value is reference
-      structure (hue-twist resolution), not drop-in truth.
+      verified by hue-smoothness AND against the DNG SDK reference).
+      **Root-caused A/B on the rebuilt 1490-pair corpus (fit_dcp.py),
+      with exact SDK semantics (RefBaselineHueSatMap: hue/sat from
+      LINEAR RGB, only the value axis sRGB-encoded — first attempt
+      encoded all three, worth 0.48 of error):**
+      - Adobe table + curve fixed: 4.53 held-out (oracle 3.99)
+      - + free tone curves instead of Adobe's: 3.90 → curve/exposure
+        machinery mismatch ≈ 0.63 (we lack ACR's BaselineExposure,
+        exposure_tone fold and ramp; and targets are Auto PC, not the
+        Standard the curve emulates)
+      - + free monotone pre-curves before the fixed tables: 3.71 →
+        **nonlinear input-space mismatch ≈ 0.82: Apple's decode is NOT
+        one 3×3 away from ACR's linear camera space** — the dominant
+        root cause
+      - fully free model, same samples: 3.33 (oracle 2.84)
+      Verdict: Adobe's tables assume ACR's input space and ACR's
+      machinery around them; violate either and they lose to free
+      fitting on our own decode. Pipeline semantics documented from the
+      public DNG SDK source (dng_render.cpp, dng_reference.cpp): matrix
+      → HueSatMap → exposure ramp (quadratic toe) → look table →
+      RGBTone(exposure_tone ∘ curve; max/min through curve, mid
+      interpolated) → ProPhoto→output. No decompilation needed for this
+      layer.
+- [ ] **DNG Converter as data + oracle** (app extracted to scratchpad,
+      runs without install): converting one NEF exposes the converter's
+      per-camera assumptions as DNG tags (BaselineExposure!), and
+      `-p2` embeds a full-size ACR-rendered default preview = a second
+      oracle rendered with the NEF's own crd recipe. Blocked for the
+      agent by the Gatekeeper quarantine strip — needs Piotr to run
+      once. Ghidra only if the 2012 operators ever need exact math.
 - [ ] If Picture Controls other than Auto ever appear in the corpus, fit
       per-PC looks keyed by the maker-note PC name.
 

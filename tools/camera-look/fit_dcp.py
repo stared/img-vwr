@@ -98,11 +98,54 @@ def hsv_to_rgb(h, s, v):
     return out + m.unsqueeze(1)
 
 
-class DcpLook(torch.nn.Module):
-    """Fitted matrix + per-image tuning around Adobe's fixed look structures."""
+class MonoCurves(torch.nn.Module):
+    """Per-channel monotone piecewise-linear curves over log2 input."""
 
-    def __init__(self, n_img, n_feats, look_table, tone_curve, hidden=16, seed=0):
+    def __init__(self, x0=-14.0, dx=0.25, K=77, channels=3):
         super().__init__()
+        self.x0, self.dx, self.K = x0, dx, K
+        xs = x0 + dx * np.arange(K)
+        k0 = 1.0 / (1.0 + np.exp(-(xs + 2.5)))
+        base = float(k0[0])
+        deltas = np.log(np.expm1(np.maximum(np.diff(k0), 1e-6)))
+        self.base = torch.nn.Parameter(torch.full((channels,), base))
+        self.d = torch.nn.Parameter(
+            torch.tensor(np.tile(deltas, (channels, 1)), dtype=torch.float32))
+
+    def forward(self, x):
+        kn = self.base[:, None] + torch.cat(
+            [torch.zeros_like(self.base)[:, None],
+             torch.cumsum(torch.nn.functional.softplus(self.d), 1)], 1)
+        xlog = torch.log2(x.clamp_min(1e-8))
+        u = ((xlog - self.x0) / self.dx).clamp(0, self.K - 1 - 1e-4)
+        i0 = u.floor().long()
+        fr = u - i0.float()
+        cols = []
+        for c in range(x.shape[1]):
+            k = kn[c]
+            cols.append(k[i0[:, c]] * (1 - fr[:, c]) + k[i0[:, c] + 1] * fr[:, c])
+        return torch.stack(cols, 1)
+
+
+class DcpLook(torch.nn.Module):
+    """Fitted matrix + per-image tuning around Adobe's fixed look structures.
+
+    variant: "fixed" = Adobe table + Adobe curve (RGBTone);
+             "freecurve" = Adobe table, tone curve replaced by free monotone
+                 per-channel curves (isolates the curve as the misfit);
+             "precurve" = everything Adobe fixed, plus free monotone
+                 per-channel curves BEFORE the table (isolates a nonlinear
+                 input-space mismatch between Apple's decode and ACR's).
+    """
+
+    def __init__(self, n_img, n_feats, look_table, tone_curve, hidden=16, seed=0,
+                 variant="fixed"):
+        super().__init__()
+        self.variant = variant
+        if variant == "freecurve":
+            self.post = MonoCurves()
+        if variant == "precurve":
+            self.pre = MonoCurves()
         g = torch.Generator().manual_seed(seed)
         M0 = SRGB2PP
         self.m_free = torch.nn.Parameter(torch.tensor(M0[:, :2], dtype=torch.float32))
@@ -186,14 +229,26 @@ class DcpLook(torch.nn.Module):
             [tun[:, 0] + tun[:, 2], tun[:, 0], tun[:, 0] + tun[:, 3]], 1)
         x = x * gains
         x = MID * (x.clamp_min(1e-9) / MID) ** (2.0 ** tun[:, 1:2])
-        # Adobe's look table, applied in sRGB encoding (LookTableEncoding 1)
-        e = srgb_encode(x)
-        h, s, v = rgb_to_hsv(e)
-        hs, ss, vs = self.look_up(h, s, v)
-        e2 = hsv_to_rgb(h + hs, (s * ss).clamp(0, 1), (v * vs).clamp(0, 1))
-        lin = srgb_decode_t(e2.clamp(0, 1))
-        # Adobe's fit of Nikon's tone curve, hue-preservingly per channel
-        toned = self.rgb_tone(lin)
+        if self.variant == "precurve":
+            # free bridge: monotone per-channel reshaping of the input,
+            # output still linear (identity-init sigmoid over log2 domain)
+            x = self.pre(x)
+        # Adobe's look table, with the DNG SDK's exact semantics
+        # (RefBaselineHueSatMap): hue and sat come from the LINEAR RGB;
+        # only the value axis goes through the sRGB encode table for the
+        # index, is scaled in that encoding, and is decoded back.
+        xc = x.clamp(0.0, 1.0)
+        h, s, v = rgb_to_hsv(xc)
+        v_enc = srgb_encode(v.unsqueeze(1)).squeeze(1)
+        hs, ss, vs = self.look_up(h, s, v_enc)
+        v_enc2 = (v_enc * vs).clamp(0, 1)
+        v2 = srgb_decode_t(v_enc2)
+        lin = hsv_to_rgb(h + hs, (s * ss).clamp(0, 1), v2).clamp(0, 1)
+        if self.variant == "freecurve":
+            toned = self.post(lin).clamp(0, 1)
+        else:
+            # Adobe's fit of Nikon's tone curve, hue-preservingly per channel
+            toned = self.rgb_tone(lin)
         disp = (toned @ self.pp2srgb.T).clamp(0.0, 1.0)
         y = (0.2126 * disp[:, 0] + 0.7152 * disp[:, 1]
              + 0.0722 * disp[:, 2]).unsqueeze(1)
@@ -214,6 +269,8 @@ def fake_ship():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="dcp", choices=["dcp", "free"])
+    ap.add_argument("--variant", default="fixed",
+                    choices=["fixed", "freecurve", "precurve"])
     ap.add_argument("--restarts", type=int, default=2)
     ap.add_argument("--steps-a", type=int, default=2500)
     ap.add_argument("--steps-c", type=int, default=1500)
@@ -237,7 +294,7 @@ def main():
     def make(seed):
         if args.model == "dcp":
             return DcpLook(data["n_img"], data["feats_np"].shape[1],
-                           table, tone, seed=seed).to(dev)
+                           table, tone, seed=seed, variant=args.variant).to(dev)
         m = fit_joint.Look(fake_ship(), data["n_img"], data["feats_np"],
                            curves=3, lut_n=9, predictor="mlp", init="random",
                            seed=seed, latent_extra=1, clip_scene=CLIP_SCENE,
@@ -279,7 +336,7 @@ def main():
     lat = fit_test_latents(model, data)
     oracle = evaluate(model, data, test_px, lat)
     print(f"\n{args.model.upper()} BEST held-out {best[0]:.3f} (oracle {oracle:.3f})")
-    out = args.out or f"joint_{args.model}.npz"
+    out = args.out or f"joint_{args.model}_{args.variant}.npz"
     np.savez(HERE / out, err=best[0], oracle=oracle, **best[1])
     print("saved", out)
 
