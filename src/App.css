@@ -1555,11 +1555,26 @@ button.stats-row:hover .stats-label {
   line-height: 1.4;
 }
 
-/* The exposure line at the head of the panel: the frame's own facts, spaced
-   as written rather than collapsed to single gaps. */
-.develop-exif {
-  white-space: pre-wrap;
+/* The shot, at the head of the panel: each value with its name in front,
+   wrapping to the column. Labels dim, readings full-strength — the numbers
+   are the facts, the words only say which is which. */
+.develop-shot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 2px 0 4px;
+  padding: 0 8px;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
+}
+
+.develop-shot-fact {
+  white-space: nowrap;
+}
+
+.develop-shot-label {
+  margin-right: 4px;
+  color: var(--text-dim);
 }
 
 /* ---- Sliders ----
@@ -1906,16 +1921,22 @@ button.stats-row:hover .stats-label {
   transform: translate(6px, -6px);
 }
 
-.filmstrip-count {
+/* Every cell says which file it is — in the darkroom the strip is the only
+   list there is, and a pair reads as one name: "DSC_1234.JPG+NEF". */
+.filmstrip-name {
   position: absolute;
-  right: 3px;
-  top: 3px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 1;
   font-size: 9px;
-  padding: 0 3px;
-  border-radius: 3px;
-  color: var(--text-dim);
+  padding: 1px 3px;
+  color: var(--text);
   background: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 /* The badge is shared with the grid, but a strip cell is smaller. */

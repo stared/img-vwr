@@ -149,27 +149,43 @@ export function DevelopPanel() {
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
-  // How the frame was exposed, one line at the top: the facts you read
-  // before deciding what the sliders owe the picture. Same formatters as the
-  // caption and info panel, so no two surfaces word the exposure differently.
+  // The shot: what the camera did, each fact wearing its name — "1/2000"
+  // alone is dial-speak you had to already know. Same formatters as the
+  // caption and info panel, so no two surfaces word the exposure
+  // differently. EV always speaks, zero included: the compensation you
+  // *didn't* dial in is part of reading the frame.
   const exif = allMeta[entry.path]?.exif ?? null;
-  const exposure = [
-    exif?.exposureTime != null ? formatShutter(exif.exposureTime) : "",
-    exif?.fNumber != null ? formatAperture(exif.fNumber) : "",
-    exif?.iso != null ? `ISO ${exif.iso}` : "",
-    exif?.exposureBias != null && exif.exposureBias !== 0
-      ? `${formatSigned(exif.exposureBias)} EV`
-      : "",
-    exif?.focalLength != null ? `${Math.round(exif.focalLength)} mm` : "",
-  ].filter(Boolean);
+  const shotFacts: Array<{ label: string; value: string }> = [];
+  if (exif?.exposureTime != null) {
+    shotFacts.push({ label: "shutter", value: formatShutter(exif.exposureTime) });
+  }
+  if (exif?.fNumber != null) {
+    shotFacts.push({ label: "aperture", value: formatAperture(exif.fNumber) });
+  }
+  if (exif?.iso != null) shotFacts.push({ label: "ISO", value: String(exif.iso) });
+  if (exif?.exposureBias != null) {
+    shotFacts.push({
+      label: "EV",
+      value: exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias),
+    });
+  }
+  if (exif?.focalLength != null) {
+    shotFacts.push({ label: "lens", value: `${Math.round(exif.focalLength)} mm` });
+  }
+  shotFacts.push({ label: "frame", value: `${info.width} × ${info.height}` });
 
   return (
     <div className="develop-panel">
-      {exposure.length > 0 && (
-        <p className="develop-note develop-exif" title={exif?.lens ?? undefined}>
-          {exposure.join("   ")}
+      <Group title="Shot">
+        <p className="develop-shot" title={exif?.lens ?? undefined}>
+          {shotFacts.map((fact) => (
+            <span key={fact.label} className="develop-shot-fact">
+              <span className="develop-shot-label">{fact.label}</span>
+              {fact.value}
+            </span>
+          ))}
         </p>
-      )}
+      </Group>
       {/* First, because it is the one part of the panel that is picture
           rather than controls: pixels you glance at while working. No switch
           — the loupe costs nothing while you work, and folding the section
@@ -181,12 +197,12 @@ export function DevelopPanel() {
       <DevelopHistogram histogram={session.frame?.histogram ?? null} />
 
       <div className="develop-status">
+        {/* An edit that appears to have vanished is alarming, so the panel
+            says which of the two you are looking at. The frame's size lives
+            with the other shot facts above. */}
         <span>
-          {info.width} × {info.height}
-          {/* An edit that appears to have vanished is alarming, so the panel
-              says which of the two you are looking at. */}
-          {comparing ? " · before" : ""}
-          {session.rendering ? " · rendering…" : ""}
+          {comparing ? "before" : ""}
+          {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
         </span>
         <button
           className="develop-reset"
