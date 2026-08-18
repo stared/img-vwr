@@ -11,6 +11,8 @@
   --accent-muted: #6a74c9;
   --accent-text: #9aa3ea;
   --border-faint: #1e1f24;
+  /* A tile a step off the ground: thumbnail cells, loading squares. */
+  --bg-raised: #17181c;
   --text-faint: #6b6e76;
   --danger: #e5534b;
 
@@ -998,6 +1000,10 @@ button.stats-row:hover .stats-label {
   justify-content: center;
   overflow: hidden;
   position: relative;
+  /* The cell is a tile (Lightroom's grammar): a letterboxed photograph
+     sits on this ground, and the corner badges read as on the tile. */
+  background: var(--bg-raised);
+  border-radius: 4px;
 }
 
 /* Star badge on rated cells; sits over the thumbnail's bottom-left. */
@@ -1023,10 +1029,12 @@ button.stats-row:hover .stats-label {
   color: var(--accent);
 }
 
+/* Stars sit on the photograph, top-left, wherever a thumbnail is drawn —
+   one treatment across grid, scenes, mosaic and the filmstrip. */
 .thumb-stars {
   position: absolute;
   left: 4px;
-  bottom: 2px;
+  top: 3px;
   z-index: 1;
   font-size: 10px;
   letter-spacing: 1px;
@@ -2035,12 +2043,6 @@ button.stats-row:hover .stats-label {
 }
 
 /* The rating rides the photograph's top edge; the bottom line is the name's. */
-.filmstrip-cell .thumb-stars {
-  top: 3px;
-  left: 4px;
-  bottom: auto;
-}
-
 .filmstrip-cell:hover {
   border-color: var(--border);
 }
