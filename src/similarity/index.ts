@@ -178,7 +178,7 @@ export function registerSimilarity(): void {
     id: "similar.image",
     title: "Find Similar",
     keywords: ["similar", "alike", "closest", "embedding", "nearest", "resembles"],
-    menus: [{ menu: "image", submenu: null, label: "Find Similar" }],
+    menus: [{ menu: "image", section: "open", submenu: null, label: "Find Similar" }],
     // No model-ready gate: picking it does whatever is needed to get there.
     when: (ctx: CommandContext) => inFolderScope() && ctx.store.getState().entries.length > 0,
     run: async () => {

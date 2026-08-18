@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { executeCommand, getCommand, menuEntries, type MenuEntry } from "../../registry/commands";
 import { chordsForCommand, formatChord } from "../../registry/keybindings";
+import { useDevelopStore } from "../../state/develop";
 import { useAppStore } from "../../state/store";
 
 const MENU_WIDTH = 200;
@@ -17,6 +18,10 @@ const MENU_MAX_HEIGHT = 320;
 export function ImageContextMenu() {
   const pos = useAppStore((s) => s.imageMenu);
   const setImageMenu = useAppStore((s) => s.setImageMenu);
+  // The develop rows' enablement follows the session, which may still be
+  // opening when the menu appears — subscribe so they un-gray as it lands.
+  useDevelopStore((s) => s.session !== null);
+  useDevelopStore((s) => s.copied !== null);
   const [submenu, setSubmenu] = useState<string | null>(null);
 
   // A fresh right-click always starts at the top level.
@@ -49,15 +54,17 @@ export function ImageContextMenu() {
   };
 
   const chordHint = (id: string) => chordsForCommand(id).map(formatChord)[0] ?? "";
-  const row = ({ command, placement }: MenuEntry) => (
-    <button key={command.id} onClick={() => pick(command.id)}>
+  // Inapplicable rows render disabled, not hidden — a grayed "Paste Develop
+  // Settings" teaches the command exists and hints that nothing is copied.
+  const row = ({ command, placement, enabled }: MenuEntry) => (
+    <button key={command.id} disabled={!enabled} onClick={() => pick(command.id)}>
       {placement.label}
       <span className="menu-hint">{chordHint(command.id)}</span>
     </button>
   );
 
-  // Top level: rows in registration order, each submenu as one row at the
-  // position of its first member.
+  // Top level: rows grouped by section (menuEntries orders them), each
+  // submenu as one row at the position of its first member.
   const seen = new Set<string>();
   const topLevel = entries.flatMap((entry) => {
     const sub = entry.placement.submenu;
@@ -66,6 +73,8 @@ export function ImageContextMenu() {
     seen.add(sub);
     return [entry];
   });
+  const submenuEnabled = (title: string) =>
+    entries.some((e) => e.placement.submenu === title && e.enabled);
 
   const left = Math.min(pos.x, window.innerWidth - MENU_WIDTH - 8);
   const top = Math.min(pos.y, window.innerHeight - MENU_MAX_HEIGHT - 8);
@@ -82,16 +91,29 @@ export function ImageContextMenu() {
       />
       <div className="filter-menu context-menu" style={{ left, top }}>
         {submenu === null ? (
-          topLevel.map((entry) =>
-            entry.placement.submenu === null ? (
-              row(entry)
-            ) : (
-              <button key={`sub-${entry.placement.submenu}`} onClick={() => setSubmenu(entry.placement.submenu)}>
-                {entry.placement.submenu}
-                <span className="menu-hint">›</span>
-              </button>
-            ),
-          )
+          topLevel.map((entry, i) => {
+            const previous = topLevel[i - 1];
+            const key = entry.placement.submenu ?? entry.command.id;
+            return (
+              <Fragment key={key}>
+                {previous !== undefined &&
+                  previous.placement.section !== entry.placement.section && (
+                    <div className="menu-sep" />
+                  )}
+                {entry.placement.submenu === null ? (
+                  row(entry)
+                ) : (
+                  <button
+                    disabled={!submenuEnabled(entry.placement.submenu)}
+                    onClick={() => setSubmenu(entry.placement.submenu)}
+                  >
+                    {entry.placement.submenu}
+                    <span className="menu-hint">›</span>
+                  </button>
+                )}
+              </Fragment>
+            );
+          })
         ) : (
           <>
             <button className="menu-back" onClick={() => setSubmenu(null)}>

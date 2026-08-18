@@ -93,7 +93,7 @@ export function registerCopyCommands(): void {
     id: "image.copy",
     title: "Copy",
     keywords: ["clipboard", "copy files", "share"],
-    menus: [{ menu: "image", submenu: null, label: "Copy" }],
+    menus: [{ menu: "image", section: "transfer", submenu: null, label: "Copy" }],
     when: (ctx: CommandContext) => {
       const s = ctx.store.getState();
       // Only local files can be handed to the clipboard — and never while

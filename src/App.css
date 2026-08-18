@@ -920,6 +920,22 @@ button.stats-row:hover .stats-label {
   color: var(--text-dim);
 }
 
+/* A grayed row: the command exists, something it needs does not. */
+.filter-menu button:disabled {
+  color: var(--text-faint);
+}
+
+.filter-menu button:disabled:hover {
+  background: none;
+  color: var(--text-faint);
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 .filter-menu button:hover .menu-check {
   color: rgba(255, 255, 255, 0.8);
 }

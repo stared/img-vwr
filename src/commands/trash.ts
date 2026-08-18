@@ -68,7 +68,7 @@ export function registerTrashCommands(): void {
     id: "image.trash",
     title: "Move to Trash",
     keywords: ["delete", "remove", "bin", "discard", "reject", "cull"],
-    menus: [{ menu: "image", submenu: null, label: "Move to Trash" }],
+    menus: [{ menu: "image", section: "danger", submenu: null, label: "Move to Trash" }],
     // Only where there are files to move: a remote source's images are not
     // the user's to delete, and nothing outside the selection is ever touched.
     when: (ctx: CommandContext) => {

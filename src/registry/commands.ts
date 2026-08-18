@@ -13,14 +13,24 @@ export interface CommandContext {
 /** Context menus a command can surface in, besides the palette. */
 export type CommandMenu = "image";
 
+/**
+ * The separator-delimited groups of a context menu, in render order — the
+ * macOS convention keeps the destructive group last, behind its own line.
+ */
+export const MENU_SECTIONS = ["open", "labels", "develop", "transfer", "danger"] as const;
+export type MenuSection = (typeof MENU_SECTIONS)[number];
+
 /** One placement of a command in a context menu. */
 export interface MenuPlacement {
   menu: CommandMenu;
+  /** Which separator group the row belongs to. */
+  section: MenuSection;
   /** Placements sharing a submenu title collapse under one row ("Rating");
    * null = top level. */
   submenu: string | null;
   /** Row text in that menu — short and in-context ("★★★"); the palette
-   * always shows the full title ("Rate ★★★"). */
+   * always shows the full title ("Rate ★★★"). Menu rows use the macOS
+   * menu casing: Title Case. */
   label: string;
 }
 
@@ -61,15 +71,23 @@ export function allCommands(): Command[] {
 export interface MenuEntry {
   command: Command;
   placement: MenuPlacement;
+  /** False renders the row grayed rather than hidden — platform convention
+   * (macOS, Lightroom): a disabled row teaches that the command exists and
+   * hints that something is missing, where a vanished one teaches nothing. */
+  enabled: boolean;
 }
 
-/** Applicable entries for a context menu, in registration order. */
+/** Every entry for a context menu — disabled ones included — grouped by
+ * section in MENU_SECTIONS order, registration order within a section. */
 export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[] {
-  return allCommands().flatMap((command) => {
-    const placement = command.menus.find((p) => p.menu === menu);
-    if (!placement || (command.when && !command.when(ctx))) return [];
-    return [{ command, placement }];
-  });
+  const rank = (e: MenuEntry) => MENU_SECTIONS.indexOf(e.placement.section);
+  return allCommands()
+    .flatMap((command) => {
+      const placement = command.menus.find((p) => p.menu === menu);
+      if (!placement) return [];
+      return [{ command, placement, enabled: !command.when || command.when(ctx) }];
+    })
+    .sort((a, b) => rank(a) - rank(b));
 }
 
 /** Runs the command if it exists and its `when` guard passes. */

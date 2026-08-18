@@ -16,7 +16,7 @@ export function registerDevelopCommands(): void {
     id: "develop.export",
     title: "Export…",
     keywords: ["save", "jpeg", "png", "render", "develop", "share"],
-    menus: [{ menu: "image", submenu: null, label: "Export…" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Export…" }],
     // Everything selected, not just the one in the darkroom: exporting a take
     // is the ordinary case, and exporting one photograph is that with one
     // selected.
@@ -33,7 +33,7 @@ export function registerDevelopCommands(): void {
     id: "develop.crop",
     title: "Crop & Straighten",
     keywords: ["crop", "straighten", "rotate", "aspect", "trim"],
-    menus: [{ menu: "image", submenu: null, label: "Crop & straighten" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Crop & Straighten" }],
     when: hasSession,
     run: () => {
       const s = useDevelopStore.getState();
@@ -70,7 +70,7 @@ export function registerDevelopCommands(): void {
     id: "develop.reset",
     title: "Reset Develop Settings",
     keywords: ["revert", "neutral", "undo edit"],
-    menus: [{ menu: "image", submenu: null, label: "Reset develop" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Reset Develop" }],
     when: hasSession,
     run: async () => {
       await useDevelopStore.getState().reset();
@@ -94,7 +94,7 @@ export function registerDevelopCommands(): void {
     id: "develop.copy",
     title: "Copy Develop Settings",
     keywords: ["clipboard", "settings", "sync", "apply to"],
-    menus: [{ menu: "image", submenu: null, label: "Copy develop settings" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Copy Develop Settings" }],
     when: hasSession,
     run: () => {
       useDevelopStore.getState().copySettings();
@@ -105,7 +105,7 @@ export function registerDevelopCommands(): void {
     id: "develop.paste",
     title: "Paste Develop Settings",
     keywords: ["clipboard", "settings", "sync", "apply"],
-    menus: [{ menu: "image", submenu: null, label: "Paste develop settings" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Paste Develop Settings" }],
     when: () => hasSession() && useDevelopStore.getState().copied !== null,
     run: () => {
       useDevelopStore.getState().pasteSettings();
@@ -127,7 +127,7 @@ export function registerDevelopCommands(): void {
     id: "develop.autoTone",
     title: "Auto Tone",
     keywords: ["auto", "exposure", "brightness", "levels"],
-    menus: [{ menu: "image", submenu: null, label: "Auto tone" }],
+    menus: [{ menu: "image", section: "develop", submenu: null, label: "Auto Tone" }],
     when: hasSession,
     run: async () => {
       await useDevelopStore.getState().autoTone();

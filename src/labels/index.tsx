@@ -157,7 +157,7 @@ export function registerLabels(): void {
       title: n === 0 ? "Clear Rating" : `Rate ${"★".repeat(n)}`,
       keywords: STAR_KEYWORDS,
       // In the menu the rating is one submenu: Rating › nothing, ★, ★★ …
-      menus: [{ menu: "image", submenu: "Rating", label: n === 0 ? "nothing" : "★".repeat(n) }],
+      menus: [{ menu: "image", section: "labels", submenu: "Rating", label: n === 0 ? "nothing" : "★".repeat(n) }],
       when: hasSelection,
       run: () => rateSelected(n === 0 ? null : n),
     });
@@ -168,7 +168,7 @@ export function registerLabels(): void {
     title: "Tag Image…",
     keywords: ["label", "keyword", "add tag", "remove tag"],
     input: { placeholder: "add or remove a tag, e.g. family" },
-    menus: [{ menu: "image", submenu: null, label: "Tag Image…" }],
+    menus: [{ menu: "image", section: "labels", submenu: null, label: "Tag Image…" }],
     when: hasSelection,
     run: async (_ctx, arg) => {
       const tag = arg?.trim();
