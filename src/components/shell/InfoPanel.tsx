@@ -4,6 +4,8 @@ import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
 import { titleWithChord } from "../../registry/keybindings";
+import { useDevelopStore } from "../../state/develop";
+import { DevelopLoupe } from "../develop/DevelopLoupe";
 import { formatBytes } from "../../state/stats";
 import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
@@ -68,6 +70,33 @@ function Rating({ path, stars }: { path: string; stars: number | null }) {
         ))}
       </span>
     </div>
+  );
+}
+
+/** Shutter speed: a stopwatch. */
+function ShutterIcon() {
+  return (
+    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="14" r="8" />
+      <path d="M12 10v4l2.8 2" />
+      <path d="M9 2h6" />
+      <path d="M12 2v4" />
+    </svg>
+  );
+}
+
+/** Aperture: the iris, six blades. */
+function ApertureIcon() {
+  return (
+    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
+      <line x1="9.69" y1="8" x2="21.17" y2="8" />
+      <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
+      <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
+      <line x1="14.31" y1="16" x2="2.83" y2="16" />
+      <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
+    </svg>
   );
 }
 
@@ -167,6 +196,10 @@ export function InfoPanel() {
 
   const path = entry?.path;
   const isLocal = path !== undefined && !path.startsWith("http");
+  const hasSession = useDevelopStore((s) => s.session !== null);
+  const developShowing = useAppStore(
+    (s) => s.galleryLayout === "darkroom" || s.viewMode === "viewer",
+  );
   useEffect(() => {
     if (path === undefined || !isLocal) {
       setStats(null);
@@ -187,16 +220,46 @@ export function InfoPanel() {
   const stars = labels?.stars ?? null;
   const tags = labels?.tags ?? [];
   const current = stats !== null && stats.path === path ? stats.data : null;
-  // Shutter, aperture, ISO — whichever the file carries, worded by the same
-  // formatters the caption over the image uses, so the two never disagree.
-  const exposure = [
-    exif?.exposureTime != null ? formatShutter(exif.exposureTime) : "",
-    exif?.fNumber != null ? formatAperture(exif.fNumber) : "",
-    exif?.iso != null ? `ISO ${exif.iso}` : "",
-    exif?.exposureBias != null && exif.exposureBias !== 0
-      ? `${formatSigned(exif.exposureBias)} EV`
-      : "",
-  ].filter(Boolean);
+  // The shot on one line, the way a photographer states it. Most readings
+  // carry their own unit; shutter and aperture wear a small icon each, and
+  // EV speaks even at zero — the compensation you *didn't* dial in is part
+  // of reading the frame.
+  const shotFacts: Array<{ key: string; title: string; icon: ReactNode; text: string }> = [];
+  if (exif?.exposureTime != null) {
+    shotFacts.push({
+      key: "shutter",
+      title: "shutter speed",
+      icon: <ShutterIcon />,
+      text: formatShutter(exif.exposureTime),
+    });
+  }
+  if (exif?.fNumber != null) {
+    shotFacts.push({
+      key: "aperture",
+      title: "aperture",
+      icon: <ApertureIcon />,
+      text: formatAperture(exif.fNumber),
+    });
+  }
+  if (exif?.iso != null) {
+    shotFacts.push({ key: "iso", title: "sensitivity", icon: null, text: `ISO ${exif.iso}` });
+  }
+  if (exif?.exposureBias != null) {
+    shotFacts.push({
+      key: "ev",
+      title: "exposure compensation, as dialed on the camera",
+      icon: null,
+      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
+    });
+  }
+  if (exif?.focalLength != null) {
+    shotFacts.push({
+      key: "focal",
+      title: exif.lens ?? "focal length",
+      icon: null,
+      text: `${Math.round(exif.focalLength)} mm`,
+    });
+  }
   // The camera's own per-shot grade, when the file carries one — the answer
   // to "why do these two neighbouring shots look different".
   const grade = meta?.grade
@@ -217,16 +280,27 @@ export function InfoPanel() {
         <Fact label="format" value={entry.formatHint.toUpperCase()} />
         <Fact label="modified" value={new Date(entry.modifiedMs).toLocaleString()} />
       </Section>
+      {/* True 100% pixels — culling wants sharpness at a glance in every
+          view. Drag the photograph (darkroom) to aim it. */}
+      {hasSession && (
+        <Section title="Loupe">
+          <DevelopLoupe />
+        </Section>
+      )}
       {exif && (
-        <Section title="EXIF">
+        <Section title="Shot">
+          {shotFacts.length > 0 && (
+            <p className="develop-shot">
+              {shotFacts.map((fact) => (
+                <span key={fact.key} className="develop-shot-fact" title={fact.title}>
+                  {fact.icon}
+                  {fact.text}
+                </span>
+              ))}
+            </p>
+          )}
           {exif.camera !== null && <Fact label="camera" value={exif.camera} />}
           {exif.lens !== null && <Fact label="lens" value={exif.lens} />}
-          {/* The exposure on one line, the way a photographer states it —
-              three separate rows would make you assemble it yourself. */}
-          {exposure.length > 0 && <Fact label="exposure" value={exposure.join("   ")} />}
-          {exif.focalLength !== null && (
-            <Fact label="focal length" value={`${Math.round(exif.focalLength)} mm`} />
-          )}
           {grade.length > 0 && <Fact label="camera grade" value={grade.join("   ")} />}
           {exif.dateTime !== null && <Fact label="taken" value={exif.dateTime} />}
           {exif.gpsLat !== null && exif.gpsLon !== null && (
@@ -238,15 +312,17 @@ export function InfoPanel() {
         <Rating path={entry.path} stars={stars} />
         {tags.length > 0 && <Fact label="tags" value={tags.join(", ")} />}
       </Section>
+      {/* One histogram on screen at a time: the Develop panel pins the live
+          one, so this file-side copy shows only where Develop is absent. */}
+      {current && !developShowing && (
+        <Section title="Histogram">
+          <HistogramCanvas stats={current} />
+        </Section>
+      )}
       {current && (
-        <>
-          <Section title="Histogram">
-            <HistogramCanvas stats={current} />
-          </Section>
-          <Section title="Colors">
-            <TriangleCanvas stats={current} />
-          </Section>
-        </>
+        <Section title="Colors">
+          <TriangleCanvas stats={current} />
+        </Section>
       )}
     </div>
   );

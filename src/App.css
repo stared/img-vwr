@@ -1601,6 +1601,14 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
+/* The histogram stays on screen while the sliders below it drag. */
+.develop-pinned {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+
 .develop-status {
   display: flex;
   align-items: center;

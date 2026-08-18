@@ -1,6 +1,5 @@
 import { useMemo, type ReactNode } from "react";
 
-import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
 import { exposureValue, hdrLabel } from "../../state/hdr";
@@ -8,16 +7,10 @@ import { groupStacks, siblingsOf, stackKeyOf } from "../../state/stacks";
 import { hdrOf, useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
-  CAPTION_CYCLE,
-  CAPTION_LABELS,
-  CAPTION_NOTES,
   displayedSize,
   frameAspect,
   FULL_CROP,
   isCropped,
-  OVERLAY_CYCLE,
-  OVERLAY_LABELS,
-  OVERLAY_NOTES,
   isAtOpening,
   PARAM_SPECS,
   presetOf,
@@ -27,7 +20,6 @@ import {
   type ParamSpec,
 } from "../../state/develop";
 import { DevelopHistogram } from "./DevelopHistogram";
-import { DevelopLoupe } from "./DevelopLoupe";
 
 /**
  * A section of the panel, folded and unfolded by its own heading — the same
@@ -55,33 +47,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
  * in the row names itself with its unit. Stroke-drawn at the text's own
  * dim weight, so they read as marks, not decoration. */
 
-/** Shutter speed: a stopwatch. */
-function ShutterIcon() {
-  return (
-    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="14" r="8" />
-      <path d="M12 10v4l2.8 2" />
-      <path d="M9 2h6" />
-      <path d="M12 2v4" />
-    </svg>
-  );
-}
-
-/** Aperture: the iris, six blades. */
-function ApertureIcon() {
-  return (
-    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
-      <line x1="9.69" y1="8" x2="21.17" y2="8" />
-      <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
-      <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
-      <line x1="14.31" y1="16" x2="2.83" y2="16" />
-      <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
-    </svg>
-  );
-}
-
 /**
  * The develop panel: white balance, tone and colour for the selected image,
  * with the histogram of what those settings actually produce.
@@ -100,15 +65,12 @@ export function DevelopPanel() {
   const setParam = useDevelopStore((s) => s.setParam);
   const setTemperature = useDevelopStore((s) => s.setTemperature);
   const setTint = useDevelopStore((s) => s.setTint);
-  const setOverlay = useDevelopStore((s) => s.setOverlay);
   const setPicking = useDevelopStore((s) => s.setPicking);
   const reset = useDevelopStore((s) => s.reset);
   const presets = useDevelopStore((s) => s.presets);
   const applyPreset = useDevelopStore((s) => s.applyPreset);
   const showDeviation = useDevelopStore((s) => s.showDeviation);
   const toggleDeviation = useDevelopStore((s) => s.toggleDeviation);
-  const gridlines = useDevelopStore((s) => s.gridlines);
-  const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
   const comparing = useDevelopStore((s) => s.comparing);
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
@@ -123,8 +85,6 @@ export function DevelopPanel() {
   const toggleStacking = useAppStore((s) => s.toggleStacking);
   const stackLead = useAppStore((s) => s.stackLead);
   const toggleStackLead = useAppStore((s) => s.toggleStackLead);
-  const caption = useDevelopStore((s) => s.caption);
-  const setCaption = useDevelopStore((s) => s.setCaption);
   // The set this photograph belongs to, from either side: the face fronts
   // it, a member sits inside it. The *outcome* — fused, and which frames
   // made it — comes from the session, because the backend ran the alignment.
@@ -160,7 +120,7 @@ export function DevelopPanel() {
   // holds more, this offers the first and the rest are reachable with
   // stacking off.
   const sibling = siblingsOf(allEntries, entry)[0] ?? null;
-  const { settings, info, overlay } = session;
+  const { settings, info } = session;
   const active = presetOf(settings, presets);
   const baseline = baselineOf(settings, presets);
   // A raw file opens with a look already on it, so "is this the identity edit"
@@ -171,99 +131,26 @@ export function DevelopPanel() {
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
-  // The shot: what the camera did. Most readings carry their own unit —
-  // "ISO 500", "+0.3 EV", "50 mm", "6048 × 4032" say what they are — so
-  // they get no label at all. The two bare numbers, shutter and aperture,
-  // wear a small icon each; the words live in the tooltips. EV always
-  // speaks, zero included: the compensation you *didn't* dial in is part
-  // of reading the frame.
-  const exif = allMeta[entry.path]?.exif ?? null;
-  const shotFacts: Array<{
-    key: string;
-    title: string;
-    icon: ReactNode;
-    text: string;
-  }> = [];
-  if (exif?.exposureTime != null) {
-    shotFacts.push({
-      key: "shutter",
-      title: "shutter speed",
-      icon: <ShutterIcon />,
-      text: formatShutter(exif.exposureTime),
-    });
-  }
-  if (exif?.fNumber != null) {
-    shotFacts.push({
-      key: "aperture",
-      title: "aperture",
-      icon: <ApertureIcon />,
-      text: formatAperture(exif.fNumber),
-    });
-  }
-  if (exif?.iso != null) {
-    shotFacts.push({ key: "iso", title: "sensitivity", icon: null, text: `ISO ${exif.iso}` });
-  }
-  if (exif?.exposureBias != null) {
-    shotFacts.push({
-      key: "ev",
-      title: "exposure compensation, as dialed on the camera",
-      icon: null,
-      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
-    });
-  }
-  if (exif?.focalLength != null) {
-    shotFacts.push({
-      key: "focal",
-      title: exif.lens ?? "focal length",
-      icon: null,
-      text: `${Math.round(exif.focalLength)} mm`,
-    });
-  }
-  shotFacts.push({
-    key: "frame",
-    title: "frame size in pixels",
-    icon: null,
-    text: `${info.width} × ${info.height}`,
-  });
-
   return (
     <div className="develop-panel">
-      <Group title="Shot">
-        <p className="develop-shot">
-          {shotFacts.map((fact) => (
-            <span key={fact.key} className="develop-shot-fact" title={fact.title}>
-              {fact.icon}
-              {fact.text}
-            </span>
-          ))}
-        </p>
-      </Group>
-      {/* First, because it is the one part of the panel that is picture
-          rather than controls: pixels you glance at while working. No switch
-          — the loupe costs nothing while you work, and folding the section
-          is already the way to put it away. Drag the photograph to aim it. */}
-      <Group title="Loupe">
-        <DevelopLoupe />
-      </Group>
-
-      <DevelopHistogram histogram={session.frame?.histogram ?? null} />
-
-      <div className="develop-status">
-        {/* An edit that appears to have vanished is alarming, so the panel
-            says which of the two you are looking at. The frame's size lives
-            with the other shot facts above. */}
-        <span>
-          {comparing ? "before" : ""}
-          {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
-        </span>
-        <button
-          className="develop-reset"
-          disabled={untouched}
-          onClick={() => void reset()}
-          title="Put every control back to what this image opened with"
-        >
-          reset
-        </button>
+      {/* The feedback instrument first, and pinned: the histogram must be
+          on screen while any slider below it drags. */}
+      <div className="develop-pinned">
+        <DevelopHistogram histogram={session.frame?.histogram ?? null} />
+        <div className="develop-status">
+          <span>
+            {comparing ? "before" : ""}
+            {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
+          </span>
+          <button
+            className="develop-reset"
+            disabled={untouched}
+            onClick={() => void reset()}
+            title="Put every control back to what this image opened with"
+          >
+            reset
+          </button>
+        </div>
       </div>
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
@@ -671,55 +558,6 @@ export function DevelopPanel() {
         )}
       </Group>
 
-      <Group title="View">
-        {/* Facts over the photograph. Three states, so the useful middle one
-            — say it on arrival, then get out of the way — is reachable. The
-            zoom lives on the bar above the picture, where the zooming is. */}
-        <div className="develop-switch">
-          <span className="develop-switch-label">caption</span>
-          {CAPTION_CYCLE.map((mode) => (
-            <button
-              key={mode}
-              className={caption === mode ? "develop-toggle on" : "develop-toggle"}
-              title={CAPTION_NOTES[mode]}
-              onClick={() => setCaption(mode)}
-            >
-              {CAPTION_LABELS[mode]}
-            </button>
-          ))}
-        </div>
-      </Group>
-
-      <Group title="Analysis">
-        {/* The overlays replace what the photograph looks like, so only one
-            can be on — which is why they share one row rather than having a
-            switch each. */}
-        <div className="develop-switch">
-          <span className="develop-switch-label">overlay</span>
-          {OVERLAY_CYCLE.map((mode) => (
-            <button
-              key={mode}
-              className={overlay === mode ? "develop-toggle on" : "develop-toggle"}
-              title={OVERLAY_NOTES[mode]}
-              onClick={() => setOverlay(mode)}
-            >
-              {OVERLAY_LABELS[mode]}
-            </button>
-          ))}
-        </div>
-        {/* Guides are geometry, not pixels: independent of the above, and free
-            to leave on while you work. One button, lit when the lines are up
-            — an "off" beside it would be a second name for the same fact. */}
-        <div className="develop-switch">
-          <span className="develop-switch-label">guides</span>
-          <button
-            className={gridlines ? "develop-toggle on" : "develop-toggle"}
-            onClick={toggleGridlines}
-          >
-            thirds
-          </button>
-        </div>
-      </Group>
     </div>
   );
 }

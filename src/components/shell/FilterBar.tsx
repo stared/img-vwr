@@ -7,6 +7,15 @@ import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../reg
 import { allSources } from "../../registry/sources";
 import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
+import {
+  CAPTION_CYCLE,
+  CAPTION_LABELS,
+  CAPTION_NOTES,
+  OVERLAY_CYCLE,
+  OVERLAY_LABELS,
+  OVERLAY_NOTES,
+  useDevelopStore,
+} from "../../state/develop";
 import { sceneGapLabel, sliderFromTau, tauFromSlider } from "../../state/scenes";
 import type { GalleryLayout, Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
@@ -77,6 +86,12 @@ function ViewKnobs({ layout }: { layout: GalleryLayout }) {
   const setTimelineOrientation = useAppStore((s) => s.setTimelineOrientation);
   const thumbPx = useAppStore((s) => s.timelineThumbPx);
   const setTimelineThumbPx = useAppStore((s) => s.setTimelineThumbPx);
+  const caption = useDevelopStore((s) => s.caption);
+  const setCaption = useDevelopStore((s) => s.setCaption);
+  const overlay = useDevelopStore((s) => s.session?.overlay ?? "none");
+  const setOverlay = useDevelopStore((s) => s.setOverlay);
+  const gridlines = useDevelopStore((s) => s.gridlines);
+  const toggleGridlines = useDevelopStore((s) => s.toggleGridlines);
 
   const columns = (
     <Slider
@@ -195,6 +210,29 @@ function ViewKnobs({ layout }: { layout: GalleryLayout }) {
             title="photo size — the time scale stays put"
             onChange={setTimelineThumbPx}
           />
+        </div>
+      );
+    case "darkroom":
+      return (
+        <div className="menu-knobs">
+          <span className="menu-section">caption</span>
+          {CAPTION_CYCLE.map((mode) => (
+            <button key={mode} title={CAPTION_NOTES[mode]} onClick={() => setCaption(mode)}>
+              <span>{CAPTION_LABELS[mode]}</span>
+              <span className="menu-check">{caption === mode ? "✓" : ""}</span>
+            </button>
+          ))}
+          <span className="menu-section">overlay</span>
+          {OVERLAY_CYCLE.map((mode) => (
+            <button key={mode} title={OVERLAY_NOTES[mode]} onClick={() => setOverlay(mode)}>
+              <span>{OVERLAY_LABELS[mode]}</span>
+              <span className="menu-check">{overlay === mode ? "✓" : ""}</span>
+            </button>
+          ))}
+          <button onClick={toggleGridlines}>
+            <span>thirds guides</span>
+            <span className="menu-check">{gridlines ? "✓" : ""}</span>
+          </button>
         </div>
       );
     default:
