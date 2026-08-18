@@ -235,7 +235,7 @@ export function PeoplePanel() {
     <div className="people-panel">
       {indexing && (
         <p className="panel-hint">
-          looking: {progress.done} / {progress.total}
+          looking for faces… {progress.done} of {progress.total} photographs
         </p>
       )}
       {!indexing && people !== null && people.length === 0 && (

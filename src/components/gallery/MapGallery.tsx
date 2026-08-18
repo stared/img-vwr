@@ -89,9 +89,13 @@ export function MapGallery() {
   return (
     <div className="map-gallery">
       <div ref={containerRef} className="map-canvas" />
-      <span className="map-note">
-        {located.length} of {entries.length} geolocated
-      </span>
+      {located.length === 0 ? (
+        <p className="map-empty">No photographs here carry a location.</p>
+      ) : (
+        <span className="map-note">
+          {located.length} of {entries.length} geolocated
+        </span>
+      )}
     </div>
   );
 }

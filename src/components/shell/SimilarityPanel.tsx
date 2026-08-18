@@ -17,11 +17,6 @@ export function SimilarityPanel() {
 
   return (
     <div className="similarity">
-      <p className="panel-hint">
-        Sort a folder by likeness — to an image, or to a phrase (sort: →
-        closest to…). A local model computes it; nothing leaves this machine.
-      </p>
-
       <div className="model-list">
         {models.map((model) => {
           const inFlight = busy && status.modelId === model.id;
@@ -40,7 +35,11 @@ export function SimilarityPanel() {
               key={model.id}
               className={`model-row${model.active ? " active" : ""}`}
               disabled={busy || model.active}
-              title={model.active ? `${model.label} is active` : `use ${model.label}`}
+              title={
+                model.active
+                  ? `${model.label} scores likeness for "closest to…" sorts — local, nothing leaves this machine`
+                  : `use ${model.label} for "closest to…" sorts — local, nothing leaves this machine`
+              }
               onClick={() => void embeddingSelect(model.id)}
             >
               <span className="model-name">
