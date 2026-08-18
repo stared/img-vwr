@@ -1789,9 +1789,18 @@ button.stats-row:hover .stats-label {
   letter-spacing: 0.04em;
 }
 
-.shot-camera {
+/* A marked line: the same dim mark + bright value rhythm as the grid. */
+.shot-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin: 0;
   padding: 0 12px;
+  min-width: 0;
+}
+
+.shot-foot .shot-row {
+  padding: 0;
 }
 
 .shot-line {
@@ -1804,7 +1813,6 @@ button.stats-row:hover .stats-label {
   display: flex;
   justify-content: space-between;
   padding: 0 12px;
-  color: var(--text-dim);
 }
 
 .develop-shot-fact {

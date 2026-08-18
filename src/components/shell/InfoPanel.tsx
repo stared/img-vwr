@@ -55,6 +55,49 @@ function FocalIcon() {
   );
 }
 
+/** Camera: the body, lens forward. */
+function CameraIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2.5" y="7" width="19" height="13" rx="2.5" />
+      <circle cx="12" cy="13.5" r="4" />
+      <path d="M8 7 L9.5 4.5 h5 L16 7" />
+    </svg>
+  );
+}
+
+/** Lens: the front element. */
+function LensIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" />
+    </svg>
+  );
+}
+
+/** Taken: a calendar page. */
+function TakenIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="16" rx="2" />
+      <path d="M3.5 10 h17" />
+      <path d="M8 2.5 v5" />
+      <path d="M16 2.5 v5" />
+    </svg>
+  );
+}
+
+/** File size: the file itself. */
+function FileIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 2.5 h8 l5 5 v14 h-13 z" />
+      <path d="M14 2.5 v5 h5" />
+    </svg>
+  );
+}
+
 interface ExifCell {
   key: string;
   title: string;
@@ -142,16 +185,32 @@ export function ShotPanel() {
           ))}
         </div>
       )}
-      {exif?.camera != null && <p className="shot-camera">{exif.camera}</p>}
-      {exif?.lens != null && <p className="shot-line">{exif.lens}</p>}
+      {exif?.camera != null && (
+        <p className="shot-row" title="camera">
+          <CameraIcon />
+          {exif.camera}
+        </p>
+      )}
+      {exif?.lens != null && (
+        <p className="shot-row" title="lens">
+          <LensIcon />
+          {exif.lens}
+        </p>
+      )}
       {grade !== "" && (
         <p className="shot-line" title="the camera's own per-shot grade">
           {grade}
         </p>
       )}
       <div className="shot-foot">
-        <span title="taken">{taken}</span>
-        <span title="file size">{formatBytes(entry.size)}</span>
+        <span className="shot-row" title="taken">
+          <TakenIcon />
+          {taken}
+        </span>
+        <span className="shot-row" title="file size">
+          <FileIcon />
+          {formatBytes(entry.size)}
+        </span>
       </div>
       {place !== "" && <p className="shot-line">{place}</p>}
     </div>
