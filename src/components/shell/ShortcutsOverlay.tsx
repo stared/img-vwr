@@ -19,7 +19,7 @@ const SECTIONS: { title: string; prefixes: string[] }[] = [
   { title: "Rate & tag", prefixes: ["labels"] },
   { title: "Develop", prefixes: ["develop"] },
   { title: "Find & filter", prefixes: ["filter"] },
-  { title: "App", prefixes: ["folder", "palette", "sidebar", "stats", "help"] },
+  { title: "App", prefixes: ["folder", "palette", "sidebar", "inspector", "help"] },
 ];
 /** Bindings whose prefix no section claims land at the end, unsorted-drawer
  * style, so a plugin's chords are never silently missing from the sheet. */

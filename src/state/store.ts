@@ -111,6 +111,8 @@ export interface AppState {
    * should look cropped everywhere it appears. Absent = whole frame. */
   crops: Record<string, Crop>;
   statsVisible: boolean;
+  /** Sidebar sections folded away, by panel id; absent = open. Persisted. */
+  panelFolds: Record<string, boolean>;
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
   galleryLayout: GalleryLayout;
@@ -311,6 +313,7 @@ interface AppActions {
   /** One photograph's crop changed in the darkroom; null = back to whole. */
   cropApplied: (path: string, crop: Crop | null) => void;
   toggleStats: () => void;
+  togglePanelFold: (id: string) => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
@@ -398,6 +401,7 @@ export const initialState: AppState = {
   labels: {},
   crops: {},
   statsVisible: true,
+  panelFolds: {},
   viewMode: "gallery",
   galleryLayout: "grid",
   timelineOrientation: "vertical",
@@ -971,6 +975,9 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   toggleStats: () => set({ statsVisible: !get().statsVisible }),
+
+  togglePanelFold: (id) =>
+    set((s) => ({ panelFolds: { ...s.panelFolds, [id]: !(s.panelFolds[id] ?? false) } })),
 
   // Held, because the darkroom collapses raw+JPEG pairs and the grid does
   // not: the list is a different length on either side of this.

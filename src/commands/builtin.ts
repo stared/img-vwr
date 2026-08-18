@@ -53,10 +53,11 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleSidebar(),
   });
 
+  // The whole right column, not just statistics.
   registerCommand({
-    id: "stats.toggle",
-    title: "Toggle Statistics",
-    keywords: ["histogram", "exif", "panel"],
+    id: "inspector.toggle",
+    title: "Toggle Inspector",
+    keywords: ["statistics", "histogram", "exif", "develop", "info", "right panel"],
     menus: [],
     run: ({ store }) => store.getState().toggleStats(),
   });

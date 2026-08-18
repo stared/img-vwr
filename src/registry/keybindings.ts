@@ -49,7 +49,7 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+p", "palette.open"],
   ["mod+o", "folder.open"],
   ["mod+b", "sidebar.toggle"],
-  ["mod+i", "stats.toggle"],
+  ["mod+i", "inspector.toggle"],
   ["f", "filter.find"],
   ["mod+f", "filter.find"],
   ["mod+a", "selection.all"],

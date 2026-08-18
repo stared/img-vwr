@@ -37,6 +37,7 @@ interface SavedSession {
   statsVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
+  panelFolds: Record<string, boolean>;
   sceneGapMin: number;
   sceneContentWeight: number;
   develop: {
@@ -66,6 +67,7 @@ function snapshot(): SavedSession {
     statsVisible: s.statsVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
+    panelFolds: s.panelFolds,
     sceneGapMin: s.sceneGapMin,
     sceneContentWeight: s.sceneContentWeight,
     develop: {
@@ -191,6 +193,14 @@ export function restoreSession(): boolean {
     statsVisible: isBool(o.statsVisible) ? o.statsVisible : app.statsVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,
+    panelFolds:
+      typeof o.panelFolds === "object" && o.panelFolds !== null
+        ? Object.fromEntries(
+            Object.entries(o.panelFolds as Record<string, unknown>).filter(
+              (pair): pair is [string, boolean] => isBool(pair[1]),
+            ),
+          )
+        : app.panelFolds,
     sceneGapMin: isNum(o.sceneGapMin) ? o.sceneGapMin : app.sceneGapMin,
     sceneContentWeight: isNum(o.sceneContentWeight)
       ? o.sceneContentWeight

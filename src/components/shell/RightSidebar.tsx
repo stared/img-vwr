@@ -1,3 +1,4 @@
+import { titleWithChord } from "../../registry/keybindings";
 import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
 import { PanelSection } from "./PanelSection";
@@ -13,7 +14,11 @@ export function RightSidebar() {
   if (!visible) {
     return (
       <aside className="sidebar right collapsed">
-        <button className="sidebar-toggle" title="Show statistics (⌘I)" onClick={toggleStats}>
+        <button
+          className="sidebar-toggle"
+          title={titleWithChord("show the inspector", "inspector.toggle")}
+          onClick={toggleStats}
+        >
           «
         </button>
       </aside>
@@ -30,7 +35,7 @@ export function RightSidebar() {
             i === 0 ? (
               <button
                 className="sidebar-toggle"
-                title="Hide statistics (⌘I)"
+                title={titleWithChord("hide the inspector", "inspector.toggle")}
                 onClick={toggleStats}
               >
                 »
