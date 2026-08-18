@@ -5,25 +5,17 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl, requestMeta, requestThumbnails } from "../../ipc";
 import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { parseNumber, Slider } from "../shell/Slider";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
 /**
- * The mosaic: the grid's photographs without the grid's empty space. Rows
- * are justified — every photograph keeps its own shape, scaled so each row
- * fills the width edge to edge — so the layout is all picture: no
- * letterboxing, no dead cell corners, no captions, and by default no gaps
- * either, a seamless wall of prints (the spacing slider adds air back for
- * whoever wants it). Names stay the grid's and the strip's job; here a
- * tooltip answers.
+ * The mosaic: the grid's photographs without the grid's empty space —
+ * justified rows or one-scale bands, no gaps, no captions (a tooltip
+ * answers for names). Its knobs live in the view chip's menu.
  */
 
 const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
-
-const ROW_MIN = 80;
-const ROW_MAX = 360;
 
 export function MosaicGallery() {
   const entries = useVisibleEntries();
@@ -34,9 +26,7 @@ export function MosaicGallery() {
   const meta = useAppStore((s) => s.meta);
   const crops = useAppStore((s) => s.crops);
   const rowPx = useAppStore((s) => s.mosaicRowPx);
-  const setRowPx = useAppStore((s) => s.setMosaicRowPx);
   const packing = useAppStore((s) => s.mosaicPacking);
-  const setPacking = useAppStore((s) => s.setMosaicPacking);
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -121,38 +111,6 @@ export function MosaicGallery() {
 
   return (
     <>
-      <div className="gallery-toolbar">
-        <Slider
-          label="row height"
-          value={rowPx}
-          neutral={ROW_MIN}
-          min={ROW_MIN}
-          max={ROW_MAX}
-          step={1}
-          display={`${rowPx} px`}
-          parse={parseNumber}
-          ticks={[]}
-          layout="inline"
-          title="how tall the rows aim to be — each row then fills the width exactly"
-          onChange={setRowPx}
-        />
-        <div className="develop-choices">
-          <button
-            className={packing === "order" ? "develop-choice on" : "develop-choice"}
-            title="The sort's own order, row by row; rows vary a little in scale to fill the width."
-            onClick={() => setPacking("order")}
-          >
-            as sorted
-          </button>
-          <button
-            className={packing === "packed" ? "develop-choice on" : "develop-choice"}
-            title="Every photograph at one scale: rows start in order but fill from the next few, so each comes out full without rescaling."
-            onClick={() => setPacking("packed")}
-          >
-            one scale
-          </button>
-        </div>
-      </div>
       {entries.length === 0 && <p className="hint">Nothing matches these filters.</p>}
       <div
         ref={scrollRef}

@@ -7,10 +7,13 @@ import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../reg
 import { allSources } from "../../registry/sources";
 import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
+import { sceneGapLabel, sliderFromTau, tauFromSlider } from "../../state/scenes";
 import type { GalleryLayout, Scope } from "../../state/store";
 import { useAppStore } from "../../state/store";
+import { maxColumnsFor } from "../gallery/GalleryGrid";
 import { ZoomBar } from "../viewer/ZoomBar";
 import { FormatMenuItems } from "./filterMenus";
+import { parseNumber, Slider } from "./Slider";
 
 /**
  * Every sort choice the current scope offers, from the sort registry — each
@@ -56,6 +59,148 @@ const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
   { layout: "map", hint: "geolocated" },
   { layout: "darkroom", hint: "one large, strip below" },
 ];
+
+/** The current view's knobs, at the bottom of the view chip's menu — the
+ * one home for per-view rendering parameters. */
+function ViewKnobs({ layout }: { layout: GalleryLayout }) {
+  const gridColumns = useAppStore((s) => s.gridColumns);
+  const setGridColumns = useAppStore((s) => s.setGridColumns);
+  const sceneGapMin = useAppStore((s) => s.sceneGapMin);
+  const setSceneGap = useAppStore((s) => s.setSceneGap);
+  const contentWeight = useAppStore((s) => s.sceneContentWeight);
+  const setContentWeight = useAppStore((s) => s.setSceneContentWeight);
+  const rowPx = useAppStore((s) => s.mosaicRowPx);
+  const setRowPx = useAppStore((s) => s.setMosaicRowPx);
+  const packing = useAppStore((s) => s.mosaicPacking);
+  const setPacking = useAppStore((s) => s.setMosaicPacking);
+  const orientation = useAppStore((s) => s.timelineOrientation);
+  const setTimelineOrientation = useAppStore((s) => s.setTimelineOrientation);
+  const thumbPx = useAppStore((s) => s.timelineThumbPx);
+  const setTimelineThumbPx = useAppStore((s) => s.setTimelineThumbPx);
+
+  const columns = (
+    <Slider
+      label="per row"
+      value={gridColumns}
+      neutral={2}
+      min={2}
+      max={maxColumnsFor(window.innerWidth)}
+      step={1}
+      display={`${gridColumns}`}
+      parse={parseNumber}
+      ticks={[]}
+      layout="inline"
+      title="how many photos fill a row"
+      onChange={setGridColumns}
+    />
+  );
+
+  switch (layout) {
+    case "grid":
+      return <div className="menu-knobs">{columns}</div>;
+    case "scenes":
+      return (
+        <div className="menu-knobs">
+          {columns}
+          <Slider
+            label="scene break"
+            value={sliderFromTau(sceneGapMin)}
+            neutral={0}
+            min={0}
+            max={1}
+            step={0.005}
+            display={sceneGapLabel(sceneGapMin)}
+            parse={(text) => {
+              const minutes = parseNumber(text);
+              return minutes === null ? null : sliderFromTau(minutes);
+            }}
+            ticks={[1, 5, 30, 60].map((minutes) => ({
+              at: sliderFromTau(minutes),
+              title: minutes < 60 ? `${minutes} min` : "an hour",
+            }))}
+            layout="inline"
+            title="how long a pause splits scenes — log scale, 30 s to an hour"
+            onChange={(x) => setSceneGap(tauFromSlider(x))}
+          />
+          <Slider
+            label="content"
+            value={contentWeight}
+            neutral={0}
+            min={0}
+            max={1}
+            step={0.01}
+            display={`${Math.round(contentWeight * 100)}%`}
+            parse={(text) => {
+              const percent = parseNumber(text);
+              return percent === null ? null : percent / 100;
+            }}
+            ticks={[{ at: 0.5, title: "the clock and the pictures, evenly" }]}
+            layout="inline"
+            title="how much the pictures outvote the clock at scene breaks"
+            onChange={setContentWeight}
+          />
+        </div>
+      );
+    case "mosaic":
+      return (
+        <div className="menu-knobs">
+          <Slider
+            label="row height"
+            value={rowPx}
+            neutral={80}
+            min={80}
+            max={360}
+            step={1}
+            display={`${rowPx} px`}
+            parse={parseNumber}
+            ticks={[]}
+            layout="inline"
+            title="how tall the rows aim to be"
+            onChange={setRowPx}
+          />
+          {(
+            [
+              { value: "order", label: "as sorted", hint: "rows vary a little in scale" },
+              { value: "packed", label: "one scale", hint: "reordered locally to fit" },
+            ] as const
+          ).map((row) => (
+            <button key={row.value} onClick={() => setPacking(row.value)}>
+              <span>{row.label}</span>
+              <span className="menu-hint">{row.hint}</span>
+              <span className="menu-check">{packing === row.value ? "✓" : ""}</span>
+            </button>
+          ))}
+        </div>
+      );
+    case "timeline":
+      return (
+        <div className="menu-knobs">
+          {(["vertical", "horizontal"] as const).map((o) => (
+            <button key={o} onClick={() => setTimelineOrientation(o)}>
+              <span>{o}</span>
+              <span className="menu-check">{orientation === o ? "✓" : ""}</span>
+            </button>
+          ))}
+          <Slider
+            label="size"
+            value={thumbPx}
+            neutral={80}
+            min={80}
+            max={400}
+            step={1}
+            display={`${thumbPx} px`}
+            parse={parseNumber}
+            ticks={[]}
+            layout="inline"
+            title="photo size — the time scale stays put"
+            onChange={setTimelineThumbPx}
+          />
+        </div>
+      );
+    default:
+      return null;
+  }
+}
 
 /** Right-side hint in the "+" menu, by field kind. */
 function fieldHint(field: FilterField): string {
@@ -545,6 +690,7 @@ export function FilterBar() {
                 </button>
               );
             })}
+            <ViewKnobs layout={galleryLayout} />
           </>
         )}
       />

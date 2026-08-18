@@ -4,7 +4,6 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl, requestThumbnails } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { parseNumber, Slider } from "../shell/Slider";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
@@ -27,7 +26,6 @@ const GUTTER = 76;
 const THUMB_SOURCE_EDGE = 256;
 const OVERSCAN_PX = 200;
 const REQUEST_DEBOUNCE_MS = 50;
-const THUMB_MIN = 80;
 
 interface TimedItem {
   entry: FileEntry;
@@ -43,9 +41,7 @@ export function TimelineGallery() {
   const meta = useAppStore((s) => s.meta);
   const epoch = useAppStore((s) => s.epoch);
   const vertical = useAppStore((s) => s.timelineOrientation === "vertical");
-  const setTimelineOrientation = useAppStore((s) => s.setTimelineOrientation);
   const thumbPref = useAppStore((s) => s.timelineThumbPx);
-  const setTimelineThumbPx = useAppStore((s) => s.setTimelineThumbPx);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ main: 0, cross: 0 });
@@ -66,10 +62,9 @@ export function TimelineGallery() {
   );
   const tMin = timed[0]?.t ?? 0;
   const tMax = timed[timed.length - 1]?.t ?? 0;
-  const takenCount = useMemo(() => timed.reduce((n, i) => n + (i.taken ? 1 : 0), 0), [timed]);
 
-  // A new scope starts back at the full range.
-  useEffect(() => setWin(null), [epoch]);
+  // A new scope, or a rotated axis, starts back at the full range.
+  useEffect(() => setWin(null), [epoch, vertical]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -199,39 +194,15 @@ export function TimelineGallery() {
 
   return (
     <div className={`timeline-gallery ${vertical ? "vertical" : "horizontal"}`}>
-      <div className="tl-toolbar">
+      {win !== null && (
         <button
-          title={`switch to ${vertical ? "horizontal" : "vertical"}`}
-          onClick={() => {
-            setTimelineOrientation(vertical ? "horizontal" : "vertical");
-            setWin(null); // the axis length changed; refit
-          }}
+          className="tl-fit"
+          title="zoom out to the whole time range — ⌘ scroll zooms, drag pans"
+          onClick={() => setWin(null)}
         >
-          {vertical ? "vertical" : "horizontal"}
-        </button>
-        <Slider
-          label="size"
-          value={thumb}
-          neutral={THUMB_MIN}
-          min={THUMB_MIN}
-          max={thumbMax}
-          step={1}
-          display={`${thumb} px`}
-          parse={parseNumber}
-          ticks={[]}
-          layout="inline"
-          title="photo size — the time scale stays put"
-          onChange={setTimelineThumbPx}
-        />
-        <button className="tl-fit" title="zoom out to the whole time range" onClick={() => setWin(null)}>
           show all
         </button>
-        <span className="tl-note">
-          {timed.length} on the timeline
-          {takenCount < timed.length && ` · ${timed.length - takenCount} by modified date`}
-          {" · ⌘ scroll zooms"}
-        </span>
-      </div>
+      )}
       <div
         ref={scrollRef}
         className="tl-scroll"

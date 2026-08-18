@@ -2,16 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { requestMeta, requestThumbnails } from "../../ipc";
-import {
-  groupScenes,
-  sceneGapLabel,
-  sceneLabel,
-  sliderFromTau,
-  tauFromSlider,
-  type Scene,
-} from "../../state/scenes";
+import { groupScenes, sceneLabel, type Scene } from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
-import { parseNumber, Slider } from "../shell/Slider";
 import { ThumbCell } from "./ThumbCell";
 
 const CELL_GAP = 8;
@@ -110,11 +102,8 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const remote = useAppStore((s) => s.scope?.kind === "source");
   const allEntries = useAppStore((s) => s.entries);
   const preferredColumns = useAppStore((s) => s.gridColumns);
-  const setGridColumns = useAppStore((s) => s.setGridColumns);
   const sceneGapMin = useAppStore((s) => s.sceneGapMin);
-  const setSceneGap = useAppStore((s) => s.setSceneGap);
   const contentWeight = useAppStore((s) => s.sceneContentWeight);
-  const setContentWeight = useAppStore((s) => s.setSceneContentWeight);
   // Subscribed only in the scenes view — metadata streams in by the
   // hundreds, and a plain contact sheet has no business re-rendering for it.
   const meta = useAppStore((s) => (grouped ? s.meta : null));
@@ -231,65 +220,6 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
 
   return (
     <>
-      <div className="gallery-toolbar">
-        {grouped && (
-          <Slider
-            label="scene break"
-            value={sliderFromTau(sceneGapMin)}
-            neutral={0}
-            min={0}
-            max={1}
-            step={0.005}
-            display={sceneGapLabel(sceneGapMin)}
-            // The track is a log scale, so a typed "5" is five minutes, not
-            // five along the track.
-            parse={(text) => {
-              const minutes = parseNumber(text);
-              return minutes === null ? null : sliderFromTau(minutes);
-            }}
-            ticks={[1, 5, 30, 60].map((minutes) => ({
-              at: sliderFromTau(minutes),
-              title: minutes < 60 ? `${minutes} min` : "an hour",
-            }))}
-            layout="inline"
-            title="the feel of a scene break: the longer a pause, the less the pictures need to change — log scale, 30 s to an hour"
-            onChange={(x) => setSceneGap(tauFromSlider(x))}
-          />
-        )}
-        {grouped && (
-          <Slider
-            label="content"
-            value={contentWeight}
-            neutral={0}
-            min={0}
-            max={1}
-            step={0.01}
-            display={`${Math.round(contentWeight * 100)}%`}
-            parse={(text) => {
-              const percent = parseNumber(text);
-              return percent === null ? null : percent / 100;
-            }}
-            ticks={[{ at: 0.5, title: "the clock and the pictures, evenly" }]}
-            layout="inline"
-            title="how much the pictures outvote the clock: at 0% a pause over the time splits and nothing else does; at 100% the content decides how a pause reads"
-            onChange={setContentWeight}
-          />
-        )}
-        <Slider
-          label="per row"
-          value={columns}
-          neutral={MIN_COLUMNS}
-          min={MIN_COLUMNS}
-          max={maxColumns}
-          step={1}
-          display={`${columns}`}
-          parse={parseNumber}
-          ticks={[]}
-          layout="inline"
-          title="how many photos fill a row"
-          onChange={setGridColumns}
-        />
-      </div>
       {entries.length === 0 && <p className="hint">Nothing matches these filters.</p>}
       <div
         ref={scrollRef}

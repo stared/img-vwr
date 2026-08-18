@@ -935,6 +935,35 @@ button.stats-row:hover .stats-label {
   background: var(--border);
 }
 
+/* The current view's knobs, below the view rows. */
+.menu-knobs {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.menu-knobs .slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.menu-knobs .slider-label {
+  flex: 0 0 76px;
+}
+
+.menu-knobs .slider-track {
+  flex: 1 1 auto;
+  min-width: 90px;
+}
+
+.menu-knobs .slider-value {
+  flex: 0 0 48px;
+}
+
 .filter-menu button:hover .menu-check {
   color: rgba(255, 255, 255, 0.8);
 }
@@ -1378,105 +1407,27 @@ button.stats-row:hover .stats-label {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
-.tl-toolbar,
-.gallery-toolbar {
-  display: flex;
-  align-items: center;
-  /* Wraps rather than overflowing: the scenes view puts three sliders on this
-     row, and a sidebar can take the width for a fourth of it at any moment.
-     A control that has slid off the edge is a control that is gone. */
-  flex-wrap: wrap;
-  gap: 4px 4px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.tl-toolbar button,
-.gallery-toolbar button {
+/* Zoomed in, the timeline floats its way back out over the pane. */
+.tl-fit {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 2;
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: transparent;
+  background: var(--bg-overlay);
   color: var(--text);
   font-size: 12px;
   cursor: pointer;
 }
 
-.tl-toolbar button:hover,
-.gallery-toolbar button:hover {
+.tl-fit:hover {
   border-color: var(--accent);
-}
-
-/* The scenes view's time-constant options: one click each, the active one
-   marked — never a control that cycles values under the pointer. */
-.gallery-toolbar button.active {
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-
-/* Toolbar sliders are a fixed width so several in a row line up with each
-   other rather than each taking whatever its label left over. */
-.gallery-toolbar .slider,
-.tl-toolbar .slider {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 8px;
-  padding: 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-/* And a fixed label column, so the tracks start together as well as ending
-   together once the row has wrapped and the sliders are stacked. Fixed, not a
-   minimum: a label one pixel wider than the minimum pushes its own track a
-   pixel right of the one above it. */
-.gallery-toolbar .slider-label {
-  flex: 0 0 76px;
-}
-
-/* Equal share, equal track: the sliders themselves grow evenly, so three of
-   them on one line get the same width as each other and one of them on a line
-   of its own fills it — which is the only way the thumbs mean the same thing
-   at the same distance along, whichever way the row has wrapped. */
-.gallery-toolbar .slider {
-  flex: 1 1 260px;
-}
-
-.gallery-toolbar .slider-track,
-.tl-toolbar .slider-track {
-  flex: 1 1 auto;
-  min-width: 64px;
-}
-
-.tl-toolbar .slider {
-  flex: 0 0 auto;
-}
-
-.tl-toolbar .slider-track {
-  flex: 0 0 110px;
-}
-
-/* ...and the value gets a column of its own, so a label does not slide left
-   and right as the number beside it changes width. */
-/* Fixed, for the same reason the export sheet's is: a value sized to its own
-   text takes the difference out of the track beside it. */
-.gallery-toolbar .slider-value,
-.tl-toolbar .slider-value {
-  flex: 0 0 54px;
-}
-
-.tl-fit {
-  margin-left: 8px;
-}
-
-.tl-note {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: 12px;
 }
 
 .tl-scroll {
