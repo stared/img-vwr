@@ -1745,16 +1745,39 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
-/* Caption lines: one thought per line, composed to fit the column —
-   never truncated. The exposure rows read bright, the rest dim. */
 .shot-panel {
   padding: 0 0 8px;
   font-size: 12px;
   line-height: 1.6;
 }
 
-.shot-panel .develop-shot,
 .shot-panel .info-rating {
+  padding: 0 12px;
+}
+
+/* Exposure values in hairline cells: the grid separates them, no
+   punctuation. Six tracks, so rows of 3 and 2 cells divide evenly. */
+.exif-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  margin: 2px 12px 8px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.exif-cell {
+  padding: 4px 2px;
+  background: var(--bg);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.shot-camera {
+  margin: 0;
   padding: 0 12px;
 }
 
@@ -1764,10 +1787,11 @@ button.stats-row:hover .stats-label {
   color: var(--text-dim);
 }
 
-.shot-line.bright {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 3px;
+.shot-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  color: var(--text-dim);
 }
 
 .develop-shot-fact {

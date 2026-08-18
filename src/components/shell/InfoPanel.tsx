@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
@@ -17,38 +17,30 @@ import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
 const STATS_DEBOUNCE_MS = 150;
 
-/** Shutter speed: a stopwatch. */
-function ShutterIcon() {
-  return (
-    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="14" r="8" />
-      <path d="M12 10v4l2.8 2" />
-      <path d="M9 2h6" />
-      <path d="M12 2v4" />
-    </svg>
-  );
+interface ExifCell {
+  key: string;
+  title: string;
+  text: string;
 }
 
-/** Aperture: the iris, six blades. */
-function ApertureIcon() {
-  return (
-    <svg className="develop-shot-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
-      <line x1="9.69" y1="8" x2="21.17" y2="8" />
-      <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
-      <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
-      <line x1="14.31" y1="16" x2="2.83" y2="16" />
-      <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
-    </svg>
-  );
+/** One strip row: equal hairline cells over a six-track grid. */
+function StripRow({ cells }: { cells: ExifCell[] }) {
+  return cells.map((cell) => (
+    <span
+      key={cell.key}
+      className="exif-cell"
+      style={{ gridColumn: `span ${6 / cells.length}` }}
+      title={cell.title}
+    >
+      {cell.text}
+    </span>
+  ));
 }
 
 /**
- * The shot as a photographer states it: an exposure line (shutter and
- * aperture wear a small icon each; EV speaks even at zero), then one dim
- * line each for gear, the camera's grade, and the file. No label columns —
- * these read as caption lines, not a form.
+ * The shot: exposure values in a hairline strip — layout is the delimiter,
+ * not punctuation — then camera and lens as their own lines, and when/size
+ * holding the corners of the footer line. One typeface, one size.
  */
 export function ShotPanel() {
   const entry = useSelectedEntry();
@@ -56,69 +48,44 @@ export function ShotPanel() {
   if (!entry) return null;
 
   const exif = meta?.exif ?? null;
-  const facts: Array<{ key: string; title: string; icon: ReactNode; text: string }> = [];
+  const triangle: ExifCell[] = [];
   if (exif?.exposureTime != null) {
-    facts.push({
-      key: "shutter",
-      title: "shutter speed",
-      icon: <ShutterIcon />,
-      text: formatShutter(exif.exposureTime),
-    });
+    triangle.push({ key: "shutter", title: "shutter speed", text: formatShutter(exif.exposureTime) });
   }
   if (exif?.fNumber != null) {
-    facts.push({
-      key: "aperture",
-      title: "aperture",
-      icon: <ApertureIcon />,
-      text: formatAperture(exif.fNumber),
-    });
+    triangle.push({ key: "aperture", title: "aperture", text: formatAperture(exif.fNumber) });
   }
   if (exif?.iso != null) {
-    facts.push({ key: "iso", title: "sensitivity", icon: null, text: `ISO ${exif.iso}` });
+    triangle.push({ key: "iso", title: "sensitivity", text: `ISO ${exif.iso}` });
   }
-  if (exif?.exposureBias != null) {
-    facts.push({
-      key: "ev",
-      title: "exposure compensation, as dialed on the camera",
-      icon: null,
-      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
-    });
-  }
+  const framing: ExifCell[] = [];
   if (exif?.focalLength != null) {
-    facts.push({
+    framing.push({
       key: "focal",
-      title: exif.lens ?? "focal length",
-      icon: null,
+      title: "focal length",
       text: `${Math.round(exif.focalLength)} mm`,
     });
   }
+  if (exif?.exposureBias != null) {
+    framing.push({
+      key: "ev",
+      title: "exposure compensation, as dialed on the camera",
+      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
+    });
+  }
 
-  // Two deliberate rows sized to the column: the exposure triangle, then
-  // focal length and EV. Letting one row wrap strands an orphan token.
-  const triangle = facts.filter((f) => ["shutter", "aperture", "iso"].includes(f.key));
-  const framing = ["focal", "ev"]
-    .map((key) => facts.find((f) => f.key === key)?.text)
-    .filter((text): text is string => text !== undefined)
-    .join(" · ");
-  const gear = [exif?.camera, exif?.lens].filter(Boolean).join(" · ");
   const grade = meta?.grade
     ? [
         meta.grade.contrast !== 0 ? `contrast ${formatSigned(meta.grade.contrast)}` : "",
-        meta.grade.saturation !== 0 ? `sat ${formatSigned(meta.grade.saturation)}` : "",
+        meta.grade.saturation !== 0 ? `saturation ${formatSigned(meta.grade.saturation)}` : "",
         meta.grade.clarity !== 0 ? `clarity ${formatSigned(meta.grade.clarity)}` : "",
         meta.grade.texture !== 0 ? `texture ${formatSigned(meta.grade.texture)}` : "",
       ]
         .filter(Boolean)
-        .join(" · ")
+        .join(", ")
     : "";
-  // Dimensions live in the status bar; repeating them here would push this
-  // line past the column. To the minute — seconds earn nothing.
-  const file = [
-    (exif?.dateTime ?? new Date(entry.modifiedMs).toLocaleString()).slice(0, 16),
-    formatBytes(entry.size),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // To the minute; dimensions live in the status bar.
+  const taken = (exif?.dateTime ?? new Date(entry.modifiedMs).toLocaleString()).slice(0, 16);
   const place =
     exif?.gpsLat != null && exif?.gpsLon != null
       ? `${exif.gpsLat.toFixed(5)}, ${exif.gpsLon.toFixed(5)}`
@@ -126,26 +93,23 @@ export function ShotPanel() {
 
   return (
     <div className="shot-panel">
-      {triangle.length > 0 && (
-        <p className="develop-shot">
-          {triangle.map((fact) => (
-            <span key={fact.key} className="develop-shot-fact" title={fact.title}>
-              {fact.icon}
-              {fact.text}
-            </span>
-          ))}
-        </p>
+      {(triangle.length > 0 || framing.length > 0) && (
+        <div className="exif-strip">
+          <StripRow cells={triangle} />
+          <StripRow cells={framing} />
+        </div>
       )}
-      {framing !== "" && <p className="shot-line bright">{framing}</p>}
-      {gear !== "" && <p className="shot-line">{gear}</p>}
+      {exif?.camera != null && <p className="shot-camera">{exif.camera}</p>}
+      {exif?.lens != null && <p className="shot-line">{exif.lens}</p>}
       {grade !== "" && (
         <p className="shot-line" title="the camera's own per-shot grade">
           {grade}
         </p>
       )}
-      <p className="shot-line" title="taken · file size">
-        {file}
-      </p>
+      <div className="shot-foot">
+        <span title="taken">{taken}</span>
+        <span title="file size">{formatBytes(entry.size)}</span>
+      </div>
       {place !== "" && <p className="shot-line">{place}</p>}
     </div>
   );
