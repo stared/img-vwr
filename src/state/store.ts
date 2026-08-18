@@ -113,6 +113,9 @@ export interface AppState {
   statsVisible: boolean;
   /** Sidebar sections folded away, by panel id; absent = open. Persisted. */
   panelFolds: Record<string, boolean>;
+  /** Right-column section order, panel ids; unknown ids keep registration
+   * order after these. Persisted. */
+  panelOrder: string[];
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
   galleryLayout: GalleryLayout;
@@ -314,6 +317,7 @@ interface AppActions {
   cropApplied: (path: string, crop: Crop | null) => void;
   toggleStats: () => void;
   togglePanelFold: (id: string) => void;
+  setPanelOrder: (order: string[]) => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
@@ -402,6 +406,7 @@ export const initialState: AppState = {
   crops: {},
   statsVisible: true,
   panelFolds: {},
+  panelOrder: [],
   viewMode: "gallery",
   galleryLayout: "grid",
   timelineOrientation: "vertical",
@@ -978,6 +983,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   togglePanelFold: (id) =>
     set((s) => ({ panelFolds: { ...s.panelFolds, [id]: !(s.panelFolds[id] ?? false) } })),
+
+  setPanelOrder: (panelOrder) => set({ panelOrder }),
 
   // Held, because the darkroom collapses raw+JPEG pairs and the grid does
   // not: the list is a different length on either side of this.

@@ -38,6 +38,7 @@ interface SavedSession {
   sidebarVisible: boolean;
   activePanelId: string;
   panelFolds: Record<string, boolean>;
+  panelOrder: string[];
   sceneGapMin: number;
   sceneContentWeight: number;
   develop: {
@@ -68,6 +69,7 @@ function snapshot(): SavedSession {
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
     panelFolds: s.panelFolds,
+    panelOrder: s.panelOrder,
     sceneGapMin: s.sceneGapMin,
     sceneContentWeight: s.sceneContentWeight,
     develop: {
@@ -201,6 +203,10 @@ export function restoreSession(): boolean {
             ),
           )
         : app.panelFolds,
+    panelOrder:
+      Array.isArray(o.panelOrder) && o.panelOrder.every(isString)
+        ? o.panelOrder
+        : app.panelOrder,
     sceneGapMin: isNum(o.sceneGapMin) ? o.sceneGapMin : app.sceneGapMin,
     sceneContentWeight: isNum(o.sceneContentWeight)
       ? o.sceneContentWeight

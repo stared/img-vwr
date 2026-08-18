@@ -19,7 +19,6 @@ import {
   useDevelopStore,
   type ParamSpec,
 } from "../../state/develop";
-import { DevelopHistogram } from "./DevelopHistogram";
 
 /**
  * A section of the panel, folded and unfolded by its own heading — the same
@@ -83,8 +82,6 @@ export function DevelopPanel() {
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
   const toggleStacking = useAppStore((s) => s.toggleStacking);
-  const stackLead = useAppStore((s) => s.stackLead);
-  const toggleStackLead = useAppStore((s) => s.toggleStackLead);
   // The set this photograph belongs to, from either side: the face fronts
   // it, a member sits inside it. The *outcome* — fused, and which frames
   // made it — comes from the session, because the backend ran the alignment.
@@ -133,24 +130,19 @@ export function DevelopPanel() {
 
   return (
     <div className="develop-panel">
-      {/* The feedback instrument first, and pinned: the histogram must be
-          on screen while any slider below it drags. */}
-      <div className="develop-pinned">
-        <DevelopHistogram histogram={session.frame?.histogram ?? null} />
-        <div className="develop-status">
-          <span>
-            {comparing ? "before" : ""}
-            {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
-          </span>
-          <button
-            className="develop-reset"
-            disabled={untouched}
-            onClick={() => void reset()}
-            title="Put every control back to what this image opened with"
-          >
-            reset
-          </button>
-        </div>
+      <div className="develop-status">
+        <span>
+          {comparing ? "before" : ""}
+          {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
+        </span>
+        <button
+          className="develop-reset"
+          disabled={untouched}
+          onClick={() => void reset()}
+          title="Put every control back to what this image opened with"
+        >
+          reset
+        </button>
       </div>
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
@@ -297,52 +289,34 @@ export function DevelopPanel() {
         );
       })()}
 
-      {/* The other file of a pair, named rather than implied. Clicking swaps
-          which one the stack shows, so the choice is per photograph — usually
-          that the camera got this particular frame right. */}
+      {/* One grammar for the pair: which file this photograph shows and
+          edits, and whether pairs collapse at all. */}
       {sibling && (
-        <button className="develop-toggle" onClick={() => preferMember(sibling.path)}>
-          also shot: {sibling.formatHint.toUpperCase()}
-        </button>
+        <div className="develop-switch" title="which file this photograph shows and edits">
+          <span className="develop-switch-label">show</span>
+          <button className="develop-toggle on">{entry.formatHint.toUpperCase()}</button>
+          <button className="develop-toggle" onClick={() => preferMember(sibling.path)}>
+            {sibling.formatHint.toUpperCase()}
+          </button>
+        </div>
       )}
-      {/* And whether a pair is one photograph or two files at all. It lives
-          here rather than over the grid because it is a darkroom rule: the
-          grid always lists every file the camera wrote. Both options on
-          show, the active one marked — no mystery cycling. */}
       {hasStacks && (
-        <div className="develop-switch">
+        <div
+          className="develop-switch"
+          title="a raw and the JPG shot beside it: one photograph here and in the viewer, or every file on its own"
+        >
           <span className="develop-switch-label">raw + JPG</span>
           <button
             className={stacking ? "develop-toggle on" : "develop-toggle"}
             onClick={() => !stacking && toggleStacking()}
           >
-            one photograph
+            as one
           </button>
           <button
             className={stacking ? "develop-toggle" : "develop-toggle on"}
             onClick={() => stacking && toggleStacking()}
           >
-            two files
-          </button>
-        </div>
-      )}
-      {hasStacks && stacking && (
-        <div
-          className="develop-switch"
-          title="which of a pair stands for the photograph when you haven't picked one"
-        >
-          <span className="develop-switch-label">stack shows</span>
-          <button
-            className={stackLead === "jpg" ? "develop-toggle on" : "develop-toggle"}
-            onClick={() => stackLead !== "jpg" && toggleStackLead()}
-          >
-            JPG
-          </button>
-          <button
-            className={stackLead === "raw" ? "develop-toggle on" : "develop-toggle"}
-            onClick={() => stackLead !== "raw" && toggleStackLead()}
-          >
-            raw
+            apart
           </button>
         </div>
       )}

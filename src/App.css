@@ -217,6 +217,31 @@ kbd {
   padding: 6px 6px 4px 8px;
 }
 
+/* Reorder handles: present on hover, so the header stays quiet. */
+.panel-move {
+  display: flex;
+  margin-left: auto;
+  opacity: 0;
+}
+
+.sidebar-panel header:hover .panel-move {
+  opacity: 1;
+}
+
+.panel-move button {
+  padding: 0 3px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.panel-move button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.panel-move button:disabled {
+  opacity: 0.3;
+}
+
 .panel-toggle {
   display: flex;
   align-items: center;
@@ -1601,14 +1626,6 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
-/* The histogram stays on screen while the sliders below it drag. */
-.develop-pinned {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--bg);
-}
-
 .develop-status {
   display: flex;
   align-items: center;
@@ -1709,6 +1726,26 @@ button.stats-row:hover .stats-label {
   padding: 0 8px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
+}
+
+/* Caption lines under the exposure row: one thought per line, dim. */
+.shot-panel {
+  padding: 0 0 8px;
+  font-size: 12px;
+}
+
+.shot-panel .develop-shot,
+.shot-panel .info-rating {
+  padding: 0 12px;
+}
+
+.shot-line {
+  margin: 0 0 2px;
+  padding: 0 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .develop-shot-fact {

@@ -8,10 +8,11 @@ import { registerDevelopCommands } from "./commands/develop";
 import { registerSceneCommands } from "./commands/scenes";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
+import { DevelopLoupe } from "./components/develop/DevelopLoupe";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
-import { InfoPanel } from "./components/shell/InfoPanel";
+import { ColorsPanel, HistogramPanel, LabelsPanel, ShotPanel } from "./components/shell/InfoPanel";
 import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
@@ -22,6 +23,7 @@ import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
 import { registerLabels } from "./labels";
 import { registerThumbCrops } from "./state/thumbCrops";
+import { useDevelopStore } from "./state/develop";
 import { useAppStore } from "./state/store";
 import { PeoplePanel, registerPeople } from "./people";
 import { registerSimilarity } from "./similarity";
@@ -66,8 +68,20 @@ registerPanel({
   icon: <SimilarityIcon />,
 });
 registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
-// Developing is the darkroom's (and the viewer's) work; in the grid the
-// right bar describes the photograph instead.
+// The right column: flat sections, each collapsible and reorderable —
+// registration order is the default order. Develop shows only where
+// developing happens (darkroom, viewer).
+const selected = () => useAppStore.getState().selectedIndex !== null;
+const inSession = () => useDevelopStore.getState().session !== null;
+registerPanel({ id: "shot", title: "Shot", component: ShotPanel, side: "right", when: selected });
+registerPanel({ id: "loupe", title: "Loupe", component: DevelopLoupe, side: "right", when: inSession });
+registerPanel({
+  id: "histogram",
+  title: "Histogram",
+  component: HistogramPanel,
+  side: "right",
+  when: inSession,
+});
 registerPanel({
   id: "develop",
   title: "Develop",
@@ -78,7 +92,8 @@ registerPanel({
     return s.galleryLayout === "darkroom" || s.viewMode === "viewer";
   },
 });
-registerPanel({ id: "info", title: "Image", component: InfoPanel, side: "right" });
+registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
+registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
 // Every left panel is reachable from the palette, like VS Code's view commands.
 for (const panel of allPanels()) {
