@@ -23,24 +23,11 @@ interface ExifCell {
   text: string;
 }
 
-/** One strip row: equal hairline cells over a six-track grid. */
-function StripRow({ cells }: { cells: ExifCell[] }) {
-  return cells.map((cell) => (
-    <span
-      key={cell.key}
-      className="exif-cell"
-      style={{ gridColumn: `span ${6 / cells.length}` }}
-      title={cell.title}
-    >
-      {cell.text}
-    </span>
-  ));
-}
-
 /**
- * The shot: exposure values in a hairline strip — layout is the delimiter,
- * not punctuation — then camera and lens as their own lines, and when/size
- * holding the corners of the footer line. One typeface, one size.
+ * The shot: exposure values on an invisible three-column grid — aligned
+ * whitespace separates them, no punctuation, and no borders that would
+ * dress data as buttons. Camera bright over lens dim; taken and size hold
+ * the footer's corners. One typeface, one size.
  */
 export function ShotPanel() {
   const entry = useSelectedEntry();
@@ -95,8 +82,11 @@ export function ShotPanel() {
     <div className="shot-panel">
       {(triangle.length > 0 || framing.length > 0) && (
         <div className="exif-strip">
-          <StripRow cells={triangle} />
-          <StripRow cells={framing} />
+          {[...triangle, ...framing].map((cell) => (
+            <span key={cell.key} className="exif-cell" title={cell.title}>
+              {cell.text}
+            </span>
+          ))}
         </div>
       )}
       {exif?.camera != null && <p className="shot-camera">{exif.camera}</p>}

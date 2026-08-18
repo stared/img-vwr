@@ -1755,23 +1755,17 @@ button.stats-row:hover .stats-label {
   padding: 0 12px;
 }
 
-/* Exposure values in hairline cells: the grid separates them, no
-   punctuation. Six tracks, so rows of 3 and 2 cells divide evenly. */
+/* Exposure values on an invisible three-column grid: aligned whitespace
+   separates them — no punctuation, and no borders that would dress data
+   as buttons. */
 .exif-strip {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 1px;
-  margin: 2px 12px 8px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px 10px;
+  margin: 0 12px 6px;
 }
 
 .exif-cell {
-  padding: 4px 2px;
-  background: var(--bg);
-  text-align: center;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
