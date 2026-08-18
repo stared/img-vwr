@@ -2,7 +2,8 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { hdrLabel } from "../../state/hdr";
-import { hdrOf, selectMode, useAppStore } from "../../state/store";
+import { pairedName, siblingsOf } from "../../state/stacks";
+import { hdrOf, selectMode, stacksCollapse, useAppStore } from "../../state/store";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 interface ThumbCellProps {
@@ -28,6 +29,14 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const crop = useAppStore((s) => s.crops[entry.path]);
   const meta = useAppStore((s) => s.meta[entry.path]);
   const dims = meta === undefined ? null : effectiveDims(meta);
+  // Where this view collapses stacks (scenes), a cell stands for every file
+  // of its photograph and says so — the filmstrip and status bar's rule.
+  // The grid lists each file on its own, so there the file's name is right.
+  const caption = useAppStore((s) =>
+    stacksCollapse(s)
+      ? pairedName(entry, siblingsOf(s.entries, entry, hdrOf(s).keyByStack))
+      : entry.name,
+  );
 
   return (
     <figure
@@ -71,10 +80,7 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
           <span className="thumb-pending" />
         )}
       </div>
-      {/* The file, named. The grid lists every file the camera wrote — a raw
-          and its JPEG are two cells here, and the darkroom is where they
-          become one photograph. */}
-      <figcaption title={entry.path}>{entry.name}</figcaption>
+      <figcaption title={entry.path}>{caption}</figcaption>
     </figure>
   );
 }
