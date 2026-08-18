@@ -7,7 +7,10 @@ import { PanelSection } from "./PanelSection";
 export function RightSidebar() {
   const visible = useAppStore((s) => s.statsVisible);
   const toggleStats = useAppStore((s) => s.toggleStats);
-  const panels = allPanels("right");
+  // `when` guards read these; subscribing keeps the panel set current.
+  useAppStore((s) => s.galleryLayout);
+  useAppStore((s) => s.viewMode);
+  const panels = allPanels("right").filter((p) => p.when?.() ?? true);
 
   if (panels.length === 0) return null;
 

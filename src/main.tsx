@@ -22,6 +22,7 @@ import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
 import { registerLabels } from "./labels";
 import { registerThumbCrops } from "./state/thumbCrops";
+import { useAppStore } from "./state/store";
 import { PeoplePanel, registerPeople } from "./people";
 import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
@@ -65,7 +66,18 @@ registerPanel({
   icon: <SimilarityIcon />,
 });
 registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
-registerPanel({ id: "develop", title: "Develop", component: DevelopPanel, side: "right" });
+// Developing is the darkroom's (and the viewer's) work; in the grid the
+// right bar describes the photograph instead.
+registerPanel({
+  id: "develop",
+  title: "Develop",
+  component: DevelopPanel,
+  side: "right",
+  when: () => {
+    const s = useAppStore.getState();
+    return s.galleryLayout === "darkroom" || s.viewMode === "viewer";
+  },
+});
 registerPanel({ id: "info", title: "Image", component: InfoPanel, side: "right" });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
 // Every left panel is reachable from the palette, like VS Code's view commands.

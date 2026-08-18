@@ -17,6 +17,8 @@ export interface Panel {
   side?: PanelSide;
   /** Take the remaining sidebar height and scroll internally. */
   fill?: boolean;
+  /** Renders only while true; absent = always. */
+  when?: () => boolean;
 }
 
 const registry = new Map<string, Panel>();

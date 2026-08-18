@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { parseNumber, Slider } from "../shell/Slider";
@@ -97,8 +97,6 @@ export function DevelopPanel() {
   const opening = useDevelopStore((s) => s.opening);
   const original = useDevelopStore((s) => s.original);
   const setOriginal = useDevelopStore((s) => s.setOriginal);
-  const open = useDevelopStore((s) => s.open);
-  const close = useDevelopStore((s) => s.close);
   const setParam = useDevelopStore((s) => s.setParam);
   const setTemperature = useDevelopStore((s) => s.setTemperature);
   const setTint = useDevelopStore((s) => s.setTint);
@@ -149,16 +147,9 @@ export function DevelopPanel() {
     [allEntries],
   );
 
-  // Follow the selection. Remote entries have no local file to develop.
-  const path = entry?.path;
-  const isLocal = path !== undefined && !path.startsWith("http");
-  useEffect(() => {
-    if (path === undefined || !isLocal) {
-      close();
-      return;
-    }
-    void open(path);
-  }, [path, isLocal, open, close]);
+  // The session follows the selection app-wide (App's useDevelopSession);
+  // this panel only renders it.
+  const isLocal = entry !== null && !entry.path.startsWith("http");
 
   if (!entry) return <p className="panel-hint">No image selected.</p>;
   if (!isLocal) return <p className="panel-hint">Only local images can be developed.</p>;

@@ -21,7 +21,7 @@ import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
 import { restoreSession, startSessionPersistence } from "./state/session";
-import { hdrOf, useAppStore } from "./state/store";
+import { hdrOf, useAppStore, useSelectedEntry } from "./state/store";
 import "./App.css";
 
 /**
@@ -81,6 +81,22 @@ function useHdrDetection() {
   }, [sets, methods]);
 }
 
+/** The develop session follows the lead selection in every view, so the
+ * develop commands work from any context menu; panels only render it. */
+function useDevelopSession() {
+  const path = useSelectedEntry()?.path;
+  const open = useDevelopStore((s) => s.open);
+  const close = useDevelopStore((s) => s.close);
+  const isLocal = path !== undefined && !path.startsWith("http");
+  useEffect(() => {
+    if (path === undefined || !isLocal) {
+      close();
+      return;
+    }
+    void open(path);
+  }, [path, isLocal, open, close]);
+}
+
 function App() {
   const status = useAppStore((s) => s.status);
   const error = useAppStore((s) => s.error);
@@ -91,6 +107,7 @@ function App() {
   useGlobalKeybindings();
   useSceneRefinement();
   useHdrDetection();
+  useDevelopSession();
 
   // Start where the last sitting ended — same folder, view and filters —
   // and only failing that, in the configured default folder (a testing
