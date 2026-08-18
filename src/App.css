@@ -1756,18 +1756,37 @@ button.stats-row:hover .stats-label {
 }
 
 /* Exposure values on an invisible three-column grid: aligned whitespace
-   separates them — no punctuation, and no borders that would dress data
-   as buttons. */
+   separates them, and every cell is a dim mark before a bright value. */
 .exif-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px 10px;
-  margin: 0 12px 6px;
+  gap: 3px 10px;
+  margin: 2px 12px 8px;
 }
 
 .exif-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.exif-mark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  stroke: var(--text-dim);
+  stroke-width: 1.6;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.exif-mark-word {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.04em;
 }
 
 .shot-camera {

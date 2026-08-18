@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
@@ -17,17 +17,57 @@ import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
 const STATS_DEBOUNCE_MS = 150;
 
+/** Shutter speed: a stopwatch. */
+function ShutterIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="14" r="8" />
+      <path d="M12 10v4l2.8 2" />
+      <path d="M9 2h6" />
+      <path d="M12 2v4" />
+    </svg>
+  );
+}
+
+/** Aperture: the iris, six blades. */
+function ApertureIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="14.31" y1="8" x2="20.05" y2="17.94" />
+      <line x1="9.69" y1="8" x2="21.17" y2="8" />
+      <line x1="7.38" y1="12" x2="13.12" y2="2.06" />
+      <line x1="9.69" y1="16" x2="3.95" y2="6.06" />
+      <line x1="14.31" y1="16" x2="2.83" y2="16" />
+      <line x1="16.62" y1="12" x2="10.88" y2="21.94" />
+    </svg>
+  );
+}
+
+/** Focal length: the angle of view. */
+function FocalIcon() {
+  return (
+    <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 12 L21 5" />
+      <path d="M3 12 L21 19" />
+      <path d="M15 7.5 A 8.5 8.5 0 0 1 15 16.5" />
+    </svg>
+  );
+}
+
 interface ExifCell {
   key: string;
   title: string;
+  /** The dim mark anchoring the cell: an icon, or a short unit word. */
+  mark: ReactNode;
   text: string;
 }
 
 /**
- * The shot: exposure values on an invisible three-column grid — aligned
- * whitespace separates them, no punctuation, and no borders that would
- * dress data as buttons. Camera bright over lens dim; taken and size hold
- * the footer's corners. One typeface, one size.
+ * The shot on an invisible three-column grid, every cell a dim mark and a
+ * bright value: how the light was captured (shutter, aperture, ISO), then
+ * how the frame was chosen (focal length, EV). Camera bright over lens
+ * dim; taken and size hold the footer's corners.
  */
 export function ShotPanel() {
   const entry = useSelectedEntry();
@@ -35,29 +75,41 @@ export function ShotPanel() {
   if (!entry) return null;
 
   const exif = meta?.exif ?? null;
-  const triangle: ExifCell[] = [];
+  const word = (text: string) => <span className="exif-mark-word">{text}</span>;
+  const cells: ExifCell[] = [];
   if (exif?.exposureTime != null) {
-    triangle.push({ key: "shutter", title: "shutter speed", text: formatShutter(exif.exposureTime) });
+    cells.push({
+      key: "shutter",
+      title: "shutter speed",
+      mark: <ShutterIcon />,
+      text: formatShutter(exif.exposureTime),
+    });
   }
   if (exif?.fNumber != null) {
-    triangle.push({ key: "aperture", title: "aperture", text: formatAperture(exif.fNumber) });
+    cells.push({
+      key: "aperture",
+      title: "aperture",
+      mark: <ApertureIcon />,
+      text: formatAperture(exif.fNumber),
+    });
   }
   if (exif?.iso != null) {
-    triangle.push({ key: "iso", title: "sensitivity", text: `ISO ${exif.iso}` });
+    cells.push({ key: "iso", title: "sensitivity", mark: word("ISO"), text: `${exif.iso}` });
   }
-  const framing: ExifCell[] = [];
   if (exif?.focalLength != null) {
-    framing.push({
+    cells.push({
       key: "focal",
       title: "focal length",
+      mark: <FocalIcon />,
       text: `${Math.round(exif.focalLength)} mm`,
     });
   }
   if (exif?.exposureBias != null) {
-    framing.push({
+    cells.push({
       key: "ev",
       title: "exposure compensation, as dialed on the camera",
-      text: `${exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias)} EV`,
+      mark: word("EV"),
+      text: exif.exposureBias === 0 ? "0" : formatSigned(exif.exposureBias),
     });
   }
 
@@ -80,10 +132,11 @@ export function ShotPanel() {
 
   return (
     <div className="shot-panel">
-      {(triangle.length > 0 || framing.length > 0) && (
+      {cells.length > 0 && (
         <div className="exif-strip">
-          {[...triangle, ...framing].map((cell) => (
+          {cells.map((cell) => (
             <span key={cell.key} className="exif-cell" title={cell.title}>
+              {cell.mark}
               {cell.text}
             </span>
           ))}
