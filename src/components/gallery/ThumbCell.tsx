@@ -29,9 +29,8 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const crop = useAppStore((s) => s.crops[entry.path]);
   const meta = useAppStore((s) => s.meta[entry.path]);
   const dims = meta === undefined ? null : effectiveDims(meta);
-  // Where this view collapses stacks (scenes), a cell stands for every file
-  // of its photograph and says so — the filmstrip and status bar's rule.
-  // The grid lists each file on its own, so there the file's name is right.
+  // Collapsed views (scenes) name every file of the stack; the grid lists
+  // each file on its own.
   const caption = useAppStore((s) =>
     stacksCollapse(s)
       ? pairedName(entry, siblingsOf(s.entries, entry, hdrOf(s).keyByStack))

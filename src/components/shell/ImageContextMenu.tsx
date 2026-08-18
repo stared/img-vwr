@@ -18,8 +18,7 @@ const MENU_MAX_HEIGHT = 320;
 export function ImageContextMenu() {
   const pos = useAppStore((s) => s.imageMenu);
   const setImageMenu = useAppStore((s) => s.setImageMenu);
-  // The develop rows' enablement follows the session, which may still be
-  // opening when the menu appears — subscribe so they un-gray as it lands.
+  // Re-render as the develop session opens, so its grayed rows update.
   useDevelopStore((s) => s.session !== null);
   useDevelopStore((s) => s.copied !== null);
   const [submenu, setSubmenu] = useState<string | null>(null);
@@ -54,8 +53,6 @@ export function ImageContextMenu() {
   };
 
   const chordHint = (id: string) => chordsForCommand(id).map(formatChord)[0] ?? "";
-  // Inapplicable rows render disabled, not hidden — a grayed "Paste Develop
-  // Settings" teaches the command exists and hints that nothing is copied.
   const row = ({ command, placement, enabled }: MenuEntry) => (
     <button key={command.id} disabled={!enabled} onClick={() => pick(command.id)}>
       {placement.label}

@@ -52,11 +52,8 @@ export type GridRow =
   | { kind: "photos"; firstIndex: number; count: number }
   | { kind: "header"; label: string };
 
-/**
- * The index one visual row away (+1 down, -1 up), holding the column where
- * the target row reaches it; null at the edge. Headers are skipped — a
- * scene break is not a place the selection can stand.
- */
+/** The index one visual row away (+1 down, -1 up), holding the column;
+ * null at the edge. Scene headers are skipped. */
 export function rowNeighbor(
   rows: readonly GridRow[],
   index: number,
@@ -161,8 +158,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     [entries.length, scenes, columns],
   );
 
-  // ↑/↓ move by these rows; the store's slot is how the arrow keys reach a
-  // geometry only this component knows.
+  // ↑/↓ move by these rows.
   const setRowNavigator = useAppStore((s) => s.setRowNavigator);
   useEffect(() => {
     setRowNavigator((direction) => {

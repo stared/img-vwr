@@ -62,8 +62,7 @@ export function MosaicGallery() {
       : rowsToBands(mosaicRows(aspects, width, rowPx, 0));
   }, [entries, meta, crops, width, rowPx, packing]);
 
-  // ↑/↓ move to the cell visually below or above — the store's slot is how
-  // the arrow keys reach a geometry only this component knows.
+  // ↑/↓ move to the cell visually below or above.
   const setRowNavigator = useAppStore((s) => s.setRowNavigator);
   useEffect(() => {
     setRowNavigator((direction) => {

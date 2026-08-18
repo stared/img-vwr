@@ -896,8 +896,7 @@ button.stats-row:hover .stats-label {
   min-width: 12px;
 }
 
-/* A command's chord in a menu row — the menu is how keys are discovered.
-   A quiet keycap, so it reads as a key rather than part of the hint. */
+/* A command's chord in a menu row, as a quiet keycap. */
 .menu-key {
   margin-right: 6px;
   padding: 0 4px;
@@ -1016,15 +1015,12 @@ button.stats-row:hover .stats-label {
   justify-content: center;
   overflow: hidden;
   position: relative;
-  /* The cell is a tile (Lightroom's grammar): a letterboxed photograph
-     sits on this ground, and the corner badges read as on the tile. */
+  /* A raised tile; the corner badges sit on it. */
   background: var(--bg-raised);
   border-radius: 4px;
 }
 
-/* Star badge on rated cells; sits over the thumbnail's bottom-left. */
-/* Five stars, the filled ones carrying the rating. Colour marks only what is
-   set — the empty ones are present so the scale is visible, not to be read. */
+/* Five stars, the filled ones carrying the rating. */
 .info-rating {
   display: flex;
   gap: 1px;
@@ -1045,8 +1041,7 @@ button.stats-row:hover .stats-label {
   color: var(--accent);
 }
 
-/* Stars sit on the photograph, top-left, wherever a thumbnail is drawn —
-   one treatment across grid, scenes, mosaic and the filmstrip. */
+/* Top-left of the cell, one treatment in every view. */
 .thumb-stars {
   position: absolute;
   left: 4px;

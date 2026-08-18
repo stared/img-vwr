@@ -62,9 +62,7 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+backspace", "image.trash"],
   ["arrowright", "image.next"],
   ["arrowleft", "image.prev"],
-  // Down a visual row where the view has rows; otherwise fall through to
-  // stepping by one, so the keys always move in views that are one long
-  // strip (darkroom, timeline) and in the viewer.
+  // A visual row where the view has rows; strip views fall through to ±1.
   ["arrowdown", "image.below"],
   ["arrowup", "image.above"],
   ["arrowdown", "image.next"],
@@ -73,9 +71,8 @@ export const defaultKeybindings: readonly Keybinding[] = [
   // Inapplicable (scenes off) they fall through and the chord does nothing.
   ["mod+arrowright", "scene.next"],
   ["mod+arrowleft", "scene.prev"],
-  // Single letters switch views, Lightroom's grammar: G is always the
-  // grid, D the darkroom, E the one-image loupe. T rates (tag) and the
-  // digits star, so timeline and map take shift.
+  // Lightroom's view letters; T tags and digits rate, so timeline and map
+  // take shift.
   ["g", "view.grid"],
   ["m", "view.mosaic"],
   ["s", "view.scenes"],
@@ -103,7 +100,6 @@ export const defaultKeybindings: readonly Keybinding[] = [
   // Zoom presets follow Preview.app; bare digits rate (Lightroom-style).
   ["mod+0", "viewer.zoomFit"],
   ["mod+1", "viewer.zoomActual"],
-  // The convention Gmail, Linear and GitHub share: one key, the whole map.
   ["shift+?", "help.shortcuts"],
   ["0", "labels.stars.0"],
   ["1", "labels.stars.1"],
@@ -169,11 +165,8 @@ export function focusOwnsKey(target: EventTarget | null, key: string): boolean {
   }
 }
 
-/**
- * A tooltip with the command's chord appended — "toggle statistics — ⌘I".
- * Tooltips are the app's explanation channel, so they are also where the
- * keys are taught; unbound commands read unchanged.
- */
+/** Tooltip with the command's chord appended ("… — ⌘I"); unbound commands
+ * read unchanged. */
 export function titleWithChord(
   title: string,
   commandId: string,
@@ -192,8 +185,7 @@ export function chordsForCommand(
 }
 
 export function formatChord(spec: string): string {
-  // "?" already is the shifted character — "⇧?" would describe a key that
-  // does not exist on the cap.
+  // "?" is already the shifted cap.
   if (spec === "shift+?") return "?";
   return spec
     .split("+")

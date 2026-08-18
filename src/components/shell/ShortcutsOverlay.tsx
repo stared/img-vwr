@@ -4,14 +4,10 @@ import { allCommands } from "../../registry/commands";
 import { defaultKeybindings, formatChord } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
 
-/**
- * The `?` cheatsheet: every bound command, grouped, searchable — the
- * Gmail/Linear/GitHub convention. A pure render of the command and
- * keybinding registries, so a plugin that registers a binding appears here
- * with no bookkeeping anywhere.
- */
+/** The `?` cheatsheet: every bound command, grouped and searchable —
+ * rendered from the command and keybinding registries. */
 
-/** Which sheet section a command belongs to, from its id's prefix. */
+/** Sheet section per command id prefix. */
 const SECTIONS: { title: string; prefixes: string[] }[] = [
   { title: "Navigate", prefixes: ["image", "scene", "selection"] },
   { title: "Views", prefixes: ["view"] },
@@ -21,8 +17,7 @@ const SECTIONS: { title: string; prefixes: string[] }[] = [
   { title: "Find & filter", prefixes: ["filter"] },
   { title: "App", prefixes: ["folder", "palette", "sidebar", "inspector", "help"] },
 ];
-/** Bindings whose prefix no section claims land at the end, unsorted-drawer
- * style, so a plugin's chords are never silently missing from the sheet. */
+/** Bindings whose prefix no section claims land here, never dropped. */
 const OTHER = "Other";
 
 interface SheetRow {
@@ -66,10 +61,8 @@ export function ShortcutsOverlay() {
     }
   }, [open]);
 
-  // Esc steps out (clearing the search first, like the find field); `?`
-  // closes too unless it is being typed into the search box. Capture, so
-  // the global handler — which stands down while the sheet is up — and the
-  // sheet's own input never fight over the keys.
+  // Esc clears the search first, then closes; `?` closes unless typed into
+  // the search box. Capture, ahead of the global handler.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {

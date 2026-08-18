@@ -62,9 +62,7 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleStats(),
   });
 
-  // One command per way the query renders — Lightroom's grammar: G means
-  // the grid wherever you are, D the darkroom. From the viewer the key
-  // first steps back to the gallery, so the keys never feel modal.
+  // One command per layout; from the viewer the key first steps back.
   const views: { layout: GalleryLayout; title: string; keywords: string[] }[] = [
     { layout: "grid", title: "Grid View", keywords: ["thumbnails", "cells"] },
     { layout: "mosaic", title: "Mosaic View", keywords: ["packed", "wall", "justified"] },
@@ -145,9 +143,7 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().navigate(-1),
   });
 
-  // A visual row, not a fixed count: the mounted view registers how far
-  // "down" is (the grid its columns, the mosaic its bands). Where no view
-  // has, the chord falls through to plain next/previous.
+  // The mounted view registers what a visual row is (store.rowNavigator).
   registerCommand({
     id: "image.below",
     title: "Image Below",

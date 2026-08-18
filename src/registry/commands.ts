@@ -13,10 +13,7 @@ export interface CommandContext {
 /** Context menus a command can surface in, besides the palette. */
 export type CommandMenu = "image";
 
-/**
- * The separator-delimited groups of a context menu, in render order — the
- * macOS convention keeps the destructive group last, behind its own line.
- */
+/** Separator groups of a context menu, in render order; destructive last. */
 export const MENU_SECTIONS = ["open", "labels", "develop", "transfer", "danger"] as const;
 export type MenuSection = (typeof MENU_SECTIONS)[number];
 
@@ -28,9 +25,8 @@ export interface MenuPlacement {
   /** Placements sharing a submenu title collapse under one row ("Rating");
    * null = top level. */
   submenu: string | null;
-  /** Row text in that menu — short and in-context ("★★★"); the palette
-   * always shows the full title ("Rate ★★★"). Menu rows use the macOS
-   * menu casing: Title Case. */
+  /** Row text in that menu, Title Case — short and in-context ("★★★");
+   * the palette always shows the full title ("Rate ★★★"). */
   label: string;
 }
 
@@ -71,14 +67,12 @@ export function allCommands(): Command[] {
 export interface MenuEntry {
   command: Command;
   placement: MenuPlacement;
-  /** False renders the row grayed rather than hidden — platform convention
-   * (macOS, Lightroom): a disabled row teaches that the command exists and
-   * hints that something is missing, where a vanished one teaches nothing. */
+  /** False renders the row grayed rather than hidden. */
   enabled: boolean;
 }
 
-/** Every entry for a context menu — disabled ones included — grouped by
- * section in MENU_SECTIONS order, registration order within a section. */
+/** Every entry for a context menu, disabled ones included, in
+ * MENU_SECTIONS order; registration order within a section. */
 export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[] {
   const rank = (e: MenuEntry) => MENU_SECTIONS.indexOf(e.placement.section);
   return allCommands()
