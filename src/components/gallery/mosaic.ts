@@ -60,6 +60,64 @@ export interface MosaicBand {
   cells: BandCell[];
 }
 
+/**
+ * The entry visually below (+1) or above (-1) the given one, or null at the
+ * wall's edge. Works on the placed cells, because in the banded packing
+ * "below" may be the next cell of the same column, a staggered neighbor, or
+ * the next band. The eye drops straight down: a cell sharing horizontal
+ * ground with the current one wins over a nearer one off to the side.
+ */
+export function verticalNeighbor(
+  bands: readonly MosaicBand[],
+  index: number,
+  direction: 1 | -1,
+): number | null {
+  interface Rect {
+    index: number;
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  }
+  const rects: Rect[] = [];
+  let bandTop = 0;
+  for (const band of bands) {
+    for (const c of band.cells) {
+      rects.push({
+        index: c.index,
+        left: c.x,
+        right: c.x + c.width,
+        top: bandTop + c.y,
+        bottom: bandTop + c.y + c.height,
+      });
+    }
+    bandTop += band.height;
+  }
+  const from = rects.find((r) => r.index === index);
+  if (from === undefined) return null;
+
+  let best: Rect | null = null;
+  let bestKey = Infinity;
+  for (const r of rects) {
+    if (r.index === index) continue;
+    // Only cells entirely past the edge count as below/above; the ±1 px
+    // absorbs the packing's pixel rounding at shared edges.
+    const beyond = direction > 0 ? r.top - from.bottom : from.top - r.bottom;
+    if (beyond < -1) continue;
+    const overlap = Math.min(r.right, from.right) - Math.max(r.left, from.left);
+    const aside =
+      overlap > 0 ? 0 : Math.abs((r.left + r.right) / 2 - (from.left + from.right) / 2);
+    // Vertical distance decides first; among the nearest, straight down
+    // beats off to the side.
+    const key = Math.max(0, beyond) * 10_000 + aside;
+    if (key < bestKey) {
+      bestKey = key;
+      best = r;
+    }
+  }
+  return best === null ? null : best.index;
+}
+
 /** Justified rows re-expressed as bands, so one renderer draws both modes. */
 export function rowsToBands(rows: readonly MosaicRow[]): MosaicBand[] {
   return rows.map((row) => {

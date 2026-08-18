@@ -157,6 +157,27 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().navigate(-1),
   });
 
+  // A visual row, not a fixed count: the mounted view registers how far
+  // "down" is (the grid its columns, the mosaic its bands). Where no view
+  // has, the chord falls through to plain next/previous.
+  registerCommand({
+    id: "image.below",
+    title: "Image Below",
+    keywords: ["down", "row"],
+    when: (ctx) => hasImages(ctx) && ctx.store.getState().rowNavigator !== null,
+    menus: [],
+    run: ({ store }) => store.getState().rowNavigator?.(1),
+  });
+
+  registerCommand({
+    id: "image.above",
+    title: "Image Above",
+    keywords: ["up", "row"],
+    when: (ctx) => hasImages(ctx) && ctx.store.getState().rowNavigator !== null,
+    menus: [],
+    run: ({ store }) => store.getState().rowNavigator?.(-1),
+  });
+
   registerCommand({
     id: "viewer.zoomIn",
     title: "Zoom In",

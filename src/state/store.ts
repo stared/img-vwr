@@ -126,6 +126,13 @@ export interface AppState {
   /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
   /**
+   * How the mounted gallery view moves the lead one visual row down (+1)
+   * or up (-1). Registered by the view itself, because only it knows its
+   * geometry — the grid its rows, the mosaic its bands. Null when the
+   * current view has no second dimension to move in.
+   */
+  rowNavigator: ((direction: 1 | -1) => void) | null;
+  /**
    * The scenes view's time constant, minutes: how quickly a pause makes
    * the content's continuity harder to believe. A parameter of that view,
    * not a switch — entering the scenes view is what turns grouping on.
@@ -308,6 +315,7 @@ interface AppActions {
   setMosaicRowPx: (px: number) => void;
   setMosaicPacking: (packing: MosaicPacking) => void;
   setGridColumns: (columns: number) => void;
+  setRowNavigator: (navigator: ((direction: 1 | -1) => void) | null) => void;
   setSceneGap: (min: number) => void;
   setSceneContentWeight: (weight: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
@@ -394,6 +402,7 @@ export const initialState: AppState = {
   mosaicRowPx: 180,
   mosaicPacking: "order",
   gridColumns: 6,
+  rowNavigator: null,
   sceneGapMin: 2,
   sceneContentWeight: 1,
   sceneSims: null,
@@ -970,6 +979,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setMosaicPacking: (packing) => set({ mosaicPacking: packing }),
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
+
+  setRowNavigator: (rowNavigator) => set({ rowNavigator }),
 
   setSceneGap: (min) => set({ sceneGapMin: min }),
 

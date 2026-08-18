@@ -7,7 +7,7 @@ import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { parseNumber, Slider } from "../shell/Slider";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
-import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands } from "./mosaic";
+import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
 /**
  * The mosaic: the grid's photographs without the grid's empty space. Rows
@@ -61,6 +61,22 @@ export function MosaicGallery() {
       ? bandedMosaic(aspects, width, rowPx)
       : rowsToBands(mosaicRows(aspects, width, rowPx, 0));
   }, [entries, meta, crops, width, rowPx, packing]);
+
+  // ↑/↓ move to the cell visually below or above — the store's slot is how
+  // the arrow keys reach a geometry only this component knows.
+  const setRowNavigator = useAppStore((s) => s.setRowNavigator);
+  useEffect(() => {
+    setRowNavigator((direction) => {
+      const state = useAppStore.getState();
+      if (state.selectedIndex === null) {
+        state.navigate(direction);
+        return;
+      }
+      const target = verticalNeighbor(bands, state.selectedIndex, direction);
+      if (target !== null) state.select(target);
+    });
+    return () => setRowNavigator(null);
+  }, [bands, setRowNavigator]);
 
   const virtualizer = useVirtualizer({
     count: bands.length,

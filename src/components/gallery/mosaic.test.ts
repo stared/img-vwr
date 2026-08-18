@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bandedMosaic, mosaicRows, rowsToBands } from "./mosaic";
+import { bandedMosaic, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
 const GAP = 4;
 
@@ -148,6 +148,38 @@ describe("banded one-scale packing", () => {
       const area = band.cells.reduce((sum, c) => sum + c.width * c.height, 0);
       expect(area).toBe(W * band.height);
     }
+  });
+});
+
+describe("vertical neighbor", () => {
+  it("drops into the next justified row near the same spot", () => {
+    const rows = mosaicRows(Array<number>(8).fill(1.5), 900, 180, 0);
+    const bands = rowsToBands(rows);
+    const perRow = rows[0]?.count ?? 0;
+    expect(perRow).toBeGreaterThan(1);
+    expect(verticalNeighbor(bands, 0, 1)).toBe(perRow);
+    expect(verticalNeighbor(bands, perRow, -1)).toBe(0);
+  });
+
+  it("walks a banded stack cell by cell before leaving the band", () => {
+    // All landscapes: bands of three-high columns. Below the top cell of a
+    // column is the middle cell of the same column, not the next band.
+    const bands = bandedMosaic(Array<number>(24).fill(1.5), 1200, 180);
+    const first = bands[0];
+    const top = first?.cells.find((c) => c.y === 0);
+    expect(top).toBeDefined();
+    if (top === undefined) return;
+    const below = verticalNeighbor(bands, top.index, 1);
+    const target = first?.cells.find((c) => c.index === below);
+    // Same column: same left edge, starting where the top cell ends.
+    expect(target?.x).toBe(top.x);
+    expect(target?.y).toBe(top.height);
+  });
+
+  it("returns null past the top and bottom edges", () => {
+    const bands = rowsToBands(mosaicRows([1.5, 1.5], 400, 180, 0));
+    expect(verticalNeighbor(bands, 0, -1)).toBeNull();
+    expect(verticalNeighbor(bands, 0, 1)).toBeNull();
   });
 });
 

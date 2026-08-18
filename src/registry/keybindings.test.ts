@@ -97,13 +97,22 @@ describe("the shipped table", () => {
       seen.set(chord, [...(seen.get(chord) ?? []), id]);
     }
     const shared = [...seen.entries()].filter(([, ids]) => ids.length > 1);
-    expect(shared.map(([chord]) => chord)).toEqual(["enter", "escape"]);
+    expect(shared.map(([chord]) => chord)).toEqual([
+      "arrowdown",
+      "arrowup",
+      "enter",
+      "escape",
+    ]);
     expect(seen.get("enter")).toEqual(["develop.cropDone", "viewer.open"]);
     expect(seen.get("escape")).toEqual([
       "develop.cropCancel",
       "viewer.close",
       "selection.clear",
     ]);
+    // Row movement where the view has rows, plain stepping where it is one
+    // long strip — the row commands decline outside two-dimensional views.
+    expect(seen.get("arrowdown")).toEqual(["image.below", "image.next"]);
+    expect(seen.get("arrowup")).toEqual(["image.above", "image.prev"]);
   });
 });
 

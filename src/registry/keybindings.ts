@@ -62,6 +62,13 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+backspace", "image.trash"],
   ["arrowright", "image.next"],
   ["arrowleft", "image.prev"],
+  // Down a visual row where the view has rows; otherwise fall through to
+  // stepping by one, so the keys always move in views that are one long
+  // strip (darkroom, timeline) and in the viewer.
+  ["arrowdown", "image.below"],
+  ["arrowup", "image.above"],
+  ["arrowdown", "image.next"],
+  ["arrowup", "image.prev"],
   // The arrows one level up: step by scene instead of by photograph.
   // Inapplicable (scenes off) they fall through and the chord does nothing.
   ["mod+arrowright", "scene.next"],
@@ -177,6 +184,10 @@ export function formatChord(spec: string): string {
           return "←";
         case "arrowright":
           return "→";
+        case "arrowup":
+          return "↑";
+        case "arrowdown":
+          return "↓";
         case "backspace":
           return "⌫";
         default:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cellSizeFor, maxColumnsFor } from "./GalleryGrid";
+import { cellSizeFor, gridRows, maxColumnsFor, rowNeighbor } from "./GalleryGrid";
 
 describe("maxColumnsFor", () => {
   it("scales the limit with the viewport rather than fixing it", () => {
@@ -31,5 +31,34 @@ describe("cellSizeFor", () => {
 
   it("stops shrinking at the readable minimum", () => {
     expect(cellSizeFor(300, 20)).toBe(96);
+  });
+});
+
+describe("rowNeighbor", () => {
+  // 10 photos, 4 per row: rows [0..3] [4..7] [8..9].
+  const rows = gridRows(10, null, 4);
+
+  it("moves straight down and up a column", () => {
+    expect(rowNeighbor(rows, 1, 1)).toBe(5);
+    expect(rowNeighbor(rows, 5, -1)).toBe(1);
+  });
+
+  it("clamps into a short last row rather than overshooting", () => {
+    expect(rowNeighbor(rows, 7, 1)).toBe(9);
+  });
+
+  it("stays put at the edges", () => {
+    expect(rowNeighbor(rows, 2, -1)).toBeNull();
+    expect(rowNeighbor(rows, 9, 1)).toBeNull();
+  });
+
+  it("steps over scene headers, keeping the column", () => {
+    const scenes = [
+      { start: 0, end: 4, startMs: 0 },
+      { start: 4, end: 10, startMs: 3_600_000 },
+    ];
+    const withHeaders = gridRows(10, scenes, 4);
+    expect(rowNeighbor(withHeaders, 1, 1)).toBe(5);
+    expect(rowNeighbor(withHeaders, 5, -1)).toBe(1);
   });
 });

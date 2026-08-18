@@ -48,9 +48,32 @@ export function cellSizeFor(width: number, columns: number): number {
  * Descriptors only — the entries are sliced at render, so a scene change
  * costs row bookkeeping, never a copy of the collection.
  */
-type GridRow =
+export type GridRow =
   | { kind: "photos"; firstIndex: number; count: number }
   | { kind: "header"; label: string };
+
+/**
+ * The index one visual row away (+1 down, -1 up), holding the column where
+ * the target row reaches it; null at the edge. Headers are skipped — a
+ * scene break is not a place the selection can stand.
+ */
+export function rowNeighbor(
+  rows: readonly GridRow[],
+  index: number,
+  direction: 1 | -1,
+): number | null {
+  const at = rows.findIndex(
+    (r) => r.kind === "photos" && index >= r.firstIndex && index < r.firstIndex + r.count,
+  );
+  const from = rows[at];
+  if (from === undefined || from.kind !== "photos") return null;
+  for (let j = at + direction; j >= 0 && j < rows.length; j += direction) {
+    const row = rows[j];
+    if (row === undefined || row.kind !== "photos") continue;
+    return row.firstIndex + Math.min(index - from.firstIndex, row.count - 1);
+  }
+  return null;
+}
 
 /** The rows the grid shows: plain runs, or scenes with their headers. */
 export function gridRows(
@@ -137,6 +160,22 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     () => gridRows(entries.length, scenes, columns),
     [entries.length, scenes, columns],
   );
+
+  // ↑/↓ move by these rows; the store's slot is how the arrow keys reach a
+  // geometry only this component knows.
+  const setRowNavigator = useAppStore((s) => s.setRowNavigator);
+  useEffect(() => {
+    setRowNavigator((direction) => {
+      const state = useAppStore.getState();
+      if (state.selectedIndex === null) {
+        state.navigate(direction);
+        return;
+      }
+      const target = rowNeighbor(rows, state.selectedIndex, direction);
+      if (target !== null) state.select(target);
+    });
+    return () => setRowNavigator(null);
+  }, [rows, setRowNavigator]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
