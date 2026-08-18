@@ -11,6 +11,7 @@ import { FilterBar } from "./components/shell/FilterBar";
 import { ImageContextMenu } from "./components/shell/ImageContextMenu";
 import { DEFAULT_START_FOLDER } from "./config";
 import { RightSidebar } from "./components/shell/RightSidebar";
+import { ShortcutsOverlay } from "./components/shell/ShortcutsOverlay";
 import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
@@ -171,6 +172,7 @@ function App() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <ShortcutsOverlay />
       <ExportDialog />
       <ImageContextMenu />
     </div>

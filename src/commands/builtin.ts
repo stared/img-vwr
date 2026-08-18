@@ -39,6 +39,14 @@ export function registerBuiltinCommands(): void {
   });
 
   registerCommand({
+    id: "help.shortcuts",
+    title: "Keyboard Shortcuts",
+    keywords: ["help", "keys", "cheatsheet", "bindings"],
+    menus: [],
+    run: ({ store }) => store.getState().setShortcutsOpen(!store.getState().shortcutsOpen),
+  });
+
+  registerCommand({
     id: "sidebar.toggle",
     title: "Toggle Sidebar",
     menus: [],

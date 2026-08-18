@@ -237,6 +237,8 @@ export interface AppState {
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
+  /** The keyboard cheatsheet is up (the `?` overlay). */
+  shortcutsOpen: boolean;
   /**
    * The export sheet is up.
    *
@@ -362,6 +364,7 @@ interface AppActions {
   /** VS Code semantics: re-selecting the active icon collapses the sidebar. */
   setActivePanel: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
+  setShortcutsOpen: (open: boolean) => void;
   setExportOpen: (open: boolean) => void;
   setExportOptions: (options: ExportOptions) => void;
   setExportFolder: (folder: string) => void;
@@ -422,6 +425,7 @@ export const initialState: AppState = {
   sidebarVisible: true,
   activePanelId: "folders",
   paletteOpen: false,
+  shortcutsOpen: false,
   palettePrompt: null,
   exportOpen: false,
   exportOptions: DEFAULT_OPTIONS,
@@ -1123,6 +1127,8 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   setPaletteOpen: (open) => set({ paletteOpen: open, palettePrompt: null }),
+
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
   setExportOpen: (open) => set({ exportOpen: open }),
 

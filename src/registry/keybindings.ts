@@ -103,6 +103,8 @@ export const defaultKeybindings: readonly Keybinding[] = [
   // Zoom presets follow Preview.app; bare digits rate (Lightroom-style).
   ["mod+0", "viewer.zoomFit"],
   ["mod+1", "viewer.zoomActual"],
+  // The convention Gmail, Linear and GitHub share: one key, the whole map.
+  ["shift+?", "help.shortcuts"],
   ["0", "labels.stars.0"],
   ["1", "labels.stars.1"],
   ["2", "labels.stars.2"],
@@ -167,6 +169,20 @@ export function focusOwnsKey(target: EventTarget | null, key: string): boolean {
   }
 }
 
+/**
+ * A tooltip with the command's chord appended — "toggle statistics — ⌘I".
+ * Tooltips are the app's explanation channel, so they are also where the
+ * keys are taught; unbound commands read unchanged.
+ */
+export function titleWithChord(
+  title: string,
+  commandId: string,
+  bindings: readonly Keybinding[] = defaultKeybindings,
+): string {
+  const chord = chordsForCommand(commandId, bindings).map(formatChord)[0];
+  return chord === undefined ? title : `${title} — ${chord}`;
+}
+
 /** Chords bound to a command, for display in the palette ("⌘K"). */
 export function chordsForCommand(
   commandId: string,
@@ -176,6 +192,9 @@ export function chordsForCommand(
 }
 
 export function formatChord(spec: string): string {
+  // "?" already is the shifted character — "⇧?" would describe a key that
+  // does not exist on the cap.
+  if (spec === "shift+?") return "?";
   return spec
     .split("+")
     .map((part) => {

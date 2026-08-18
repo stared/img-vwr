@@ -58,7 +58,7 @@ export function ZoomBar() {
           { at: 0, title: "1:1: actual pixels" },
         ]}
         layout="inline"
-        title="From fit to actual pixels, log scale. The marks are fit the longer edge, fit the shorter edge, and 1:1; double-click comes back to fit."
+        title="From fit to actual pixels, log scale. The marks are fit the longer edge, fit the shorter edge, and 1:1; double-click comes back to fit. Keys: = and − zoom, ⌘0 fits, ⌘1 is 1:1."
         onChange={(v) => {
           // Landing on the fit mark is fit, the named state — not a
           // percentage that happens to equal it until the window resizes.

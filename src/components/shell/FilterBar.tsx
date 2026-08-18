@@ -150,7 +150,10 @@ function ScopeChip({ scope }: { scope: Scope }) {
               close();
             }}
           >
-            Open Folder…
+            <span>Open Folder…</span>
+            <span className="menu-key">
+              {chordsForCommand("folder.open").map(formatChord)[0]}
+            </span>
           </button>
           {allSources().map((source) => (
             <button
@@ -184,7 +187,11 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
 
   return (
     <div className="filter-add">
-      <button className="chip chip-add" title="add filter" onClick={() => (open ? close() : setOpen(true))}>
+      <button
+        className="chip chip-add"
+        title="add filter — F finds by name"
+        onClick={() => (open ? close() : setOpen(true))}
+      >
         +
       </button>
       {open && (

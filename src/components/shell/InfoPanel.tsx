@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
+import { titleWithChord } from "../../registry/keybindings";
 import { formatBytes } from "../../state/stats";
 import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
@@ -56,7 +57,10 @@ function Rating({ path, stars }: { path: string; stars: number | null }) {
           <button
             key={n}
             className={stars !== null && n <= stars ? "on" : ""}
-            title={n === stars ? "click to clear" : `${n} star${n > 1 ? "s" : ""}`}
+            title={titleWithChord(
+              n === stars ? "click to clear" : `${n} star${n > 1 ? "s" : ""}`,
+              `labels.stars.${n === stars ? 0 : n}`,
+            )}
             onClick={() => void rate(n === stars ? null : n)}
           >
             ★
