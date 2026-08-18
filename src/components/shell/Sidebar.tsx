@@ -1,40 +1,62 @@
+import { titleWithChord } from "../../registry/keybindings";
 import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
 
 /**
- * VS Code-style left edge: a narrow activity bar chooses ONE panel; the
- * sidebar shows just that panel. Clicking the active icon again collapses
- * the sidebar (the activity bar always stays).
+ * Left sidebar: an icon row picks ONE panel; clicking the active icon
+ * collapses to a slim rail, the right bar's grammar mirrored.
  */
 export function Sidebar() {
   const visible = useAppStore((s) => s.sidebarVisible);
   const activeId = useAppStore((s) => s.activePanelId);
   const setActivePanel = useAppStore((s) => s.setActivePanel);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const panels = allPanels();
   const active = panels.find((p) => p.id === activeId) ?? panels[0];
 
+  if (!visible) {
+    return (
+      <aside className="sidebar collapsed">
+        <button
+          className="sidebar-toggle"
+          title={titleWithChord("show the sidebar", "sidebar.toggle")}
+          onClick={toggleSidebar}
+        >
+          »
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <>
+    <aside className="sidebar">
       <nav className="activitybar">
         {panels.map((panel) => (
           <button
             key={panel.id}
-            className={visible && panel.id === active?.id ? "active" : ""}
+            className={panel.id === active?.id ? "active" : ""}
             title={panel.title}
             onClick={() => setActivePanel(panel.id)}
           >
             {panel.icon ?? panel.title[0]}
           </button>
         ))}
+        <button
+          className="sidebar-toggle"
+          title={titleWithChord("hide the sidebar", "sidebar.toggle")}
+          onClick={toggleSidebar}
+        >
+          «
+        </button>
       </nav>
-      {visible && active && (
-        <aside className="sidebar">
+      {active && (
+        <>
           <header className="sidebar-title">{active.title}</header>
           <div className="panel-body">
             <active.component />
           </div>
-        </aside>
+        </>
       )}
-    </>
+    </aside>
   );
 }

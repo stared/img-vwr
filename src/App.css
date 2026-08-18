@@ -105,13 +105,14 @@ kbd {
 /* ---- Sidebar ---- */
 
 /* VS Code-style activity bar: a narrow icon strip that picks ONE panel. */
+/* One row of panel icons at the sidebar's top — no separate rail. */
 .activitybar {
   display: flex;
-  flex-direction: column;
-  width: 40px;
+  align-items: center;
   flex-shrink: 0;
-  padding-top: 2px;
-  border-right: 1px solid var(--border);
+  height: 34px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .activitybar button {
@@ -119,7 +120,8 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   color: var(--text-dim);
   font-size: 13px;
   font-weight: 600;
@@ -136,11 +138,16 @@ kbd {
 .activitybar button.active::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 2px;
+  left: 9px;
+  right: 9px;
+  bottom: 0;
+  height: 2px;
   background: var(--accent);
+}
+
+.activitybar .sidebar-toggle {
+  width: auto;
+  margin-left: auto;
 }
 
 .sidebar {
@@ -149,6 +156,10 @@ kbd {
   width: 230px;
   flex-shrink: 0;
   overflow: hidden;
+}
+
+.sidebar:not(.right) {
+  border-right: 1px solid var(--border);
 }
 
 /* The activity bar picked one panel; its title heads the whole sidebar. */

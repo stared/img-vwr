@@ -114,7 +114,6 @@ export function FolderTreePanel() {
           </div>
         );
       })}
-      {subdirs?.length === 0 && <span className="tree-empty">no subfolders</span>}
     </div>
   );
 }
