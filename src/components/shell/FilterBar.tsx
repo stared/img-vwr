@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
 import { filterFieldsFor, getFilterField, type FilterField } from "../../registry/filters";
+import { chordsForCommand, formatChord } from "../../registry/keybindings";
 import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
 import type { RangeOp, Sort } from "../../state/query";
@@ -520,19 +521,23 @@ export function FilterBar() {
         title="change how the results render"
         renderMenu={(close) => (
           <>
-            {VIEW_OPTIONS.map(({ layout, hint }) => (
-              <button
-                key={layout}
-                onClick={() => {
-                  setGalleryLayout(layout);
-                  close();
-                }}
-              >
-                {galleryLayout === layout ? "✓ " : ""}
-                {layout}
-                <span className="menu-hint">{hint}</span>
-              </button>
-            ))}
+            {VIEW_OPTIONS.map(({ layout, hint }) => {
+              const chord = chordsForCommand(`view.${layout}`).map(formatChord)[0];
+              return (
+                <button
+                  key={layout}
+                  onClick={() => {
+                    setGalleryLayout(layout);
+                    close();
+                  }}
+                >
+                  <span>{layout}</span>
+                  <span className="menu-hint">{hint}</span>
+                  {chord !== undefined && <span className="menu-key">{chord}</span>}
+                  <span className="menu-check">{galleryLayout === layout ? "✓" : ""}</span>
+                </button>
+              );
+            })}
           </>
         )}
       />

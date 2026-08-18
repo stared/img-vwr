@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { allSorts } from "../registry/sorts";
 import { FORMAT_GROUPS } from "../state/query";
+import type { GalleryLayout } from "../state/store";
 
 const ZOOM_STEP = 1.25;
 
@@ -52,53 +53,31 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleStats(),
   });
 
-  registerCommand({
-    id: "gallery.map",
-    title: "Toggle Map View",
-    keywords: ["geo", "gps", "location", "grid"],
-    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-    menus: [],
-    run: ({ store }) => {
-      const { galleryLayout, setGalleryLayout } = store.getState();
-      setGalleryLayout(galleryLayout === "map" ? "grid" : "map");
-    },
-  });
-
-  registerCommand({
-    id: "gallery.timeline",
-    title: "Toggle Timeline View",
-    keywords: ["date", "taken", "time", "chronological", "grid"],
-    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-    menus: [],
-    run: ({ store }) => {
-      const { galleryLayout, setGalleryLayout } = store.getState();
-      setGalleryLayout(galleryLayout === "timeline" ? "grid" : "timeline");
-    },
-  });
-
-  registerCommand({
-    id: "gallery.scenes",
-    title: "Toggle Scenes View",
-    keywords: ["moments", "groups", "series", "burst", "grid"],
-    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-    menus: [],
-    run: ({ store }) => {
-      const { galleryLayout, setGalleryLayout } = store.getState();
-      setGalleryLayout(galleryLayout === "scenes" ? "grid" : "scenes");
-    },
-  });
-
-  registerCommand({
-    id: "gallery.darkroom",
-    title: "Toggle Darkroom View",
-    keywords: ["develop", "edit", "filmstrip", "lightroom", "grid"],
-    when: (ctx) => hasImages(ctx) && !inViewer(ctx),
-    menus: [],
-    run: ({ store }) => {
-      const { galleryLayout, setGalleryLayout } = store.getState();
-      setGalleryLayout(galleryLayout === "darkroom" ? "grid" : "darkroom");
-    },
-  });
+  // One command per way the query renders — Lightroom's grammar: G means
+  // the grid wherever you are, D the darkroom. From the viewer the key
+  // first steps back to the gallery, so the keys never feel modal.
+  const views: { layout: GalleryLayout; title: string; keywords: string[] }[] = [
+    { layout: "grid", title: "Grid View", keywords: ["thumbnails", "cells"] },
+    { layout: "mosaic", title: "Mosaic View", keywords: ["packed", "wall", "justified"] },
+    { layout: "scenes", title: "Scenes View", keywords: ["moments", "groups", "series", "burst"] },
+    { layout: "timeline", title: "Timeline View", keywords: ["date", "taken", "time", "chronological"] },
+    { layout: "map", title: "Map View", keywords: ["geo", "gps", "location"] },
+    { layout: "darkroom", title: "Darkroom View", keywords: ["develop", "edit", "filmstrip", "lightroom"] },
+  ];
+  for (const view of views) {
+    registerCommand({
+      id: `view.${view.layout}`,
+      title: view.title,
+      keywords: view.keywords,
+      when: hasImages,
+      menus: [],
+      run: ({ store }) => {
+        const state = store.getState();
+        if (state.viewMode === "viewer") state.closeViewer();
+        store.getState().setGalleryLayout(view.layout);
+      },
+    });
+  }
 
   registerCommand({
     id: "viewer.open",

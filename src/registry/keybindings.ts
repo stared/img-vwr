@@ -73,6 +73,16 @@ export const defaultKeybindings: readonly Keybinding[] = [
   // Inapplicable (scenes off) they fall through and the chord does nothing.
   ["mod+arrowright", "scene.next"],
   ["mod+arrowleft", "scene.prev"],
+  // Single letters switch views, Lightroom's grammar: G is always the
+  // grid, D the darkroom, E the one-image loupe. T rates (tag) and the
+  // digits star, so timeline and map take shift.
+  ["g", "view.grid"],
+  ["m", "view.mosaic"],
+  ["s", "view.scenes"],
+  ["d", "view.darkroom"],
+  ["shift+t", "view.timeline"],
+  ["shift+m", "view.map"],
+  ["e", "viewer.open"],
   // Mid-crop, the keys mean what Lightroom taught: Enter keeps the crop,
   // Escape puts back the one the tool found. Otherwise they fall through.
   ["enter", "develop.cropDone"],
