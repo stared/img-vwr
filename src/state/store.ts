@@ -116,6 +116,9 @@ export interface AppState {
   /** Right-column section order, panel ids; unknown ids keep registration
    * order after these. Persisted. */
   panelOrder: string[];
+  /** Sidebar widths, px — dragged at the inner edge. Persisted. */
+  sidebarWidth: number;
+  rightbarWidth: number;
   viewMode: ViewMode;
   /** How the gallery renders the visible entries; map plots geolocated ones. */
   galleryLayout: GalleryLayout;
@@ -318,6 +321,8 @@ interface AppActions {
   toggleStats: () => void;
   togglePanelFold: (id: string) => void;
   setPanelOrder: (order: string[]) => void;
+  setSidebarWidth: (px: number) => void;
+  setRightbarWidth: (px: number) => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
   setTimelineOrientation: (orientation: TimelineOrientation) => void;
   setTimelineThumbPx: (px: number) => void;
@@ -407,6 +412,8 @@ export const initialState: AppState = {
   statsVisible: true,
   panelFolds: {},
   panelOrder: [],
+  sidebarWidth: 230,
+  rightbarWidth: 280,
   viewMode: "gallery",
   galleryLayout: "grid",
   timelineOrientation: "vertical",
@@ -985,6 +992,10 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set((s) => ({ panelFolds: { ...s.panelFolds, [id]: !(s.panelFolds[id] ?? false) } })),
 
   setPanelOrder: (panelOrder) => set({ panelOrder }),
+
+  setSidebarWidth: (px) => set({ sidebarWidth: Math.min(420, Math.max(180, Math.round(px))) }),
+
+  setRightbarWidth: (px) => set({ rightbarWidth: Math.min(480, Math.max(220, Math.round(px))) }),
 
   // Held, because the darkroom collapses raw+JPEG pairs and the grid does
   // not: the list is a different length on either side of this.

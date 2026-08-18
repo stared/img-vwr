@@ -3,6 +3,7 @@ import { allPanels, type Panel } from "../../registry/panels";
 import { useDevelopStore } from "../../state/develop";
 import { useAppStore } from "../../state/store";
 import { PanelSection } from "./PanelSection";
+import { SidebarResizer } from "./SidebarResizer";
 
 /** Registered order is the default; the stored preference ranks first. */
 function ordered(panels: Panel[], order: string[]): Panel[] {
@@ -19,6 +20,7 @@ export function RightSidebar() {
   const toggleStats = useAppStore((s) => s.toggleStats);
   const order = useAppStore((s) => s.panelOrder);
   const setPanelOrder = useAppStore((s) => s.setPanelOrder);
+  const width = useAppStore((s) => s.rightbarWidth);
   // `when` guards read these; subscribing keeps the section set current.
   useAppStore((s) => s.galleryLayout);
   useAppStore((s) => s.viewMode);
@@ -57,7 +59,8 @@ export function RightSidebar() {
   };
 
   return (
-    <aside className="sidebar right">
+    <aside className="sidebar right" style={{ width }}>
+      <SidebarResizer side="right" />
       {panels.map((panel, i) => (
         <PanelSection
           key={panel.id}

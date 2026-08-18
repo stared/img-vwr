@@ -1,6 +1,7 @@
 import { titleWithChord } from "../../registry/keybindings";
 import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
+import { SidebarResizer } from "./SidebarResizer";
 
 /**
  * Left sidebar: an icon row picks ONE panel; clicking the active icon
@@ -11,6 +12,7 @@ export function Sidebar() {
   const activeId = useAppStore((s) => s.activePanelId);
   const setActivePanel = useAppStore((s) => s.setActivePanel);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const width = useAppStore((s) => s.sidebarWidth);
   const panels = allPanels();
   const active = panels.find((p) => p.id === activeId) ?? panels[0];
 
@@ -29,7 +31,8 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{ width }}>
+      <SidebarResizer side="left" />
       <nav className="activitybar">
         {panels.map((panel) => (
           <button

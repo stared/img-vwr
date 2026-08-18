@@ -39,6 +39,8 @@ interface SavedSession {
   activePanelId: string;
   panelFolds: Record<string, boolean>;
   panelOrder: string[];
+  sidebarWidth: number;
+  rightbarWidth: number;
   sceneGapMin: number;
   sceneContentWeight: number;
   develop: {
@@ -70,6 +72,8 @@ function snapshot(): SavedSession {
     activePanelId: s.activePanelId,
     panelFolds: s.panelFolds,
     panelOrder: s.panelOrder,
+    sidebarWidth: s.sidebarWidth,
+    rightbarWidth: s.rightbarWidth,
     sceneGapMin: s.sceneGapMin,
     sceneContentWeight: s.sceneContentWeight,
     develop: {
@@ -207,6 +211,8 @@ export function restoreSession(): boolean {
       Array.isArray(o.panelOrder) && o.panelOrder.every(isString)
         ? o.panelOrder
         : app.panelOrder,
+    sidebarWidth: isNum(o.sidebarWidth) ? o.sidebarWidth : app.sidebarWidth,
+    rightbarWidth: isNum(o.rightbarWidth) ? o.rightbarWidth : app.rightbarWidth,
     sceneGapMin: isNum(o.sceneGapMin) ? o.sceneGapMin : app.sceneGapMin,
     sceneContentWeight: isNum(o.sceneContentWeight)
       ? o.sceneContentWeight

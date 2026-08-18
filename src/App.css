@@ -150,16 +150,38 @@ kbd {
   margin-left: auto;
 }
 
+/* Widths come inline from the store (drag the inner edge to resize). */
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
-  width: 230px;
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .sidebar:not(.right) {
   border-right: 1px solid var(--border);
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  z-index: 5;
+  cursor: col-resize;
+}
+
+.sidebar-resizer.left {
+  right: 0;
+}
+
+.sidebar-resizer.right {
+  left: 0;
+}
+
+.sidebar-resizer:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* The activity bar picked one panel; its title heads the whole sidebar. */
@@ -450,11 +472,6 @@ kbd {
 
 /* ---- Statistics panel ---- */
 
-/* :not(.collapsed) keeps the .sidebar.collapsed rail width winning here —
-   this block comes later in the cascade at equal specificity. */
-.sidebar.right:not(.collapsed) {
-  width: 250px;
-}
 
 .stats {
   padding: 0 12px 14px;
