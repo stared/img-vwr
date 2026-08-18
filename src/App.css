@@ -1728,10 +1728,12 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
-/* Caption lines under the exposure row: one thought per line, dim. */
+/* Caption lines: one thought per line, composed to fit the column —
+   never truncated. The exposure rows read bright, the rest dim. */
 .shot-panel {
   padding: 0 0 8px;
   font-size: 12px;
+  line-height: 1.6;
 }
 
 .shot-panel .develop-shot,
@@ -1740,12 +1742,15 @@ button.stats-row:hover .stats-label {
 }
 
 .shot-line {
-  margin: 0 0 2px;
+  margin: 0;
   padding: 0 12px;
   color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.shot-line.bright {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
 }
 
 .develop-shot-fact {

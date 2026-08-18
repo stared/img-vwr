@@ -93,6 +93,13 @@ export function ShotPanel() {
     });
   }
 
+  // Two deliberate rows sized to the column: the exposure triangle, then
+  // focal length and EV. Letting one row wrap strands an orphan token.
+  const triangle = facts.filter((f) => ["shutter", "aperture", "iso"].includes(f.key));
+  const framing = ["focal", "ev"]
+    .map((key) => facts.find((f) => f.key === key)?.text)
+    .filter((text): text is string => text !== undefined)
+    .join(" · ");
   const gear = [exif?.camera, exif?.lens].filter(Boolean).join(" · ");
   const grade = meta?.grade
     ? [
@@ -104,11 +111,11 @@ export function ShotPanel() {
         .filter(Boolean)
         .join(" · ")
     : "";
+  // Dimensions live in the status bar; repeating them here would push this
+  // line past the column. To the minute — seconds earn nothing.
   const file = [
-    // To the minute; seconds earn nothing on a caption line.
     (exif?.dateTime ?? new Date(entry.modifiedMs).toLocaleString()).slice(0, 16),
     formatBytes(entry.size),
-    meta ? `${meta.width} × ${meta.height}` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -119,9 +126,9 @@ export function ShotPanel() {
 
   return (
     <div className="shot-panel">
-      {facts.length > 0 && (
+      {triangle.length > 0 && (
         <p className="develop-shot">
-          {facts.map((fact) => (
+          {triangle.map((fact) => (
             <span key={fact.key} className="develop-shot-fact" title={fact.title}>
               {fact.icon}
               {fact.text}
@@ -129,13 +136,14 @@ export function ShotPanel() {
           ))}
         </p>
       )}
+      {framing !== "" && <p className="shot-line bright">{framing}</p>}
       {gear !== "" && <p className="shot-line">{gear}</p>}
       {grade !== "" && (
         <p className="shot-line" title="the camera's own per-shot grade">
           {grade}
         </p>
       )}
-      <p className="shot-line" title="taken · file size · frame">
+      <p className="shot-line" title="taken · file size">
         {file}
       </p>
       {place !== "" && <p className="shot-line">{place}</p>}
