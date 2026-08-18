@@ -665,8 +665,8 @@ export function FilterBar() {
 
       <AddFilterMenu scope={scope} />
 
-      {/* View is part of how the query renders: a grid of thumbnails, a
-          timeline by date, or a map of the geolocated results. */}
+      {/* The right cluster: how the results render and in what order. */}
+      <div className="filterbar-right">
       <EditableChip
         chipKey="view"
         value={galleryLayout}
@@ -697,10 +697,8 @@ export function FilterBar() {
 
       <SortChip scope={scope} sort={query.sort} />
 
-      {/* The darkroom's magnification, compact at the row's end — the bar
-          is already there, and a line of its own for one slider is not
-          worth the height it costs the photograph. */}
       {galleryLayout === "darkroom" && <ZoomBar />}
+      </div>
     </div>
   );
 }

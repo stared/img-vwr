@@ -645,6 +645,14 @@ button.stats-row:hover .stats-label {
   font-size: 12px;
 }
 
+/* View, sort and the darkroom zoom hold the right edge, wrapped or not. */
+.filterbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
