@@ -16,7 +16,7 @@ export function SidebarResizer({ side }: { side: "left" | "right" }) {
         if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
         set(side === "left" ? e.clientX : window.innerWidth - e.clientX);
       }}
-      onDoubleClick={() => set(side === "left" ? 230 : 280)}
+      onDoubleClick={() => set(side === "left" ? 230 : 310)}
     />
   );
 }

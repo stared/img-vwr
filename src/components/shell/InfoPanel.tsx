@@ -44,13 +44,13 @@ function ApertureIcon() {
   );
 }
 
-/** Focal length: the angle of view. */
+/** Focal length: a length. */
 function FocalIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 12 L21 5" />
-      <path d="M3 12 L21 19" />
-      <path d="M15 7.5 A 8.5 8.5 0 0 1 15 16.5" />
+      <path d="M3.5 12 h17" />
+      <path d="M7 8.5 L3.5 12 L7 15.5" />
+      <path d="M17 8.5 L20.5 12 L17 15.5" />
     </svg>
   );
 }

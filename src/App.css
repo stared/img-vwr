@@ -1759,19 +1759,19 @@ button.stats-row:hover .stats-label {
   padding: 0 12px;
 }
 
-/* Exposure values on an invisible three-column grid: aligned whitespace
-   separates them, and every cell is a dim mark before a bright value. */
+/* The exposure values on one line, every cell a dim mark before a bright
+   value; a narrow column wraps whole cells at the same gap. */
 .exif-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 11px;
   margin: 0 12px;
 }
 
 .exif-cell {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

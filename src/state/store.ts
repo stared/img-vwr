@@ -413,7 +413,9 @@ export const initialState: AppState = {
   panelFolds: {},
   panelOrder: [],
   sidebarWidth: 230,
-  rightbarWidth: 280,
+  // Wide enough for the Shot block's one-line exposure row at worst-case
+  // values (five-digit ISO, negative EV).
+  rightbarWidth: 310,
   viewMode: "gallery",
   galleryLayout: "grid",
   timelineOrientation: "vertical",
