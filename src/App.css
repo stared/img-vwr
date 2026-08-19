@@ -1745,10 +1745,14 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
+/* One vertical gap everywhere — between grid rows, gear, and footer. */
 .shot-panel {
-  padding: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 2px 0 10px;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.35;
 }
 
 .shot-panel .info-rating {
@@ -1760,8 +1764,8 @@ button.stats-row:hover .stats-label {
 .exif-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 3px 10px;
-  margin: 2px 12px 8px;
+  gap: 5px 10px;
+  margin: 0 12px;
 }
 
 .exif-cell {
@@ -1797,6 +1801,21 @@ button.stats-row:hover .stats-label {
   margin: 0;
   padding: 0 12px;
   min-width: 0;
+}
+
+/* Camera and lens share a line, each its own marked segment; a narrow
+   column wraps the lens onto the next line at the same gap. */
+.shot-row.wrap {
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 5px;
+}
+
+.shot-seg {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .shot-foot .shot-row {

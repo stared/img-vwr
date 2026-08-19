@@ -185,16 +185,20 @@ export function ShotPanel() {
           ))}
         </div>
       )}
-      {exif?.camera != null && (
-        <p className="shot-row" title="camera">
-          <CameraIcon />
-          {exif.camera}
-        </p>
-      )}
-      {exif?.lens != null && (
-        <p className="shot-row" title="lens">
-          <LensIcon />
-          {exif.lens}
+      {(exif?.camera != null || exif?.lens != null) && (
+        <p className="shot-row wrap">
+          {exif?.camera != null && (
+            <span className="shot-seg" title="camera">
+              <CameraIcon />
+              {exif.camera}
+            </span>
+          )}
+          {exif?.lens != null && (
+            <span className="shot-seg" title="lens">
+              <LensIcon />
+              {exif.lens}
+            </span>
+          )}
         </p>
       )}
       {grade !== "" && (
