@@ -1,46 +1,11 @@
-//! Getting photographs out of the app.
-//!
-//! Everything else here is non-destructive and app-local: edits live in
-//! `develop.db`, labels in their own table, nothing is ever written beside the
-//! user's originals. Export is the one place pixels leave, so it is the one
-//! place that has to answer the awkward questions — what size, what quality,
-//! what happens to the metadata, and what to do about the photograph that was
-//! never edited at all.
-//!
-//! ## The unedited raw
-//!
-//! A shoot in raw + JPEG is mostly frames nobody touched. Rendering those from
-//! the sensor produces a *different* picture from the one the camera made —
-//! this app's default look, not Nikon's — and takes a couple of seconds each
-//! to decode. The camera's JPEG is sitting right there, is what the
-//! photographer already judged the frame by, and carries its metadata intact.
-//!
-//! So an export can be told to take it: an untouched photograph is *copied*,
-//! byte for byte where the size allows, and only the edited ones are rendered.
-//! Which files that applies to is decided on the UI side, where stacks are
-//! known; this module is handed a job and does exactly what it says.
-//!
-//! ## Metadata
-//!
-//! A rendered image has no EXIF — the pipeline produces pixels, not a file
-//! that remembers a camera. That is a poor thing to hand somebody: the date,
-//! the lens and the exposure are half of what a photograph is. Where there is
-//! a JPEG of the same frame (the camera's, beside the raw), its APP1 segment
-//! is carried onto the export, so an exported edit still says when and how it
-//! was taken. `ExifSource` says where to take it from, and `None` is a real
-//! answer rather than a missing field.
-
 use std::path::{Path, PathBuf};
 
 use image::{DynamicImage, RgbaImage};
 use serde::{Deserialize, Serialize};
 
-/// What an exported file is encoded as.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ExportFormat {
-    /// Quality on the usual 1–100 scale; 90 is the "good enough that the
-    /// codec is not what you are looking at" setting.
     Jpeg { quality: u8 },
     Png,
 }
@@ -54,17 +19,15 @@ impl ExportFormat {
     }
 }
 
-/// How big the exported file is.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ExportSize {
-    /// Everything the crop holds. Never more: an export is not an upscaler.
+    /// Never more than the source holds: an export is not an upscaler.
     Full,
     Longest { pixels: u32 },
 }
 
 impl ExportSize {
-    /// The longest edge to render at, given what the source actually holds.
     pub fn edge(&self, native: u32) -> u32 {
         match self {
             Self::Full => native.max(1),
@@ -77,31 +40,18 @@ impl ExportSize {
     }
 }
 
-/// Where an export's metadata comes from.
-///
-/// A discriminated choice rather than an optional path, because "there is no
-/// JPEG of this frame" is a state the caller knows and should have to say.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ExifSource {
     None,
-    /// Carry the EXIF of this file — the camera's JPEG of the same frame.
     File { path: String },
 }
 
-/// One photograph's worth of work.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ExportJob {
-    /// Develop this file under its stored edit — or, where there is none,
-    /// under what it opens with.
-    ///
-    /// The settings are not carried in the job: they are already in
-    /// `develop.db`, every change saves there as it is made, and a batch that
-    /// had to fetch them first would open every raw file twice.
+    /// Settings are not in the job: they are already saved in `develop.db`.
     Render { path: String, exif: ExifSource },
-    /// Take this JPEG as it stands. What an untouched frame in a raw + JPEG
-    /// shoot exports as, and the reason exporting a whole take is fast.
     Copy { path: String },
 }
 
@@ -114,7 +64,6 @@ impl ExportJob {
     }
 }
 
-/// The settings shared by every file in one export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPlan {
@@ -123,23 +72,17 @@ pub struct ExportPlan {
     pub size: ExportSize,
 }
 
-/// What actually happened to one photograph.
 #[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Exported {
     pub source: String,
-    /// Where it landed — not always the name asked for, since an export never
-    /// overwrites a file that is already there.
+    /// Not always the name asked for: an export never overwrites an existing file.
     pub path: String,
-    /// True when the camera's own JPEG was taken rather than pixels rendered.
+    /// True only for the byte-for-byte case — a resized copy re-encodes and reports false.
     pub copied: bool,
 }
 
-/// A free name in `folder` for a file made from `source`.
-///
-/// Never overwrites. Exporting twice into the same folder is something people
-/// do by accident far more often than on purpose, and the accident that
-/// silently replaces the first export is the expensive one.
+/// Never overwrites: a second export lands beside the first, not over it.
 pub fn destination_for(folder: &Path, source: &str, extension: &str) -> PathBuf {
     let stem = Path::new(source)
         .file_stem()
@@ -158,12 +101,7 @@ pub fn destination_for(folder: &Path, source: &str, extension: &str) -> PathBuf 
     first
 }
 
-/// Copy a JPEG out, resizing only if the plan asks for less than it holds.
-///
-/// The full-size case is a byte-for-byte file copy: no decode, no re-encode,
-/// and every scrap of metadata the camera wrote arrives intact. That is the
-/// whole point of preferring the camera's JPEG for an untouched frame — asking
-/// the codec to have another go at pixels nobody changed can only lose.
+/// Full-size JPEG-to-JPEG is a byte-for-byte copy: no re-encode, metadata intact.
 pub fn copy_jpeg(source: &Path, plan: &ExportPlan, destination: &Path) -> Result<bool, String> {
     let bytes = std::fs::read(source).map_err(|e| e.to_string())?;
 
@@ -187,11 +125,8 @@ pub fn copy_jpeg(source: &Path, plan: &ExportPlan, destination: &Path) -> Result
     };
 
     match plan.format {
-        // A PNG export of an untouched JPEG still has to be encoded as one.
         ExportFormat::Png => scaled.into_rgba8().save(destination).map_err(|e| e.to_string())?,
         ExportFormat::Jpeg { quality } => {
-            // The camera's EXIF rides along: a resized share copy that has
-            // forgotten the date and the lens is a worse photograph.
             let encoded = encode_jpeg(&scaled.into_rgb8(), quality)?;
             let out = match app1_of(&bytes) {
                 Some(app1) => with_app1(&encoded, &app1),
@@ -203,7 +138,6 @@ pub fn copy_jpeg(source: &Path, plan: &ExportPlan, destination: &Path) -> Result
     Ok(false)
 }
 
-/// Write developed pixels, carrying metadata from `exif` where there is any.
 pub fn write_rendered(
     image: RgbaImage,
     plan: &ExportPlan,
@@ -213,8 +147,6 @@ pub fn write_rendered(
     match plan.format {
         ExportFormat::Png => image.save(destination).map_err(|e| e.to_string()),
         ExportFormat::Jpeg { quality } => {
-            // JPEG has no alpha, and a developed photograph has nothing
-            // meaningful in one anyway.
             let rgb = DynamicImage::ImageRgba8(image).into_rgb8();
             let encoded = encode_jpeg(&rgb, quality)?;
             let out = match exif_bytes(exif).as_deref().and_then(app1_of) {
@@ -241,13 +173,7 @@ fn encode_jpeg(image: &image::RgbImage, quality: u8) -> Result<Vec<u8>, String> 
     Ok(out)
 }
 
-/// The APP1/Exif segment of a JPEG, marker and length included.
-///
-/// Bytes rather than a parsed structure on purpose. There is no EXIF *writer*
-/// in this dependency tree, and there does not need to be: the segment is
-/// self-contained and the only correct thing to do with somebody's camera
-/// metadata is to move it across unchanged. Parsing it would be an
-/// opportunity to lose a maker note.
+/// The APP1/Exif segment, marker and length included — raw bytes, moved unchanged so no maker note is lost.
 pub fn app1_of(jpeg: &[u8]) -> Option<Vec<u8>> {
     if jpeg.len() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
         return None;
@@ -258,8 +184,7 @@ pub fn app1_of(jpeg: &[u8]) -> Option<Vec<u8>> {
             return None;
         }
         let marker = jpeg[at + 1];
-        // Start of scan: the entropy-coded data begins and there are no more
-        // headers to walk.
+        // SOS/EOI: no more headers to walk.
         if marker == 0xDA || marker == 0xD9 {
             return None;
         }
@@ -276,14 +201,7 @@ pub fn app1_of(jpeg: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-/// The APP1 segment with its Orientation tag set back to upright (1).
-///
-/// Rendered pixels are already upright — the scene applies the camera's
-/// orientation before the pipeline ever sees them. Carrying the tag across
-/// unchanged asks every viewer to rotate the photograph a second time, which
-/// is how a portrait export lands on its side. Only that one word is touched,
-/// in place; every other byte still moves verbatim. Anything unexpected in
-/// the structure leaves the segment as it was.
+/// Rendered pixels are already upright; an unchanged Orientation tag would rotate them a second time.
 pub fn app1_upright(app1: &[u8]) -> Vec<u8> {
     let mut out = app1.to_vec();
     // FF E1, length, "Exif\0\0" — then the TIFF header all offsets count from.
@@ -312,8 +230,7 @@ pub fn app1_upright(app1: &[u8]) -> Vec<u8> {
         if at + 12 > out.len() {
             return out;
         }
-        // Tag 0x0112, Orientation: a SHORT with count 1, so the value lives
-        // in the entry's own value field — nothing outside it moves.
+        // Orientation (0x0112) is a SHORT with count 1: the value lives in the entry's own value field.
         if read16(&out[at..at + 2]) == 0x0112 {
             let upright = if le { 1u16.to_le_bytes() } else { 1u16.to_be_bytes() };
             out[at + 8] = upright[0];
@@ -324,8 +241,6 @@ pub fn app1_upright(app1: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The same JPEG with an APP1 segment placed where it belongs: immediately
-/// after the SOI, before any segment the encoder wrote.
 pub fn with_app1(jpeg: &[u8], app1: &[u8]) -> Vec<u8> {
     if jpeg.len() < 2 || jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
         return jpeg.to_vec();
@@ -350,9 +265,7 @@ mod tests {
         }
     }
 
-    /// An APP1 segment with a real IFD0 in it: an ImageDescription entry and
-    /// an Orientation entry — enough structure that a patch has to actually
-    /// walk the directory rather than pattern-match.
+    /// Enough real IFD0 structure that a patch has to walk the directory, not pattern-match.
     fn app1_with_orientation(orientation: u16, le: bool) -> Vec<u8> {
         let w16 = |v: u16| if le { v.to_le_bytes() } else { v.to_be_bytes() };
         let w32 = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() };
@@ -377,8 +290,6 @@ mod tests {
         app1
     }
 
-    /// A JPEG with a plausible APP1 segment in it — enough structure that the
-    /// walker has to actually parse rather than pattern-match.
     fn jpeg_with_exif(width: u32, height: u32) -> Vec<u8> {
         let img = RgbImage::from_fn(width, height, |x, _| {
             image::Rgb([(x % 256) as u8, 128, 64])
@@ -394,7 +305,6 @@ mod tests {
         assert_eq!(&app1[..2], &[0xFF, 0xE1]);
         assert_eq!(app1, app1_with_orientation(6, false));
 
-        // And putting it onto another JPEG makes that one carry it too.
         let plain = encode_jpeg(&RgbImage::new(4, 4), 90).unwrap();
         assert!(app1_of(&plain).is_none());
         assert_eq!(app1_of(&with_app1(&plain, &app1)), Some(app1));
@@ -402,8 +312,6 @@ mod tests {
 
     #[test]
     fn rendered_pixels_are_upright_so_the_orientation_tag_must_not_turn_them_again() {
-        // Both byte orders, every rotated orientation: the tag comes out 1 and
-        // nothing else in the segment moves.
         for le in [false, true] {
             for orientation in [2u16, 3, 5, 6, 8] {
                 let before = app1_with_orientation(orientation, le);
@@ -416,8 +324,7 @@ mod tests {
 
     #[test]
     fn a_segment_that_is_not_understood_is_left_exactly_as_it_was() {
-        // No Exif marker, unknown byte order, truncated mid-directory: each
-        // comes back byte-for-byte, never half-patched.
+        // No Exif marker, unknown byte order, truncated mid-directory.
         let odd = vec![0xFF, 0xE1, 0x00, 0x04, 0x58, 0x58];
         assert_eq!(app1_upright(&odd), odd);
         let mut wrong_order = app1_with_orientation(6, false);
@@ -515,8 +422,7 @@ mod tests {
 
         let written = std::fs::read(&dest).unwrap();
         let app1 = app1_of(&written).expect("the sibling JPG's EXIF must ride along");
-        // ...with its orientation reset: the source frame said "rotate 90°"
-        // (orientation 6), but rendered pixels are already upright.
+        // Orientation reset: the source said 6, but rendered pixels are already upright.
         assert_eq!(app1, app1_with_orientation(1, false));
         let img = image::load_from_memory(&written).unwrap();
         assert_eq!((img.width(), img.height()), (20, 10));

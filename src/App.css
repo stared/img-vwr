@@ -6,12 +6,9 @@
   --text: #e6e7ea;
   --text-dim: #8a8d94;
   --accent: #5e6ad2;
-  /* Quieter members of the same family, for chrome that should recede:
-     hairlines, secondary labels, and controls that are merely available. */
   --accent-muted: #6a74c9;
   --accent-text: #9aa3ea;
   --border-faint: #1e1f24;
-  /* A tile a step off the ground: thumbnail cells, loading squares. */
   --bg-raised: #17181c;
   --text-faint: #6b6e76;
   --danger: #e5534b;
@@ -83,8 +80,6 @@ kbd {
 
 /* ---- Sidebar ---- */
 
-/* VS Code-style activity bar: a narrow icon strip that picks ONE panel. */
-/* One row of panel icons at the sidebar's top — no separate rail. */
 .activitybar {
   display: flex;
   align-items: center;
@@ -163,7 +158,6 @@ kbd {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-/* The activity bar picked one panel; its title heads the whole sidebar. */
 .sidebar-title {
   padding: 10px 12px 6px;
   font-size: 11px;
@@ -218,7 +212,6 @@ kbd {
   padding: 6px 6px 4px 8px;
 }
 
-/* Reorder handles: present on hover, so the header stays quiet. */
 .panel-move {
   display: flex;
   margin-left: auto;
@@ -296,7 +289,6 @@ kbd {
   opacity: 0.7;
 }
 
-/* Source panels: one input, Enter loads the source as the scope. */
 .source-form {
   padding: 2px 12px 10px;
 }
@@ -322,7 +314,6 @@ kbd {
   font-size: 13px;
 }
 
-/* Similarity panel: model picker rows with quality/speed notes. */
 .model-list {
   display: flex;
   flex-direction: column;
@@ -462,7 +453,6 @@ kbd {
   color: var(--text);
 }
 
-/* The panel header already separates the first section from the title. */
 .stats-section:first-child {
   margin-top: 0;
   border-top: none;
@@ -590,7 +580,6 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
-/* Same type as the rows around it — only the dim color marks it as a note. */
 .stats-note {
   padding-top: 3px;
   color: var(--text-dim);
@@ -610,8 +599,7 @@ button.stats-row:hover .stats-label {
   background: var(--bg);
 }
 
-/* Invert the OSM raster tiles into the app's dark theme. Applied per tile:
-   WebKit drops filters on the 3D-transformed tile pane. */
+/* Per tile: WebKit drops filters on the 3D-transformed tile pane. */
 .map-canvas img.leaflet-tile {
   filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.4);
 }
@@ -672,7 +660,6 @@ button.stats-row:hover .stats-label {
   font-size: 12px;
 }
 
-/* View, sort and the darkroom zoom hold the right edge, wrapped or not. */
 .filterbar-right {
   display: flex;
   align-items: center;
@@ -702,9 +689,7 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
-/* Sort-chip tokens: each word is its own click target. Live tokens (the
-   phrase, the model) show their editability on hover. The chip sits above
-   the menu backdrop so it stays interactive while collecting a parameter. */
+/* Above the menu backdrop: the chip stays interactive while collecting a parameter. */
 .chip-sort {
   position: relative;
   z-index: 51;
@@ -755,7 +740,6 @@ button.stats-row:hover .stats-label {
   outline: none;
 }
 
-/* Editable chips: the body opens an editor, only the × removes. */
 .chip-wrap {
   position: relative;
   display: inline-flex;
@@ -808,8 +792,6 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
-/* Value + apply for a range filter; appears under the operator rows once
-   one is picked. */
 .range-form {
   display: flex;
   flex-direction: column;
@@ -891,7 +873,6 @@ button.stats-row:hover .stats-label {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
-/* Right-click image menu: same look, positioned at the cursor (inline). */
 .filter-menu.context-menu {
   position: fixed;
   min-width: 200px;
@@ -937,7 +918,6 @@ button.stats-row:hover .stats-label {
   min-width: 12px;
 }
 
-/* A command's chord in a menu row, as a quiet keycap. */
 .menu-key {
   margin-right: 6px;
   padding: 0 4px;
@@ -953,14 +933,11 @@ button.stats-row:hover .stats-label {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
-/* A format this folder has none of: still offered, since a filter outlives
-   the folder, but visibly not part of what is here. Still clickable — asking
-   for it is how you find out nothing matches. */
+/* Offered but dim: the folder has none of it; a filter outlives the folder. */
 .filter-menu button.menu-absent {
   color: var(--text-dim);
 }
 
-/* A grayed row: the command exists, something it needs does not. */
 .filter-menu button:disabled {
   color: var(--text-faint);
 }
@@ -976,7 +953,6 @@ button.stats-row:hover .stats-label {
   background: var(--border);
 }
 
-/* The current view's knobs, below the view rows. */
 .menu-knobs {
   margin-top: 4px;
   padding-top: 4px;
@@ -1015,8 +991,7 @@ button.stats-row:hover .stats-label {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
-  /* Reserve the scrollbar's width permanently: results streaming in (or a
-     sort hiding rows) must never re-flow the columns. */
+  /* Reserved permanently: streaming results must never re-flow the columns. */
   scrollbar-gutter: stable;
 }
 
@@ -1033,8 +1008,7 @@ button.stats-row:hover .stats-label {
   justify-content: start;
 }
 
-/* A scene's header: when it started, and how many photographs it holds.
-   Height must mirror SCENE_HEADER_HEIGHT in GalleryGrid.tsx. */
+/* Height must mirror SCENE_HEADER_HEIGHT in GalleryGrid.tsx. */
 .gallery-scene-header {
   position: absolute;
   top: 0;
@@ -1064,13 +1038,11 @@ button.stats-row:hover .stats-label {
   gap: 4px;
   border-radius: 10px;
   padding: 4px;
-  /* ⇧-clicking through a run of cells must reach photographs, not drag a
-     text selection across their captions. */
+  /* ⇧-clicking a run of cells must not drag a text selection across captions. */
   user-select: none;
 }
 
-/* One selection language in every view: 1px frame selected, 2px the lead,
-   drawn above the picture so nothing in the cell can paint over it. */
+/* One selection language in every view: 1px selected, 2px lead, above the picture. */
 .thumb-cell.selected::before,
 .thumb-cell.lead::before,
 .filmstrip-cell.selected::before,
@@ -1107,12 +1079,10 @@ button.stats-row:hover .stats-label {
   justify-content: center;
   overflow: hidden;
   position: relative;
-  /* A raised tile; the corner badges sit on it. */
   background: var(--bg-raised);
   border-radius: 4px;
 }
 
-/* Five stars, the filled ones carrying the rating. */
 .info-rating {
   display: flex;
   gap: 1px;
@@ -1133,7 +1103,6 @@ button.stats-row:hover .stats-label {
   color: var(--accent);
 }
 
-/* Top-left of the cell, one treatment in every view. */
 .thumb-stars {
   position: absolute;
   left: 4px;
@@ -1146,7 +1115,6 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
-/* The face of an HDR set: this cell is the fused photograph, not one file. */
 .thumb-hdr {
   position: absolute;
   right: 4px;
@@ -1177,7 +1145,7 @@ button.stats-row:hover .stats-label {
 }
 
 .thumb-cell figcaption {
-  /* Fixed height — GalleryGrid's ROW_HEIGHT depends on it. */
+  /* Fixed height: GalleryGrid's ROW_HEIGHT depends on it. */
   height: 16px;
   line-height: 16px;
   font-size: 11px;
@@ -1241,16 +1209,12 @@ button.stats-row:hover .stats-label {
   flex-shrink: 0;
 }
 
-/* Stars + tags of the selected image. */
 .status-labels {
   color: var(--accent);
 }
 
 /* ---- Command palette ---- */
 
-/* VS Code-style quick input: attached flush to the top edge (square top
-   corners, no gap), no screen dimming — the backdrop is only a click-away
-   target. */
 .palette-backdrop {
   position: fixed;
   inset: 0;
@@ -1278,7 +1242,6 @@ button.stats-row:hover .stats-label {
   border-bottom: 1px solid var(--border);
 }
 
-/* The chosen command, shown while its argument is being typed. */
 .palette-pending {
   flex: none;
   padding: 2px 8px;
@@ -1380,7 +1343,6 @@ button.stats-row:hover .stats-label {
   border-color: var(--accent);
 }
 
-/* Groups flow into as many columns as the width holds, never splitting. */
 .shortcuts-body {
   overflow-y: auto;
   padding: 12px 16px;
@@ -1434,7 +1396,7 @@ button.stats-row:hover .stats-label {
   cursor: default;
 }
 
-/* ───────────────────────── timeline view ───────────────────────── */
+/* ---- Timeline ---- */
 
 .timeline-gallery {
   flex: 1;
@@ -1444,7 +1406,6 @@ button.stats-row:hover .stats-label {
   position: relative;
 }
 
-/* Zoomed in, the timeline floats its way back out over the pane. */
 .tl-fit {
   position: absolute;
   top: 8px;
@@ -1621,10 +1582,6 @@ button.stats-row:hover .stats-label {
   color: var(--danger);
 }
 
-/* The HDR set as rows of its files: name, exposure step, fate. One row is
-   the fused photograph's own; the others are single exposures a click puts
-   on screen. A misaligned frame is dim, not red — leaving it out is the
-   honest rendering, not a failure to repair. */
 .develop-toggle.hdr-frame {
   display: flex;
   align-items: baseline;
@@ -1676,9 +1633,6 @@ button.stats-row:hover .stats-label {
   text-transform: uppercase;
 }
 
-/* The heading is the fold, wearing the same disclosure as the sidebar's own
-   sections. The whole line is the target — a heading you can only hit on
-   the triangle is a heading you miss. */
 .develop-fold {
   display: flex;
   align-items: center;
@@ -1700,7 +1654,6 @@ button.stats-row:hover .stats-label {
   line-height: 1.45;
 }
 
-/* One vertical gap everywhere — between grid rows, gear, and footer. */
 .shot-panel {
   display: flex;
   flex-direction: column;
@@ -1714,8 +1667,6 @@ button.stats-row:hover .stats-label {
   padding: 0 12px;
 }
 
-/* The exposure values on one line, every cell a dim mark before a bright
-   value; a narrow column wraps whole cells at the same gap. */
 .exif-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1748,7 +1699,6 @@ button.stats-row:hover .stats-label {
   letter-spacing: 0.04em;
 }
 
-/* A marked line: the same dim mark + bright value rhythm as the grid. */
 .shot-row {
   display: flex;
   align-items: center;
@@ -1758,8 +1708,6 @@ button.stats-row:hover .stats-label {
   min-width: 0;
 }
 
-/* Camera and lens share a line, each its own marked segment; a narrow
-   column wraps the lens onto the next line at the same gap. */
 .shot-row.wrap {
   flex-wrap: wrap;
   column-gap: 12px;
@@ -1789,11 +1737,7 @@ button.stats-row:hover .stats-label {
   padding: 0 12px;
 }
 
-/* ---- Sliders ----
-   One control for every continuous quantity in the app, so they line up
-   wherever two of them sit together: one track height, one thumb, one place
-   the number goes. Two layouts and nothing else differs — a panel stacks the
-   label over the track, a toolbar lays them along a line. */
+/* ---- Sliders ---- */
 
 .slider {
   display: block;
@@ -1805,10 +1749,7 @@ button.stats-row:hover .stats-label {
   align-items: center;
   gap: 8px;
   padding: 0;
-  /* The readout is an <input>, and an input's minimum content width is its
-     default twenty characters — far wider than the 54px column it is given.
-     Without this the whole slider refuses to shrink below that phantom and
-     slides out of a narrow toolbar, over whatever is beside it. */
+  /* An input's intrinsic min-width is ~20 characters; without this the slider can't shrink. */
   min-width: 0;
 }
 
@@ -1819,14 +1760,9 @@ button.stats-row:hover .stats-label {
 
 .slider-label {
   color: var(--text-dim);
-  /* Toolbar labels do not wrap; a slider that grew a second line would push
-     the whole row out of alignment with the one beside it. */
   white-space: nowrap;
 }
 
-/* The current value is the point of the control, so it reads as text — and it
-   is a field, because a number you can read but not state is half a control.
-   Tabular figures, so it does not jitter the layout as it counts. */
 .slider-value {
   min-width: 0;
   padding: 0 2px;
@@ -1841,8 +1777,6 @@ button.stats-row:hover .stats-label {
   cursor: text;
 }
 
-/* It only looks like a field once you are near it — a panel of a dozen boxes
-   would read as a form, and this is a readout that happens to be editable. */
 .slider:hover .slider-value {
   background: color-mix(in srgb, var(--text) 7%, transparent);
 }
@@ -1857,23 +1791,12 @@ button.stats-row:hover .stats-label {
   color: var(--text);
 }
 
-/* The track: a rail, a fill from the neutral value, the marks, and the thumb
-   — in that order, so the thumb is in front of a mark it is sitting on, and
-   the marks are in front of the rail.
-
-   Taller than the hairline it draws, because the whole of it is the grab
-   target and a 1 px target is a target you miss.
-
-   A slider should be a line and a mark on it, not a widget: the value stated
-   quietly, with the least ink that still supports a drag. The thumb is two
-   pixels wide because it points at a value — a circle implies a thing you
-   grab, a bar implies a position you read. */
 .slider-track {
   position: relative;
   display: block;
   height: 14px;
   cursor: ew-resize;
-  /* Or the webview pans the panel instead of moving the thumb. */
+  /* Without this the webview pans the panel instead of moving the thumb. */
   touch-action: none;
 }
 
@@ -1891,10 +1814,7 @@ button.stats-row:hover .stats-label {
   background: var(--border);
 }
 
-/* Drawn from the *neutral* value to the current one rather than from the left
-   edge. On a bipolar control that is the honest picture: the bar shows how far
-   the setting has been moved and in which direction, and vanishes entirely
-   when nothing has been changed. */
+/* The fill runs from the neutral value, not the left edge. */
 .slider-fill {
   background: var(--accent-muted);
 }
@@ -1916,7 +1836,6 @@ button.stats-row:hover .stats-label {
   background: var(--text);
 }
 
-/* Dragging: the mark grows a little so it stays findable under the cursor. */
 .slider-track:active .slider-thumb {
   height: 13px;
   background: var(--text);
@@ -1957,18 +1876,6 @@ button.stats-row:hover .stats-label {
   color: var(--text);
 }
 
-/* A value worth landing on — the quality people use, the size a site wants.
-   Drawn ON the track, because that is where the value it names is; big enough
-   to aim at; hoverable, so it can say what it is for.
-
-   Pressing one begins a drag from that mark rather than being a button that
-   ends there — which is why the track owns the pointer instead of a native
-   range input, where a clickable mark and a draggable track cannot both be
-   had.
-
-   A mark is part of the line, so it is the colour of the line it sits on:
-   the rail's where the rail runs, the fill's where the fill has reached. A
-   grey dot on a lit bar reads as a hole in the bar. */
 .slider-tick {
   position: absolute;
   top: 50%;
@@ -1988,7 +1895,6 @@ button.stats-row:hover .stats-label {
   background: var(--accent-muted);
 }
 
-/* The hit area, invisible and generous. */
 .slider-tick::after {
   content: "";
   position: absolute;
@@ -2000,15 +1906,12 @@ button.stats-row:hover .stats-label {
   transform: translateY(-50%) scale(1.3);
 }
 
-/* Sitting exactly on a mark: the mark says so, so "2048 px" and "some number
-   near 2048" are not the same picture. */
 .slider-tick.on,
 .slider-tick.on.filled {
   background: var(--accent-text);
 }
 
-/* One button for every enumerable option: each choice is its own button,
-   the active one is marked, colour is spent only on on/armed states. */
+/* One button for every enumerable option; colour only on on/armed states. */
 .develop-reset,
 .develop-toggle,
 .develop-choice,
@@ -2062,9 +1965,7 @@ button.stats-row:hover .stats-label {
   cursor: default;
 }
 
-/* The develop panel is long by nature — a dozen controls plus a histogram.
-   The right sidebar therefore scrolls as a whole instead of letting flex
-   shrink its sections into one another. */
+/* The right sidebar scrolls as a whole; flex must not shrink sections into one another. */
 .sidebar.right:not(.collapsed) {
   overflow-y: auto;
 }
@@ -2082,8 +1983,6 @@ button.stats-row:hover .stats-label {
   min-height: 0;
 }
 
-/* The zoom, compact at the right end of the top bar: a line of its own
-   would cost the photograph height for one slider. */
 .zoom-bar {
   flex: 1;
   min-width: 150px;
@@ -2091,14 +1990,11 @@ button.stats-row:hover .stats-label {
   margin-left: auto;
 }
 
-/* The canvas takes whatever the filmstrip leaves. */
 .darkroom > .viewer-canvas {
   flex: 1;
   min-height: 0;
 }
 
-/* No rule above the strip: the photograph ends where the thumbnails
-   begin, and a line between them is ink spent saying so. */
 .filmstrip {
   display: flex;
   align-items: center;
@@ -2110,9 +2006,9 @@ button.stats-row:hover .stats-label {
 }
 
 .filmstrip-cell {
-  position: relative; /* so the badges can sit in the corners, as in the grid */
+  position: relative;
   display: flex;
-  flex-direction: column; /* picture above, its name on its own line below */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
@@ -2124,8 +2020,6 @@ button.stats-row:hover .stats-label {
   cursor: pointer;
 }
 
-/* The picture's share of the cell: everything the name line leaves. The
-   deck's prints position against this box, so they stay on the picture. */
 .filmstrip-photo {
   position: relative;
   flex: 1;
@@ -2136,30 +2030,23 @@ button.stats-row:hover .stats-label {
   justify-content: center;
 }
 
-/* The rating rides the photograph's top edge; the bottom line is the name's. */
 .filmstrip-cell:hover {
   border-color: var(--border);
 }
 
-/* A collapsed stack looks like the pile it is: prints of the same
-   photograph peek out behind the shown one — one behind for a pair, two
-   for anything deeper. The deck is the picture itself, never a painted
-   card, and its depth says how many files are really there. */
+/* The deck's prints step outside the cell; the margin makes room for them. */
 .filmstrip-cell.stacked {
   overflow: visible;
   margin-left: 6px;
 }
 
 .filmstrip-cell.stacked img {
-  /* The pile's own frame clips its picture instead. */
   position: relative;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-/* The prints behind: same picture, stepped up and to the right, with a
-   seam of page background so the edges read as separate sheets. */
 .filmstrip-cell.stacked img.filmstrip-card {
   position: absolute;
   inset: 0;
@@ -2172,10 +2059,6 @@ button.stats-row:hover .stats-label {
   transform: translate(6px, -6px);
 }
 
-/* Every cell says which file it is, on its own line under the picture —
-   in the darkroom the strip is the only list there is, and a pair reads
-   as one name: "DSC_1234.JPG+NEF". In flow, not an overlay: it takes no
-   pixels off the photograph and paints no bar over it. */
 .filmstrip-name {
   flex: none;
   max-width: 100%;
@@ -2188,14 +2071,11 @@ button.stats-row:hover .stats-label {
   text-overflow: ellipsis;
 }
 
-/* The badge is shared with the grid, but a strip cell is smaller. */
 .filmstrip-cell .thumb-hdr {
   right: 3px;
   top: 3px;
 }
 
-/* A stack spread open: its members lie side by side under one accent
-   thread, so the run reads as one photograph laid out, not loose files. */
 .filmstrip-cell.unstacked::after {
   content: "";
   position: absolute;
@@ -2206,7 +2086,6 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
-/* The members behind the shown one: present but quieter, until looked at. */
 .filmstrip-cell.member img {
   opacity: 0.7;
 }
@@ -2228,9 +2107,6 @@ button.stats-row:hover .stats-label {
 
 /* ---- Mosaic ---- */
 
-/* One band of the wall: cells sit at computed positions within it — a
-   justified row one photograph deep, or a one-scale band of stacks — so
-   the band meets both edges and the layout has no empty space to style. */
 .mosaic-row {
   position: absolute;
   top: 0;
@@ -2243,21 +2119,16 @@ button.stats-row:hover .stats-label {
   overflow: hidden;
   padding: 0;
   border: none;
-  /* Transparent, not raised: any background here reads as a border around
-     every photograph, and the mosaic's whole point is nothing but picture. */
   background: transparent;
   cursor: pointer;
   user-select: none;
-  /* A size container, so a cropped miniature can fill it with the same
-     container-query sizing it uses everywhere else. */
   container-type: size;
 }
 
 .mosaic-cell img {
   width: 100%;
   height: 100%;
-  /* The cell already has the photograph's shape, so cover neither crops
-     nor stretches — it only absorbs the row's rounding pixel. */
+  /* cover only absorbs the row's rounding pixel; the cell already has the photo's shape. */
   object-fit: cover;
   display: block;
 }
@@ -2269,22 +2140,17 @@ button.stats-row:hover .stats-label {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Only the not-yet-loaded cell paints a ground; a loaded one is all
-     photograph. */
   background: var(--bg-raised);
 }
 
 /* ---- Cropped miniatures ---- */
 
-/* The photo boxes are size containers, so a crop-shaped box below can
-   contain-fit itself with container-query units — no measuring, no JS. */
+/* Size containers: a crop-shaped box contain-fits itself with cq units, no JS. */
 .thumb-frame,
 .filmstrip-photo {
   container-type: size;
 }
 
-/* The box wears the crop's shape (--crop-ar, width over height) and fits
-   the photo area the way object-fit: contain would. */
 .thumb-cropped {
   position: relative;
   overflow: hidden;
@@ -2293,8 +2159,7 @@ button.stats-row:hover .stats-label {
   height: min(100cqh, calc(100cqw / var(--crop-ar)));
 }
 
-/* The full thumbnail behind the box, sized and shifted by the crop (inline
-   styles carry the numbers) so exactly the cropped pixels show. */
+/* Inline styles carry the crop's size and shift. */
 .thumb-frame .thumb-cropped img,
 .filmstrip-cell .thumb-cropped img {
   position: absolute;
@@ -2303,8 +2168,6 @@ button.stats-row:hover .stats-label {
   object-fit: fill;
 }
 
-/* A cropped stack's deck: the same crop-shaped prints, centred like the
-   front one and offset like the plain-image cards above. */
 .filmstrip-cell.stacked .thumb-cropped.filmstrip-card {
   position: absolute;
   inset: 0;
@@ -2318,7 +2181,6 @@ button.stats-row:hover .stats-label {
   transform: translate(6px, -6px);
 }
 
-/* The mark that says the miniature is the crop, not the whole file. */
 .thumb-crop {
   position: absolute;
   right: 4px;
@@ -2337,16 +2199,13 @@ button.stats-row:hover .stats-label {
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
-/* The 1:1 detail crop sits over the preview it refines; no transform, it is
-   already positioned and sized in screen pixels. */
+/* Already positioned and sized in screen pixels — no transform. */
 .viewer-detail {
   position: absolute;
   transform-origin: 0 0;
   pointer-events: none;
 }
 
-/* The empty canvas while a raw file decodes. The name is the message and the
-   progress note recedes; nothing here persists once pixels arrive. */
 .canvas-waiting {
   position: absolute;
   inset: 0;
@@ -2368,21 +2227,14 @@ button.stats-row:hover .stats-label {
   color: var(--text-faint);
 }
 
-/* The crop rectangle while cropping: the kept part stays plain and everything
-   outside it is dimmed by a huge shadow, so the picture you are choosing is
-   the bright one. */
 .viewer-crop {
   position: absolute;
-  /* The box itself is not a target — a press inside it is a press on the
-     picture, and the canvas decides what that means. Only the handles take
-     the pointer. */
+  /* Only the handles take the pointer; a press inside the box is a press on the picture. */
   pointer-events: none;
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
 }
 
-/* Thirds inside the crop, which is where the composition is. Fainter than
-   the border: they are a guide, not the edge of the picture. */
 .viewer-crop-third {
   position: absolute;
   background: rgba(255, 255, 255, 0.28);
@@ -2400,9 +2252,6 @@ button.stats-row:hover .stats-label {
   height: 1px;
 }
 
-/* Handles: small white squares that hang half outside the rectangle, so the
-   corner itself stays visible while it is being dragged. Their hit area is
-   larger than they look — a 8 px target is a target you miss. */
 .viewer-crop-handle {
   position: absolute;
   pointer-events: auto;
@@ -2463,13 +2312,7 @@ button.stats-row:hover .stats-label {
   font-weight: 600;
 }
 
-/* Every row is the same height and its label sits in the same column, whether
-   the row holds buttons or a slider — so the four of them read as one form
-   rather than as four controls that happen to be stacked.
-
-   Centred, not baseline-aligned: a slider's track has no text to take a
-   baseline from, so a baseline row hangs it off whatever the label's font
-   happens to be doing and it sits a few pixels high. */
+/* Centred, not baseline-aligned: a slider track has no baseline and would sit high. */
 .export-row {
   display: flex;
   align-items: center;
@@ -2495,27 +2338,19 @@ button.stats-row:hover .stats-label {
   border-color: var(--border);
 }
 
-/* A slider in a row takes the whole width the row has left, so the two of
-   them have tracks of exactly the same length and their values line up in a
-   column with each other — and with the buttons in the rows above. */
 .export-row .slider {
   flex: 1;
   gap: 10px;
   padding: 0;
 }
 
-/* A fixed column, not a minimum. Sized to content, "full size · 6048 px" is
-   wider than "90 · high", and the difference comes out of the track beside
-   it — so the two sliders end up with tracks of different lengths and thumbs
-   that mean different things at the same distance along. Right-aligned, so
-   the numbers themselves line up too. */
+/* Fixed, not a minimum: a wider readout would steal track length from one slider. */
 .export-row .slider-value {
   flex: 0 0 132px;
   text-align: right;
   font-size: 11px;
 }
 
-/* What the export will actually do, counted. The one line worth reading. */
 .export-summary {
   margin: 12px 8px 4px;
   font-size: 12px;
@@ -2593,13 +2428,8 @@ button.stats-row:hover .stats-label {
   transition: width 120ms linear;
 }
 
-/* Thirds guides. A hairline in both black and white so the line reads over a
-   bright sky and a dark shadow alike, without either being loud enough to
-   compete with the photograph. */
-/* ---- Loupe: 1:1 pixels at the top of the develop column ---- */
+/* ---- Loupe ---- */
 
-/* In the column rather than floating over the canvas — an inset covers the
-   photograph it is meant to help you judge. */
 .develop-loupe {
   position: relative;
   width: 100%;
@@ -2609,18 +2439,13 @@ button.stats-row:hover .stats-label {
   border-bottom: 1px solid var(--border);
 }
 
-/* Brighter while it is being aimed, so the thing you are moving is the thing
-   that stands out. */
 .develop-loupe.aiming {
   border-bottom-color: var(--accent);
 }
 
-/* Placed, not stretched: the patch is wider than the window and sits at an
-   offset that puts the aimed point in the middle. Sizing it to the window
-   instead would show the wrong pixels at the wrong scale. */
+/* The patch is larger than the window, offset so the aimed point centres. */
 .develop-loupe img {
   position: absolute;
-  /* Never smoothed: the whole point is to show the pixels as they are. */
   image-rendering: pixelated;
 }
 
@@ -2631,7 +2456,6 @@ button.stats-row:hover .stats-label {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* Says what it is pointing at, in the words the panel uses. */
 .develop-loupe-note {
   position: absolute;
   right: 6px;
@@ -2641,11 +2465,8 @@ button.stats-row:hover .stats-label {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
-/* ---- Corner marker: what the view is doing ---- */
+/* ---- Corner marker ---- */
 
-/* Top-right of the picture: the magnification when it is anything other
-   than fit, and "rendering…" while pixels are on their way. Quiet enough
-   to live there, because it only appears when there is something to say. */
 .canvas-marker {
   position: absolute;
   top: 12px;
@@ -2659,7 +2480,7 @@ button.stats-row:hover .stats-label {
   pointer-events: none;
 }
 
-/* ---- Caption: what you are looking at, over the photograph ---- */
+/* ---- Caption ---- */
 
 .image-caption {
   position: absolute;
@@ -2667,8 +2488,6 @@ button.stats-row:hover .stats-label {
   right: 0;
   top: 0;
   padding: 14px 18px 34px;
-  /* A gradient, not a box: a box would be a second rectangle competing with
-     the photograph's own edge. This darkens only what the text needs. */
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
@@ -2679,8 +2498,7 @@ button.stats-row:hover .stats-label {
 
 .image-caption.showing {
   opacity: 1;
-  /* Appears at once, leaves slowly — arriving late would be useless, and
-     leaving abruptly would pull the eye back to it. */
+  /* Asymmetric on purpose: appears at once, leaves slowly. */
   transition: opacity 120ms ease;
 }
 
@@ -2699,8 +2517,6 @@ button.stats-row:hover .stats-label {
   color: rgba(255, 255, 255, 0.82);
 }
 
-/* The exposure triplet, spaced apart and in a figure font so the numbers
-   line up the way they do on a camera's top plate. */
 .caption-exposure {
   margin-top: 2px;
   font-size: 12px;
@@ -2743,7 +2559,6 @@ button.stats-row:hover .stats-label {
   height: 1px;
 }
 
-/* People panel: one chip per person the face pass found. */
 .people-panel {
   display: flex;
   flex-direction: column;
@@ -2787,8 +2602,6 @@ button.stats-row:hover .stats-label {
   color: var(--text);
 }
 
-/* Naming, in place: the chip's text becomes an input where it stands.
-   Same type, same footprint — the underline is the whole edit signal. */
 .person-name-input {
   width: 100%;
   padding: 0;
@@ -2802,8 +2615,7 @@ button.stats-row:hover .stats-label {
   outline: none;
 }
 
-/* The frame-situation counts under a chip: silhouettes with numbers —
-   alone, sharing the frame, background (hollow, dimmed). */
+/* Counts by role: alone, sharing the frame, background. */
 .person-counts {
   display: flex;
   gap: 7px;
@@ -2826,7 +2638,6 @@ button.stats-row:hover .stats-label {
   width: 14px;
 }
 
-/* Background-only appearances: counted, but quietly — they matter least. */
 .person-bg {
   color: var(--text-faint);
 }

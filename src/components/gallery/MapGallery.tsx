@@ -6,12 +6,6 @@ import { fileUrl, requestThumbnails } from "../../ipc";
 import { gpsOf } from "../../state/derived";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 
-/**
- * The gallery as a map: every geolocated visible entry becomes a thumbnail
- * marker. Filters and sort apply exactly as in the grid — the map is just
- * another rendering of the same query, restricted to entries with a GPS tag
- * (local EXIF, or source-provided for e.g. Wikimedia Commons).
- */
 export function MapGallery() {
   const entries = useVisibleEntries();
   const meta = useAppStore((s) => s.meta);
@@ -50,7 +44,6 @@ export function MapGallery() {
     };
   }, []);
 
-  // Markers need thumbnails even though the grid never scrolled to them.
   useEffect(() => {
     const { thumbs, thumbErrors } = useAppStore.getState();
     const wanted = located

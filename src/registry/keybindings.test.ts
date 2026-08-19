@@ -52,8 +52,7 @@ describe("commandsForEvent", () => {
   });
 
   it("returns every command on a chord, in table order", () => {
-    // The caller runs the first applicable one, which is how Escape can mean
-    // "leave the viewer" and "clear the selection" without ambiguity.
+    // The caller runs the first applicable one, so Escape can mean both without ambiguity.
     expect(commandsForEvent(keyEvent({ key: "Escape" }), bindings)).toEqual([
       "viewer.close",
       "selection.clear",
@@ -73,9 +72,7 @@ describe("chordsForCommand", () => {
 
 describe("the shipped table", () => {
   it("resolves the develop chords, backslash included", () => {
-    // Backslash has to survive being a string escape in the source, a chord
-    // parse that splits on "+", and a KeyboardEvent's own `key`. Cheap to get
-    // wrong at any of the three, and silent when it is.
+    // Backslash must survive a string escape, a chord parse that splits on "+", and the event's own `key` — silently wrong at any of the three.
     expect(commandsForEvent(keyEvent({ key: "\\" }), defaultKeybindings)).toEqual([
       "develop.compare",
     ]);
@@ -88,10 +85,7 @@ describe("the shipped table", () => {
   });
 
   it("binds no chord to two commands that could both be applicable at once", () => {
-    // Several bindings on one chord is deliberate (Enter and Escape both mean
-    // something else mid-crop), but only where the `when` clauses are
-    // exclusive. A duplicate added by accident would make one of them
-    // unreachable and nothing would say so.
+    // Sharing a chord is deliberate only where the `when` clauses are exclusive; an accidental duplicate is silently unreachable.
     const seen = new Map<string, string[]>();
     for (const [chord, id] of defaultKeybindings) {
       seen.set(chord, [...(seen.get(chord) ?? []), id]);
@@ -109,8 +103,7 @@ describe("the shipped table", () => {
       "viewer.close",
       "selection.clear",
     ]);
-    // Row movement where the view has rows, plain stepping where it is one
-    // long strip — the row commands decline outside two-dimensional views.
+    // The row commands decline outside two-dimensional views; plain stepping backs them.
     expect(seen.get("arrowdown")).toEqual(["image.below", "image.next"]);
     expect(seen.get("arrowup")).toEqual(["image.above", "image.prev"]);
   });
@@ -127,9 +120,7 @@ describe("focusOwnsKey", () => {
   });
 
   it("gives a slider only the keys that nudge it", () => {
-    // The bug this exists for: an exposure slider keeps focus after a drag,
-    // and rating the photograph with 1-5 stopped working until you clicked
-    // somewhere else.
+    // Guards: a slider kept focus after a drag and rating with 1-5 stopped working.
     expect(focusOwnsKey(el("INPUT", "range"), "3")).toBe(false);
     expect(focusOwnsKey(el("INPUT", "range"), "\\")).toBe(false);
     expect(focusOwnsKey(el("INPUT", "range"), "ArrowLeft")).toBe(true);

@@ -1,25 +1,6 @@
 import type { FileEntry, ImageMeta } from "../ipc";
 import { takenMs } from "./derived";
 
-/**
- * Scenes: runs of photographs taken close together in time.
- *
- * An event shoot arrives as hundreds of files, but it was taken as a few
- * dozen moments — a dance, a group at a table, a look outside. The gap
- * between two shutter presses says which: within a moment it is seconds,
- * between moments it is minutes. So a scene is simply a run of consecutive
- * photographs none of which is more than the chosen gap after the previous
- * one, and picking the best of a scene replaces wading through the whole
- * card.
- *
- * Computed over the visible list in its current order, not over some
- * time-sorted shadow of it: what gets section headers is what is on screen.
- * Camera files sort by name in shooting order, so the usual case is the
- * right one, and a sort that interleaves times simply produces scenes that
- * say so.
- */
-
-/** A run of consecutive visible photographs that belong together. */
 export interface Scene {
   /** Index into the visible list of the first photograph. */
   start: number;
@@ -29,13 +10,9 @@ export interface Scene {
   startMs: number;
 }
 
-/**
- * The time constant's slider range, minutes. Logarithmic: the difference
- * that matters between 30 s and a minute is the same *ratio* that matters
- * between 15 and 30 minutes, so equal slider distance means equal ratio.
- */
-export const SCENE_TAU_MIN = 0.5;
-export const SCENE_TAU_MAX = 60;
+/** The time constant slider's range, in minutes (log scale). */
+const SCENE_TAU_MIN = 0.5;
+const SCENE_TAU_MAX = 60;
 
 /** Slider position 0..1 → minutes, log scale. */
 export function tauFromSlider(x: number): number {
@@ -48,8 +25,7 @@ export function sliderFromTau(tauMin: number): number {
   return Math.min(Math.max(x, 0), 1);
 }
 
-/** How the value names itself: "~" because the minutes are a feel, not a
- * cutoff — content decides where scenes break. */
+/** "~" because the minutes are a feel, not a cutoff — content decides where scenes break. */
 export function sceneGapLabel(gapMin: number): string {
   if (gapMin < 0.95) return `~${Math.max(5, Math.round((gapMin * 60) / 5) * 5)} s`;
   if (gapMin >= 59.5) return "~1 h";
@@ -60,59 +36,30 @@ export function sceneGapLabel(gapMin: number): string {
   return `~${Math.round(gapMin)} min`;
 }
 
-/**
- * When the photograph was taken: EXIF first, the file's own clock second.
- *
- * The fallback matters more than it looks — metadata streams in after the
- * scan, and until it lands a camera file's modified time is the moment the
- * camera wrote it, which for scene purposes is the same fact.
- */
+/** EXIF time, else modified time — for a camera file that is the moment the camera wrote it. */
 export function sceneTimeOf(entry: FileEntry, meta: Record<string, ImageMeta>): number {
   const m = meta[entry.path];
   return (m ? takenMs(m) : null) ?? entry.modifiedMs;
 }
 
-/**
- * How many earlier scene members a photograph is compared against. Wide and
- * close shots alternate within one scene; the best match among the last few
- * is the honest "does this belong here", where the single previous frame is
- * a coin toss.
- */
+/** Earlier scene members compared against; the single previous frame alone is a coin toss. */
 export const SCENE_BAND = 3;
 
-/**
- * The similarity a photograph needs to continue the scene, as a function of
- * the pause before it.
- *
- * Shooting continuously, only a hard content change ends a scene — the
- * floor. After a long pause, only near-identical content bridges it — the
- * ceiling. In between the requirement rises smoothly, and `tauMs` (the
- * control's minutes) is the time constant of that rise: not a cutoff, but
- * how quickly a pause makes the content's continuity harder to believe.
- */
-export const SCENE_SIM_FLOOR = 0.55;
-export const SCENE_SIM_CEIL = 0.93;
+/** Similarity needed to continue a scene rises from floor (no pause) to ceiling (long pause). */
+const SCENE_SIM_FLOOR = 0.55;
+const SCENE_SIM_CEIL = 0.93;
 
-/** A threshold no similarity reaches: with the content weight at zero this
- * is what "the clock says split" compiles to. */
+/** A threshold no similarity reaches — what "the clock says split" compiles to. */
 const SCENE_NEVER = 1.01;
 
-/**
- * `weight` is how much the pictures outvote the clock, 0..1. The pure-clock
- * rule IS a threshold curve — zero up to the gap, impossible past it — so
- * the weight honestly interpolates between the two models rather than
- * scaling some cosmetic knob: at 0 this reduces exactly to "a pause over
- * tau splits", at 1 content alone decides how the pause reads.
- */
+/** `weight` 0..1 interpolates models: 0 is exactly "a pause over tau splits", 1 is content alone. */
 export function sceneThreshold(gapMs: number, tauMs: number, weight: number): number {
   const smooth = SCENE_SIM_CEIL - (SCENE_SIM_CEIL - SCENE_SIM_FLOOR) * Math.exp(-gapMs / tauMs);
   const clock = gapMs <= tauMs ? 0 : SCENE_NEVER;
   return weight * smooth + (1 - weight) * clock;
 }
 
-/** The best similarity from `bands[i]` to members of the current scene at
- * or after `sceneStart`, skipping index `skip` (-1 for none). Null when no
- * comparison is known. */
+/** Best similarity from `bands[i]` to scene members at/after `sceneStart`, skipping `skip` (-1 for none); null when unknown. */
 function bestToScene(
   bands: readonly (readonly (number | null)[])[],
   i: number,
@@ -132,21 +79,7 @@ function bestToScene(
   return best;
 }
 
-/**
- * Group the visible list into scenes.
- *
- * Content decides, time modulates. With `bands` (each photograph's
- * similarity to the few before it), a photograph continues the scene when
- * its best match among the scene's recent members clears
- * `sceneThreshold(pause, tauMs)` — so a run of shooting splits where the
- * pictures change, however short the pause, and a long pause splits unless
- * the pictures barely moved. One odd frame never cuts a scene: a would-be
- * boundary is kept inside when the frame after it rejoins the scene over
- * its head.
- *
- * Without a model (`bands` null, or unindexed rows), the clock alone
- * decides: a pause over `tauMs` starts a new scene.
- */
+/** With `bands`, content decides and time modulates; without, a pause over `tauMs` splits. */
 export function groupScenes(
   entries: FileEntry[],
   meta: Record<string, ImageMeta>,
@@ -163,8 +96,7 @@ export function groupScenes(
       scenes.push({ start: i, end: i + 1, startMs: t });
       continue;
     }
-    // Absolute distance: a sort running newest-first walks time backwards,
-    // and "close together" is the same fact in either direction.
+    // Absolute: a newest-first sort walks time backwards.
     const gap = Math.abs(t - (times[i - 1] ?? 0));
     const sim = bands ? bestToScene(bands, i, current.start, -1) : null;
     let continues: boolean;
@@ -173,10 +105,7 @@ export function groupScenes(
     } else {
       continues = sim >= sceneThreshold(gap, tauMs, weight);
       if (!continues && i + 1 < entries.length && bands) {
-        // The odd-frame reprieve: if the next photograph rejoins the scene
-        // over this one's head (compared against the scene as it stands,
-        // not against the odd frame), this frame is a passer-by inside the
-        // scene, not the start of a new one.
+        // Odd-frame reprieve: a frame stays inside when the next one rejoins the scene over its head.
         const nextSim = bestToScene(bands, i + 1, current.start, i);
         const nextGap = Math.abs((times[i + 1] ?? 0) - (times[i - 1] ?? 0));
         continues = nextSim !== null && nextSim >= sceneThreshold(nextGap, tauMs, weight);
@@ -193,11 +122,7 @@ export function groupScenes(
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-/**
- * The header a scene wears: when it started and how many photographs it
- * holds. The date appears only when it changes — within one day of shooting
- * the clock time is the fact that separates scenes.
- */
+/** "HH:MM · count"; the date prefix appears only when the day changes. */
 export function sceneLabel(scene: Scene, previous: Scene | null, count: number): string {
   const d = new Date(scene.startMs);
   const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
@@ -219,13 +144,7 @@ export function sceneAt(scenes: Scene[], index: number): number | null {
   return at < 0 ? null : at;
 }
 
-/**
- * Where a jump lands: the first photograph of the neighbouring scene.
- *
- * From nothing selected, forward enters the first scene and backward the
- * last — the same "enter from the end the arrow points from" the plain
- * arrows use. Past either end there is nothing to jump to.
- */
+/** First photograph of the neighbouring scene; with no selection, forward enters the first scene and backward the last. */
 export function sceneJumpTarget(
   scenes: Scene[],
   selectedIndex: number | null,

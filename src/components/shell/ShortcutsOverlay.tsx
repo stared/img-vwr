@@ -4,10 +4,6 @@ import { allCommands } from "../../registry/commands";
 import { defaultKeybindings, formatChord } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
 
-/** The `?` cheatsheet: every bound command, grouped and searchable —
- * rendered from the command and keybinding registries. */
-
-/** Sheet section per command id prefix. */
 const SECTIONS: { title: string; prefixes: string[] }[] = [
   { title: "Navigate", prefixes: ["image", "scene", "selection"] },
   { title: "Views", prefixes: ["view"] },
@@ -61,8 +57,7 @@ export function ShortcutsOverlay() {
     }
   }, [open]);
 
-  // Esc clears the search first, then closes; `?` closes unless typed into
-  // the search box. Capture, ahead of the global handler.
+  // Capture phase, ahead of the global keybinding handler.
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {

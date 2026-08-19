@@ -12,48 +12,17 @@ import { registerFilterField } from "../registry/filters";
 import { isRawEntry } from "../state/stacks";
 import { useAppStore } from "../state/store";
 
-/**
- * People: who is in the photographs, as a view over the collection.
- *
- * The Rust side detects faces (cached per photo), crops them, and clusters
- * the crops' embedding vectors into people. Here that becomes a panel of
- * face chips and a `person` filter field — clicking a face is the complete
- * clause "photos with this person", chip and all, exactly like clicking a
- * star row or a tag.
- */
-
-/**
- * A face joins a person when its identity vector matches this well.
- *
- * The space is a real face recognizer (ArcFace-family), not the Similarity
- * panel's general model — same-person cosine similarity separates cleanly
- * from different-person there, so the threshold sits where the two
- * distributions part rather than pinned defensively near 1.
- */
+/** Same-person cosine threshold in the ArcFace identity space, not the Similarity panel's model. */
 const PERSON_SIM = 0.45;
 
-/**
- * Cluster fragments whose members agree this well pairwise, on average,
- * are one person photographed in two conditions (day and stage light).
- * Average linkage, not centroids — see the Rust side for why centroids
- * of different people converge as clusters grow.
- */
+/** Average-linkage merge threshold; see the Rust side for why centroids of different people converge. */
 const PERSON_MERGE = 0.38;
 
-/**
- * A faceless photo joins a person's photos when it is at least this similar
- * to one where their face IS visible — the same "near-identical, whatever
- * the clock says" bar the scene merging uses: they turned away between two
- * shots of the same moment.
- */
+/** Faceless-photo propagation bar — the same near-identical threshold scene merging uses. */
 const PERSON_PROPAGATE = 0.92;
 
 /** Clusters below this many faces are noise, not people worth a chip. */
 const MIN_FACES = 3;
-
-/* One head-and-shoulders silhouette; the vocabulary for "people in the
- * frame". Alone = one filled figure, sharing = two overlapping, background
- * = a hollow outline — the emptiness is the point. */
 
 function PersonShape({ x, hollow, faded }: { x: number; hollow: boolean; faded: boolean }) {
   return (
@@ -95,10 +64,6 @@ function BgIcon() {
   );
 }
 
-/**
- * The counts by frame situation, each wearing its silhouette. Zero counts
- * are omitted — an icon names its number, so nothing is positional.
- */
 function countTags(
   person: PersonCluster,
 ): { key: string; Icon: () => React.JSX.Element; n: number; dim: boolean }[] {
@@ -115,7 +80,6 @@ function countTags(
 const TAG_LEGEND =
   "counts: alone in frame · sharing it with others · in the background (hollow)";
 
-/** The chip's text: the given name, or "person N" until there is one. */
 function personLabel(person: PersonCluster): string {
   return person.name ?? `person ${person.id}`;
 }
@@ -136,8 +100,7 @@ function CountsRow({ person }: { person: PersonCluster }) {
 function localJpegPaths(): string[] {
   const s = useAppStore.getState();
   if (s.scope?.kind !== "folder") return [];
-  // The camera's JPGs carry the same faces as the raws beside them, and
-  // they decode fast — the negatives add nothing but decoding failures.
+  // Raws are skipped: sibling JPGs carry the same faces, and the negatives often fail to decode.
   return s.entries.filter((e) => !isRawEntry(e)).map((e) => e.path);
 }
 
@@ -147,7 +110,6 @@ async function refreshPeople(): Promise<void> {
   const epoch = useAppStore.getState().epoch;
   try {
     const clusters = await facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
-    // The folder changed while clustering ran; these are its people, not ours.
     if (useAppStore.getState().epoch !== epoch) return;
     useAppStore.getState().peopleLoaded(clusters.filter((c) => c.photos.length >= MIN_FACES));
   } catch (error) {
@@ -165,14 +127,11 @@ export function PeoplePanel() {
   const query = useAppStore((s) => s.query);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
   const setSelectFilter = useAppStore((s) => s.setSelectFilter);
-  /** The cluster whose name is being edited in place, if any. */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [knownNames, setKnownNames] = useState<string[]>([]);
 
-  // People are a view over the folder, not a job to order: opening the
-  // panel looks for faces by itself. A folder seen before is a cache read;
-  // photos appearing on disk later re-fire this through the entry count.
+  // Photos appearing on disk later re-fire this through the entryCount dependency.
   const indexedFor = useRef<string | null>(null);
   useEffect(() => {
     if (scope?.kind !== "folder" || status !== "loaded") return;
@@ -184,7 +143,6 @@ export function PeoplePanel() {
     void facesIndex(paths, epoch);
   }, [scope, status, epoch, entryCount]);
 
-  // When a detection pass finishes, cluster — and once only per finish.
   const clusteredFor = useRef<string | null>(null);
   useEffect(() => {
     if (progress === null || progress.done < progress.total) return;
@@ -213,9 +171,7 @@ export function PeoplePanel() {
     try {
       await facesRename(person.id, name, PERSON_MERGE);
       if (active.has(person.id)) {
-        // The person's id is about to change with their name — keep an
-        // active filter pointing at them, or drop it when the name (and
-        // with it the stable id) is gone.
+        // Renaming changes the cluster id; re-point an active filter, or drop it on un-name.
         if (name !== "") setSelectFilter("person", name);
         else toggleSelectFilter("person", person.id);
       }

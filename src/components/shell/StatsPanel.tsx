@@ -17,7 +17,6 @@ import {
 } from "../../state/stats";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 
-/** Time buckets are already contiguous bins; the first/last labels are the axis. */
 function toTimeHistogram(buckets: Bucket[]): NumericHistogram | null {
   const first = buckets[0];
   const last = buckets[buckets.length - 1];
@@ -25,7 +24,6 @@ function toTimeHistogram(buckets: Bucket[]): NumericHistogram | null {
   return { bins: buckets, minLabel: first.label, maxLabel: last.label };
 }
 
-/** Lightroom-style panel section: separator line + header that collapses its body. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
@@ -39,13 +37,11 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Clicking a bucket toggles it as a query filter; the active one is marked. */
 interface Selectable {
   onSelect?: (bucket: Bucket) => void;
   isActive?: (bucket: Bucket) => boolean;
 }
 
-/** Labelled horizontal bars; bar lengths are relative to the largest bucket. */
 function Histogram({
   title,
   buckets,
@@ -84,7 +80,6 @@ function Histogram({
   );
 }
 
-/** A proper histogram: contiguous vertical bins with the data range as axis labels. */
 function ColumnChart({
   title,
   histogram,
@@ -132,7 +127,6 @@ function ColumnChart({
   );
 }
 
-/** Ranked label–count list, for long labels (camera models) where bars crowd. */
 function CountList({
   title,
   buckets,
@@ -167,12 +161,6 @@ function CountList({
   );
 }
 
-/**
- * Collection statistics over the visible (query-applied) entries. File facts
- * (formats, sizes, modified times) come straight from the scan; pixel and
- * EXIF facts stream in from a background metadata pass, so the panel fills
- * in as data arrives — never blocking on it.
- */
 export function StatsPanel() {
   const entries = useVisibleEntries();
   const allEntries = useAppStore((s) => s.entries);
@@ -185,10 +173,7 @@ export function StatsPanel() {
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
 
-  // One background read per folder generation; results are keyed by path and
-  // merged as batches arrive. getState() keeps `meta` out of the deps so
-  // arriving batches don't re-fire requests for paths already in flight.
-  // Remote sources arrive with metadata prefilled — nothing to read locally.
+  // getState() keeps `meta` out of the deps so arriving batches don't re-fire requests already in flight.
   useEffect(() => {
     if (status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
@@ -215,7 +200,6 @@ export function StatsPanel() {
       noCamera: metas.filter((m) => !m.exif?.camera).length,
       orientation: orientationSplit(dims),
       aspects: aspectBuckets(dims),
-      // Log scale: pixel dimensions cluster in octaves (1k, 2k, 4k…);
       // 3 bins per octave keeps e.g. 3024 and 4032 distinguishable.
       edges: log2Bins(dims.map((d) => Math.max(d.width, d.height)), (n) => String(Math.round(n)), 3),
       sizes: log2Bins(entries.map((e) => e.size), formatBytes),
@@ -236,8 +220,6 @@ export function StatsPanel() {
     .join(" · ");
   const reading = stats.read < entries.length;
 
-  // Click-to-filter wiring: each section toggles its own query clause,
-  // keyed by the registered filter field it corresponds to.
   const selectRange = (field: string) => (b: Bucket) => {
     if (b.from !== undefined && b.to !== undefined) {
       toggleRangeFilter(field, b.from, b.to, b.label);

@@ -92,9 +92,7 @@ describe("heldView", () => {
   const img = { width: 6000, height: 4000 };
 
   it("carries the magnification and the place in the frame to the next image", () => {
-    // Zoomed to 1:1 on a point a third of the way across, then the next take
-    // of the same scene: the same feature must still be under the middle of
-    // the window, at the same size.
+    // 1:1 on a point a third of the way across; the next take must show the same feature at the same size.
     const at = { scale: 1, tx: -(0.33 * 6000) + 400, ty: -(0.4 * 4000) + 300 };
     const next = heldView(at, img, img, win);
     expect(next.scale).toBe(1);
@@ -106,8 +104,7 @@ describe("heldView", () => {
     const at = { scale: 1, tx: -(0.5 * 6000) + 400, ty: -(0.5 * 4000) + 300 };
     const half = { width: 3000, height: 2000 };
     const next = heldView(at, img, half, win);
-    // The middle of the window was looking at the middle of the frame; it
-    // still is, at the same scale.
+    // The middle of the window was looking at the middle of the frame; it still is.
     const cx = (win.width / 2 - next.tx) / (next.scale * half.width);
     expect(cx).toBeCloseTo(0.5, 5);
     expect(next.scale).toBe(1);

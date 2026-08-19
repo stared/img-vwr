@@ -8,12 +8,6 @@ import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/s
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
-/**
- * The mosaic: the grid's photographs without the grid's empty space —
- * justified rows or one-scale bands, no gaps, no captions (a tooltip
- * answers for names). Its knobs live in the view chip's menu.
- */
-
 const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
 
@@ -32,8 +26,7 @@ export function MosaicGallery() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const width = useContainerWidth(scrollRef);
 
-  // Every photograph's shape comes from its metadata; ask once per folder
-  // for whatever has not streamed in yet (the scenes view's pattern).
+  // getState() keeps received meta out of the effect's deps, so streaming results don't re-fire the request.
   useEffect(() => {
     if (status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
@@ -41,10 +34,6 @@ export function MosaicGallery() {
     if (missing.length > 0) void requestMeta(missing, epoch);
   }, [status, remote, allEntries, epoch]);
 
-  // Both modes come out as bands: justified rows are bands one photograph
-  // deep; one-scale packs bands three rows tall from vertical stacks. The
-  // cells carry indices into the visible list — packing moves pixels,
-  // never the selection's coordinates.
   const bands = useMemo(() => {
     const aspects = mosaicAspects(entries, meta, crops);
     return packing === "packed" && rowPx > 0
@@ -52,7 +41,6 @@ export function MosaicGallery() {
       : rowsToBands(mosaicRows(aspects, width, rowPx, 0));
   }, [entries, meta, crops, width, rowPx, packing]);
 
-  // ↑/↓ move to the cell visually below or above.
   const setRowNavigator = useAppStore((s) => s.setRowNavigator);
   useEffect(() => {
     setRowNavigator((direction) => {
@@ -74,13 +62,11 @@ export function MosaicGallery() {
     overscan: OVERSCAN_ROWS,
   });
 
-  // Band heights move with the pane, the slider and the streaming metadata;
-  // the virtualizer caches measurements, so it has to be told.
+  // The virtualizer caches measurements; without measure() after band-height changes it shows gaps.
   useEffect(() => {
     virtualizer.measure();
   }, [virtualizer, bands]);
 
-  // Keep the lead photograph on screen as the arrows walk the selection.
   useEffect(() => {
     if (selectedIndex === null) return;
     const at = bands.findIndex((b) => b.cells.some((c) => c.index === selectedIndex));
@@ -89,7 +75,6 @@ export function MosaicGallery() {
 
   const virtualRows = virtualizer.getVirtualItems();
 
-  // Ask Rust for thumbnails of the visible bands (debounced while scrolling).
   const firstBand = virtualRows[0]?.index ?? 0;
   const lastBand = virtualRows[virtualRows.length - 1]?.index ?? 0;
   useEffect(() => {
@@ -210,8 +195,7 @@ function MosaicCell({
       )}
       {crop !== undefined && <CropBadge />}
       {cacheFile !== undefined ? (
-        // The cell already wears the display shape — the crop's when there
-        // is one — so the cropped thumb fills it wall to wall.
+        // The cell's shape is already the crop's, so the frame aspect is recovered by inverting croppedBoxRatio.
         crop !== undefined ? (
           <CroppedThumb
             src={fileUrl(cacheFile)}

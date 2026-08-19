@@ -24,15 +24,7 @@ import { restoreSession, startSessionPersistence } from "./state/session";
 import { hdrOf, useAppStore, useSelectedEntry } from "./state/store";
 import "./App.css";
 
-/**
- * HDR sets are photographs, so noticing them is not a view's job — it is
- * the collection's. As the folder's EXIF streams in, detection runs over
- * it, and each set's face path is registered with the develop service as
- * "this path opens as the fusion of these frames". From then on the merge
- * simply *is* what that photograph looks like — in the viewer, in the
- * darkroom, in an export — with no file written anywhere until an export
- * writes one.
- */
+/** Registers each HDR set's face path with the develop service; no file is written until an export. */
 function useHdrDetection() {
   const scope = useAppStore((s) => s.scope);
   const status = useAppStore((s) => s.status);
@@ -42,8 +34,7 @@ function useHdrDetection() {
   const sets = useAppStore((s) => (s.scope?.kind === "folder" ? hdrOf(s).sets : null));
   const methods = useAppStore((s) => s.hdrMethod);
 
-  // Detection wants every file's exposure, not only the EXIF the panels on
-  // screen happen to have asked about. Once per folder, in the background.
+  // Detection needs every file's EXIF, not only what on-screen panels asked for; once per folder.
   const askedFor = useRef<number | null>(null);
   useEffect(() => {
     if (scope?.kind !== "folder" || status !== "loaded") return;
@@ -53,8 +44,7 @@ function useHdrDetection() {
     if (missing.length > 0) void requestMeta(missing, epoch);
   }, [scope, status, entries, epoch]);
 
-  // What was last told to the develop service, so an unchanged answer costs
-  // nothing and a changed one replaces the whole map at once.
+  // Signature of what the develop service last got; an unchanged map is not re-sent.
   const registered = useRef("");
   const previous = useRef<Record<string, FusionRecipe>>({});
   useEffect(() => {
@@ -70,9 +60,7 @@ function useHdrDetection() {
     const before = previous.current;
     previous.current = fusions;
     void developSetFusions(fusions).then(() => {
-      // Detection usually lands *after* the user is already looking at a
-      // frame: the face opened as a plain JPEG seconds ago, and nothing else
-      // would ever tell that session its path now means the fusion.
+      // A session may have opened the face as a plain JPEG before detection landed; drop it so it reopens as the fusion.
       const changed = [...new Set([...Object.keys(before), ...Object.keys(fusions)])].filter(
         (path) => JSON.stringify(before[path]) !== JSON.stringify(fusions[path]),
       );
@@ -81,8 +69,7 @@ function useHdrDetection() {
   }, [sets, methods]);
 }
 
-/** The develop session follows the lead selection in every view, so the
- * develop commands work from any context menu; panels only render it. */
+/** The session follows the lead selection in every view; panels only render it. */
 function useDevelopSession() {
   const path = useSelectedEntry()?.path;
   const open = useDevelopStore((s) => s.open);
@@ -109,9 +96,6 @@ function App() {
   useHdrDetection();
   useDevelopSession();
 
-  // Start where the last sitting ended — same folder, view and filters —
-  // and only failing that, in the configured default folder (a testing
-  // convenience; see config.ts). Then keep the saved session current.
   useEffect(() => {
     const { status, openFolder } = useAppStore.getState();
     if (status === "idle" && !restoreSession() && DEFAULT_START_FOLDER) {
@@ -120,7 +104,6 @@ function App() {
     return startSessionPersistence();
   }, []);
 
-  // Stream thumbnail, folder-count and metadata results from Rust into the store.
   useEffect(() => {
     const { scanBatch, folderChanged, thumbReady, thumbFailed, dirCountReady, metaBatchReady } =
       useAppStore.getState();
@@ -128,7 +111,6 @@ function App() {
       events.scanBatch.listen(({ payload }) =>
         scanBatch(payload.entries, payload.epoch, payload.done),
       ),
-      // The open folder was re-read after something changed on disk.
       events.folderChanged.listen(({ payload }) =>
         folderChanged(payload.entries, payload.epoch),
       ),
@@ -165,7 +147,6 @@ function App() {
             <p className="hint">Open a folder or a source from the sidebar, or press ⌘K.</p>
           )}
           {viewMode === "gallery" && <FilterBar />}
-          {/* A streaming scan renders as soon as the first batch lands. */}
           {status === "loading" && count === 0 && <p className="hint">Loading…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images found.</p>}
@@ -179,7 +160,6 @@ function App() {
             ) : galleryLayout === "darkroom" ? (
               <DarkroomGallery />
             ) : (
-              // Scenes is the grid grouped into moments; one component.
               <GalleryGrid grouped={galleryLayout === "scenes"} />
             )
           )}

@@ -2,15 +2,6 @@ import { useEffect, useRef } from "react";
 
 import type { Histogram } from "../../ipc";
 
-/**
- * Histogram of the developed pixels — the ones on screen, so what it shows
- * clipping is what the user would actually lose.
- *
- * The three channels are drawn as additive fills: where they overlap the
- * result is grey, which is the standard reading and makes a colour cast
- * visible as a coloured fringe at one end.
- */
-
 const WIDTH = 224;
 const HEIGHT = 80;
 
@@ -24,9 +15,7 @@ export function DevelopHistogram({ histogram }: { histogram: Histogram | null })
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
     if (!histogram) return;
 
-    // Scale to the tallest bin across all channels, ignoring the two ends:
-    // a large flat black or white area would otherwise dwarf everything in
-    // between and flatten the shape that matters.
+    // Bins 0 and 255 are excluded from the max so flat black/white areas don't flatten the interior shape.
     const interior = (bins: number[]) => bins.slice(1, 255);
     const max = Math.max(
       1,

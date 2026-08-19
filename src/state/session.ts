@@ -9,17 +9,7 @@ import {
   type TimelineOrientation,
 } from "./store";
 
-/**
- * The sitting, remembered: reopening the app puts you back where you were —
- * the same folder, the same view, the same filters — instead of an empty
- * pane asking you to find your own work again.
- *
- * What is saved is the *setup*, not the state: which folder, which layout,
- * which filters and sort, which panel — the choices that describe how you
- * work. What the folder contains is re-scanned fresh, selection starts
- * clear, and anything transient (a similarity sort whose scores lived in
- * memory) falls back to its default rather than being half-restored.
- */
+/* Saves the setup (scope, layout, filters), never contents or selection; transient state falls back to defaults on restore. */
 
 const KEY = "imgvwr.session.v1";
 
@@ -57,8 +47,7 @@ function snapshot(): SavedSession {
   return {
     scope: s.scope,
     galleryLayout: s.galleryLayout,
-    // A scores-backed sort ("similar to …") reads a model run that died with
-    // the window; saving it would restore a sort with nothing to sort by.
+    // A scores-backed sort reads a model run that died with the window; restoring it would sort by nothing.
     query: usesScores(s.query) ? { ...s.query, sort: defaultQuery.sort } : s.query,
     stacking: s.stacking,
     stackLead: s.stackLead,
@@ -85,10 +74,7 @@ function snapshot(): SavedSession {
   };
 }
 
-/* Reading back: the stored JSON is last launch's word, not this build's —
- * fields may be missing, enums may have been renamed. Each guard admits a
- * value only in this build's terms, and anything that fails simply keeps
- * its default: a stale session degrades to a fresh start, never a crash. */
+/* The stored JSON is last launch's word: each guard admits values only in this build's terms; failures keep defaults, never crash. */
 
 const isString = (v: unknown): v is string => typeof v === "string";
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
@@ -160,10 +146,7 @@ function readQuery(v: unknown): Query {
   return { filters, sort };
 }
 
-/**
- * Put last launch's setup back, then reopen its scope. Returns whether a
- * scope was reopened, so the caller knows the start folder is spoken for.
- */
+/** Returns whether a scope was reopened, so the caller knows the start folder is spoken for. */
 export function restoreSession(): boolean {
   let raw: string | null = null;
   try {
@@ -247,11 +230,7 @@ export function restoreSession(): boolean {
   return true;
 }
 
-/**
- * Keep the saved session current as the user works. Debounced because the
- * stores change on every streamed thumbnail; identical snapshots are not
- * rewritten. Flushed on pagehide so the very last change survives quitting.
- */
+/** Debounced (the stores change on every streamed thumbnail); flushed on pagehide so the last change survives quitting. */
 export function startSessionPersistence(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let written: string | null = null;

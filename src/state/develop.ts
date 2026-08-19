@@ -32,20 +32,7 @@ import {
   FULL_REGION,
 } from "../ipc";
 
-/**
- * The develop session: one image open for editing at a time.
- *
- * Kept out of the application store because it has its own lifecycle — open,
- * adjust, render, close — driven by the selection rather than mirroring it,
- * and because rendering is asynchronous in a way nothing else in the app is.
- *
- * The rendering contract here is coalescing, not queueing. A slider drag
- * emits changes far faster than a 20 ms render can absorb, so at most one
- * render is ever in flight; changes arriving during one set a dirty flag and
- * a single follow-up render runs when it lands. That converges on the
- * settings the user actually stopped at, and never builds a backlog of
- * frames nobody will see.
- */
+/* Rendering coalesces, never queues: at most one render in flight; changes set a dirty flag and one follow-up runs when it lands. */
 
 /** Sliders that make up an edit, in the order the panel shows them. */
 export const PARAM_KEYS = [
@@ -60,7 +47,7 @@ export const PARAM_KEYS = [
   "saturation",
 ] as const;
 
-export type ParamKey = (typeof PARAM_KEYS)[number];
+type ParamKey = (typeof PARAM_KEYS)[number];
 
 export interface ParamSpec {
   key: ParamKey;
@@ -68,7 +55,6 @@ export interface ParamSpec {
   min: number;
   max: number;
   step: number;
-  /** How the value reads next to the label. */
   format: (value: number) => string;
 }
 
@@ -88,13 +74,7 @@ export const PARAM_SPECS: ParamSpec[] = [
   { key: "saturation", label: "saturation", min: -100, max: 100, step: 1, format: signed(0) },
 ];
 
-/**
- * The pixel overlays, in the order one control cycles through them.
- *
- * Each replaces what the photograph looks like, so they are mutually
- * exclusive and share a single button. Derived from one list so adding one
- * means adding it here and in the Rust enum, and nowhere else.
- */
+/** Mutually exclusive pixel overlays; adding one means adding it here and in the Rust enum. */
 export const OVERLAY_CYCLE: Overlay[] = ["none", "sharpness", "clipping"];
 
 export const OVERLAY_LABELS: Record<Overlay, string> = {
@@ -111,24 +91,6 @@ export const OVERLAY_NOTES: Record<Overlay, string> = {
     "Red where a channel has hit white and lost its texture, blue where nothing at all was recorded.",
 };
 
-export function nextOverlay(current: Overlay): Overlay {
-  const at = OVERLAY_CYCLE.indexOf(current);
-  return OVERLAY_CYCLE[(at + 1) % OVERLAY_CYCLE.length] ?? "none";
-}
-
-/**
- * How the facts about a photograph sit over it.
- *
- * Three states, because two would be wrong in both directions. Left on
- * permanently, a caption over a photograph stops being information and
- * becomes part of the picture you are trying to judge. Turned off, you have
- * to go looking for what you are looking at every time you step to the next
- * frame. "Briefly" is what every viewer that has thought about this settles
- * on — Lightroom's Info overlay has a Show Briefly mode, macOS Quick Look
- * captions on open and fades, and video players show the title on a seek.
- * The rule is the same everywhere: say it when something changed, then get
- * out of the way.
- */
 export const CAPTION_CYCLE = ["briefly", "always", "off"] as const;
 export type CaptionMode = (typeof CAPTION_CYCLE)[number];
 
@@ -144,8 +106,7 @@ export const CAPTION_NOTES: Record<CaptionMode, string> = {
   off: "Nothing over the photograph; the panels still say everything.",
 };
 
-/** How long "briefly" lasts. Long enough to read a filename and an exposure
- * without hurrying, short enough not to sit over the frame while you judge it. */
+/** How long "briefly" lasts: enough to read a filename and an exposure without hurrying. */
 export const CAPTION_LINGER_MS = 3500;
 
 export function nextCaption(current: CaptionMode): CaptionMode {
@@ -162,35 +123,12 @@ export interface Session {
   info: DevelopState;
   /** Live settings — what the sliders show right now. */
   settings: DevelopSettings;
-  /** Most recent rendered frame; kept while a new one is computing so the
-   * viewer never flashes empty mid-drag. */
+  /** Most recent rendered frame; kept while a new one computes so the viewer never flashes empty mid-drag. */
   frame: DevelopFrame | null;
-  /**
-   * A crop of the image developed at full sensor resolution, covering what
-   * is on screen while zoomed in past the preview's own resolution.
-   *
-   * Separate from `frame` because it is a different question. The preview
-   * answers "what does this photograph look like"; the detail answers "is
-   * this actually sharp" — and it would be ruinous to develop 24 megapixels
-   * on every slider drag just so the answer is available when zoomed.
-   */
+  /** Full-sensor-resolution crop covering the screen while zoomed past the preview's resolution; separate from `frame` so slider drags never develop the full sensor. */
   detail: DevelopFrame | null;
-  /** True while a detail crop is being developed. */
   detailing: boolean;
-  /**
-   * The loupe's pixels, and the region of the image they cover.
-   *
-   * A third render slot rather than a reuse of `detail`, because the two ask
-   * different questions of the same image at the same time: the detail crop
-   * replaces what the main view is magnifying, and the loupe sits beside a
-   * view that has not been magnified at all.
-   *
-   * The region travels with the pixels because the loupe moves faster than it
-   * can be rendered. Knowing where these pixels *are* is what lets the window
-   * slide across them while the next render is still coming — and what keeps
-   * that honest, since the pixels under the crosshair are then always the
-   * pixels of the place the crosshair is on.
-   */
+  /** The loupe's pixels plus the region they cover — the region travels so the window can slide over them while the next render is in flight. */
   loupeFrame: { frame: DevelopFrame; region: RegionArg } | null;
   louping: boolean;
   /** The eyedropper is armed: the next click on the image sets the balance. */
@@ -202,104 +140,42 @@ export interface Session {
   error: string | null;
 }
 
-/**
- * An image opened ahead of time.
- *
- * The frame is null for a file the viewer will show directly — an unedited
- * JPEG needs no developed pixels, and rendering some would be work nobody
- * ever looks at. Opening it was still worth doing: that is the slow part.
- */
+/** An image opened ahead of time; `frame` is null for a file the viewer shows directly. */
 export interface Warm {
   info: DevelopState;
   frame: DevelopFrame | null;
 }
 
-export interface DevelopStore {
+interface DevelopStore {
   session: Session | null;
   /** The preset catalog, fetched once. Empty until it arrives. */
   presets: Preset[];
   /** Show each slider's distance from its preset rather than its own value. */
   showDeviation: boolean;
   toggleDeviation: () => void;
-  /**
-   * Thirds guides over the image.
-   *
-   * Not an `Overlay`: those are pixel overlays, computed by the renderer and
-   * mutually exclusive because each one replaces what the photograph looks
-   * like. Guides are geometry drawn on top, so they cost no render, cannot
-   * conflict with a focus map or a clipping warning, and stay put while a
-   * slider drag re-renders underneath them.
-   */
+  /** Thirds guides; not an `Overlay` — geometry drawn on top, costing no render and conflicting with nothing. */
   gridlines: boolean;
   toggleGridlines: () => void;
-  /**
-   * The loupe: true 100% pixels of one small region, shown beside the fitted
-   * photograph rather than instead of it.
-   *
-   * The question it answers is "did this frame come out sharp", and answering
-   * it by zooming means leaving the view you were judging the picture in,
-   * checking, and coming back — for every frame of a shoot. Both at once
-   * costs a corner of the canvas and no mode changes at all.
-   *
-   * Always armed: it has no switch of its own, because folding its section
-   * away is already the way to put it down, and dragging the photograph has
-   * no other meaning to conflict with.
-   */
-  /**
-   * Where the loupe is pointed, in the cropped image's coordinates, or null
-   * to mean "wherever this frame is sharpest".
-   *
-   * Null rather than a remembered point, because the useful default moves
-   * with the photograph: the eyes are not in the same place in the next take,
-   * and a loupe pinned to absolute coordinates would be showing a cheek.
-   * Cleared on navigation for exactly that reason.
-   */
+  /** Where the loupe points, in cropped-image coordinates; null means "wherever this frame is sharpest" and it is cleared on navigation. */
   loupeAt: { x: number; y: number } | null;
   aimLoupe: (at: { x: number; y: number } | null) => void;
-  /**
-   * Whether the user aimed it, as opposed to the measurement having.
-   *
-   * Both end up in `loupeAt` — the point is a point either way, and the
-   * measured one is cached there so the next render need not measure again —
-   * but the loupe says which it is showing, and "1:1" over a spot nobody
-   * chose would be claiming a decision the user never made.
-   */
+  /** Whether the user aimed it — the measured focus point is also cached in `loupeAt`. */
   loupeAimedByUser: boolean;
-  /**
-   * The loupe box's side in CSS pixels — measured by the develop column
-   * that shows it, read by the canvas to size the mark. One number shared,
-   * or the mark would outline a region the loupe is not showing.
-   */
+  /** Loupe box side in CSS pixels — measured by the develop column, read by the canvas to size the mark. */
   loupeSide: number;
   setLoupeSide: (side: number) => void;
-  /** True while the aim is being dragged on the photograph, so the loupe
-   * and its mark brighten together — they are one instrument in two places. */
+  /** True while the aim is dragged, so the loupe and its mark brighten together. */
   loupeAiming: boolean;
   setLoupeAiming: (aiming: boolean) => void;
 
-  /**
-   * Develop-panel sections folded away, by heading.
-   *
-   * The panel is every control the darkroom has, and on any one photograph
-   * most of them are not the work at hand. Folding is per section and stays
-   * for the session: which controls you are working with is a fact about the
-   * sitting, not about the image, so it survives navigation.
-   */
+  /** Folded develop-panel sections, by heading; a fact about the sitting, so it survives navigation. */
   folded: Record<string, boolean>;
   toggleFolded: (section: string) => void;
 
-  /** How the facts about this photograph sit over it. */
   caption: CaptionMode;
   setCaption: (mode: CaptionMode) => void;
 
-  /**
-   * The path whose *file* the canvas should show, even though the path
-   * opens as a fusion: the HDR panel's "check the frame the camera wrote".
-   *
-   * A look, not a mode — cleared by navigating anywhere. Only the canvas
-   * consults it; edits, export and the session all keep meaning the fused
-   * photograph, which is what the path is.
-   */
+  /** Path whose file the canvas shows even though it opens as a fusion; cleared by navigating — edits and export still mean the fused photograph. */
   original: string | null;
   setOriginal: (path: string | null) => void;
 
@@ -307,29 +183,11 @@ export interface DevelopStore {
   opening: string | null;
   open: (path: string) => Promise<void>;
   close: () => void;
-  /**
-   * Open and develop these images ahead of being asked for, nearest first.
-   *
-   * Opening a raw file is ~2 s (parse plus demosaic setup) against ~20 ms to
-   * re-render one already open, so stepping along a shoot spends nearly all
-   * its time on work that could have happened while the user was looking at
-   * the previous frame. Warming both neighbours turns arrow-key navigation
-   * from "developing…" into an image that is simply there.
-   *
-   * Strictly second in line: nothing is warmed while the image in front of
-   * the user is still being rendered, because trading their wait for a
-   * stranger's would be worse than not doing this at all.
-   */
+  /** Warm neighbours ahead, nearest first (a raw open is ~2 s against ~20 ms to re-render), strictly after the image on screen has its frame. */
   prefetch: (paths: string[]) => void;
   /** Neighbours already opened and developed, by path. */
   warm: Record<string, Warm>;
-  /**
-   * These paths just changed what they mean — an HDR registration arrived
-   * after they were opened, so what is in hand shows the wrong thing.
-   * Forgets warm copies and reopens the one on screen; everything else is
-   * untouched, because an unaffected session losing its frame would be a
-   * flash of white for nothing.
-   */
+  /** These paths changed meaning (an HDR registration arrived): forget warm copies and reopen the one on screen. */
   dropStale: (paths: string[]) => void;
   setParam: (key: ParamKey, value: number) => void;
   setTemperature: (kelvin: number) => void;
@@ -340,98 +198,49 @@ export interface DevelopStore {
   requestRender: (maxEdge: number) => void;
   /** Develop `region` at up to `maxEdge` px for a 1:1 look. */
   requestDetail: (region: RegionArg, maxEdge: number) => void;
-  /** Drop the detail crop — zoomed back out, or it went stale. */
   clearDetail: () => void;
   /** Develop the loupe's region at 1:1, `edge` device pixels across. */
   requestLoupe: (edge: number) => void;
-  /**
-   * The pixels behind a frame we were showing are gone; develop it again.
-   *
-   * Frames live in a bounded cache in Rust, so a token can in principle be
-   * evicted while its `<img>` is still on screen. That shows as a load
-   * failure and a black canvas that nothing would ever repair — the app
-   * believes it has a frame, and it does, just not one anybody can fetch. One
-   * render is a far better answer than a photograph that never comes back.
-   */
+  /** Frames live in a bounded Rust cache, so a token can be evicted while its `<img>` is on screen; develop it again. */
   frameLost: () => void;
-  /** Arm or disarm the eyedropper. */
   setPicking: (picking: boolean) => void;
   /** Set the white balance from a point in the image (normalised coords). */
   pickWhiteBalanceAt: (x: number, y: number) => Promise<void>;
-  /** Set every tone and colour slider to a named preset, leaving the white
-   * balance alone — that is the camera's measurement, not a matter of look. */
+  /** Sets every tone and colour slider to a preset, leaving the white balance alone. */
   applyPreset: (id: string) => void;
 
-  /**
-   * Settings copied from one image, waiting to be pasted onto another.
-   *
-   * Tone and colour only, exactly as a preset is: white balance describes the
-   * light a photograph was taken in, and carrying it to a frame shot under
-   * different light would be carrying a mistake.
-   */
+  /** Copied settings awaiting paste — tone and colour only; white balance describes the light and never travels. */
   copied: DevelopSettings | null;
   copySettings: () => void;
   pasteSettings: () => void;
 
-  /**
-   * Showing the image as it opened, for comparison.
-   *
-   * A toggle rather than a held key, so it survives letting go of the mouse
-   * to look properly — and the panel says so, because an edit that appears to
-   * have vanished is alarming.
-   */
+  /** Show the image as it opened; a toggle so it survives letting go of the mouse. */
   comparing: boolean;
   toggleComparing: () => void;
 
   /** Set exposure from the light this frame recorded. */
   autoTone: () => Promise<void>;
 
-  /**
-   * Dragging out a new crop rectangle on the image.
-   *
-   * A mode, unavoidably: the same drag means "pan" the rest of the time, and
-   * there is nowhere else for it to live. It says so on the button, and any
-   * click outside a drag leaves it.
-   */
+  /** Crop-drawing mode — the same drag means "pan" otherwise; any click outside a drag leaves it. */
   cropping: boolean;
   setCropping: (cropping: boolean) => void;
-  /**
-   * The crop as it stood when the tool was entered — what Escape puts back.
-   * Null exactly when `cropping` is false.
-   */
+  /** The crop when the tool was entered — what Escape puts back; null exactly when `cropping` is false. */
   cropWas: Crop | null;
-  /** Leave crop mode with the crop as it was when the tool was entered. */
   cancelCrop: () => void;
   setCrop: (crop: Crop) => void;
-  /**
-   * The shape a crop is held to, by the id of a choice in `ASPECT_CHOICES`.
-   *
-   * A property of the *tool*, not of the photograph: cropping a set to 4:5
-   * means cropping all of them to 4:5, and having to say so again on every
-   * frame would be the whole tedium of the job. It outlives the session for
-   * the same reason.
-   */
+  /** Aspect choice id from `ASPECT_CHOICES`; a property of the tool, so it outlives the session. */
   cropChoice: string;
   /** Which way round that shape stands. Meaningless for 1:1, and harmless. */
   cropPortrait: boolean;
   setCropChoice: (id: string) => void;
   toggleCropOrientation: () => void;
-  /** Turn the frame under the rectangle, giving back as much as still fits. */
   straighten: (angle: number) => void;
 }
 
-/* Crop geometry lives in `./crop`, which is where the rectangle, the angle
- * and the frame's aspect are reconciled. Re-exported so the panels that only
- * want "is this cropped" need not know that. */
+/* Re-exported so panels that only want "is this cropped" need not know about `./crop`. */
 export { FULL_CROP, isCropped } from "./crop";
 
-/**
- * The size in real pixels of what the viewer is showing.
- *
- * Not the sensor's size once a crop is applied: zoom is "screen pixels per
- * image pixel", and measuring it against a frame most of which was thrown
- * away would report the wrong percentage and fit the wrong rectangle.
- */
+/** Size in real pixels of what the viewer shows — the cropped size, or zoom percentages would be measured against thrown-away pixels. */
 export function displayedSize(
   native: { width: number; height: number },
   crop: Crop,
@@ -442,8 +251,7 @@ export function displayedSize(
   };
 }
 
-/** The frame's shape, which every rotation in `./crop` has to be told: an
- * angle only means what it looks like in a space that is not stretched. */
+/** The frame's shape, which every rotation in `./crop` has to be told. */
 export function frameAspect(native: { width: number; height: number }): number {
   return native.height > 0 ? native.width / native.height : 1;
 }
@@ -451,14 +259,7 @@ export function frameAspect(native: { width: number; height: number }): number {
 /** Largest detail crop we will develop, in pixels of the longest edge. */
 const DETAIL_MAX_EDGE = 4000;
 
-/**
- * The region the loupe should develop to fill `edge` device pixels at 1:1.
- *
- * "1:1" means one image pixel per device pixel, so the region is however
- * much of the image that many pixels covers — a small square of a 24 MP
- * frame, a large one of a small JPEG. Clamped to the frame so a point near an
- * edge shows the corner rather than half a box of nothing.
- */
+/** The region covering `edge` image pixels at 1:1 around `at`, clamped inside the frame. */
 export function loupeRegion(
   at: { x: number; y: number },
   image: { width: number; height: number },
@@ -470,19 +271,7 @@ export function loupeRegion(
   return { x: inside(at.x, width), y: inside(at.y, height), width, height };
 }
 
-/**
- * How much wider than the window the loupe's pixels are developed.
- *
- * Dragging the loupe is a continuous gesture and a render is a round trip, so
- * rendering exactly what fits the window would mean the pixels never catching
- * up with the pointer. A margin turns most of that movement into no work at
- * all: the window slides across pixels already in hand, at once, and a new
- * render is only owed when it reaches the edge of them.
- *
- * The cost is quadratic and paid on every loupe render, so it is a margin and
- * not a canvas — enough to swallow the small adjustments that make up most of
- * aiming, not enough to make each render noticeably slower.
- */
+/** The loupe renders this much wider than its window, so small aim movements slide over pixels already in hand. */
 export const LOUPE_MARGIN = 1.8;
 
 /** Whether pixels covering `have` can still fill a window over `want`. */
@@ -509,12 +298,7 @@ export function regionsDiffer(a: RegionArg, b: RegionArg): boolean {
   );
 }
 
-/**
- * The part of the image on screen, in normalised image coordinates.
- *
- * `scale` is screen pixels per image pixel and `tx`/`ty` place the image's
- * top-left corner, matching the viewport's own convention.
- */
+/** On-screen part in normalised image coordinates; `scale` is screen pixels per image pixel, `tx`/`ty` place the image's top-left. */
 export function visibleRegion(
   view: { scale: number; tx: number; ty: number },
   image: { width: number; height: number },
@@ -533,10 +317,7 @@ export function visibleRegion(
   };
 }
 
-/**
- * True when the preview is being magnified past its own resolution, so what
- * the user is looking at is interpolation rather than detail.
- */
+/** True when the preview is magnified past its own resolution. */
 export function needsDetail(
   view: { scale: number },
   frame: { width: number },
@@ -544,37 +325,23 @@ export function needsDetail(
 ): boolean {
   if (image.width <= 0 || frame.width <= 0) return false;
   const previewPixelsPerImagePixel = frame.width / image.width;
-  // A little slack so sitting exactly at the preview's resolution does not
-  // flap between wanting and not wanting a detail render.
+  // Slack so sitting exactly at the preview's resolution does not flap.
   return view.scale > previewPixelsPerImagePixel * 1.05;
 }
 
-/** Longest preview edge, from the viewport. Bounded so a huge window does
- * not turn every drag into a full-resolution render. */
+/** Bounded so a huge window does not turn every drag into a full-resolution render. */
 export function previewEdge(viewportLongestPx: number, dpr: number): number {
   const wanted = Math.round(viewportLongestPx * dpr);
   return Math.min(3000, Math.max(1200, wanted));
 }
 
-/** True when the viewer must show a developed frame rather than the file
- * itself: either the webview cannot decode the format at all, or the user
- * has edited it. */
+/** True when the viewer must show a developed frame rather than the file: undecodable format, or an edit applied. */
 export function needsDevelopedFrame(session: Session | null): boolean {
   if (!session) return false;
   return session.info.needsRender || !isNeutral(session);
 }
 
-/**
- * True when the live settings are the identity edit at the camera's own
- * balance — nothing applied at all, so the original file is a faithful
- * rendering of the current state.
- *
- * Derived from `PARAM_KEYS` rather than listing the fields, because a listing
- * silently stops being true the moment a slider is added. The crop is the
- * one edit that lives outside the params, and it counts: a cropped
- * photograph shown as its whole file is the crop silently not applying,
- * which is exactly what this predicate exists to prevent.
- */
+/** The identity edit at the camera's own balance — derived from `PARAM_KEYS` so a new slider is counted, and the crop counts too. */
 export function isNeutral(session: Session): boolean {
   const { settings, info } = session;
   return (
@@ -585,13 +352,7 @@ export function isNeutral(session: Session): boolean {
   );
 }
 
-/**
- * True when nothing has moved since the image opened.
- *
- * Not the same as `isNeutral`: sensor data opens with a look already applied,
- * so an untouched raw file is emphatically not the identity edit — but there
- * is still nothing to undo.
- */
+/** Nothing moved since the image opened — not `isNeutral`: an untouched raw opens with a look already applied. */
 export function isAtOpening(session: Session): boolean {
   const { settings, info } = session;
   return (
@@ -602,14 +363,7 @@ export function isAtOpening(session: Session): boolean {
   );
 }
 
-/**
- * Which preset the current settings are, or null once they are nobody's.
- *
- * Compared rather than remembered, so the control can only ever name a look
- * the settings actually are. Two comparisons, because a preset is two
- * things now: the camera look it selects and the slider positions it sets —
- * "nikon" and "flat" share the identity sliders and differ only in look.
- */
+/** The preset the settings currently are, or null; matched on look and params both — "nikon" and "flat" share the identity sliders. */
 export function presetOf(settings: DevelopSettings, presets: Preset[]): Preset | null {
   return (
     presets.find(
@@ -625,21 +379,12 @@ function presetOfParams(params: DevelopParams, presets: Preset[]): Preset | null
   return presets.find((p) => PARAM_KEYS.every((key) => p.params[key] === params[key])) ?? null;
 }
 
-/**
- * A copied edit landed on another image.
- *
- * The look travels — tone, colour, and the basis they are a variation of, so
- * the sliders measure from where they did on the image it came from. The white
- * balance stays behind: it describes the light this frame was shot in, and
- * carrying one image's reading onto another shot under different light would
- * be carrying a mistake.
- */
+/** Params, basis and look travel; the white balance stays — it describes the light this frame was shot in. */
 export function pastedSettings(
   target: DevelopSettings,
   copied: DevelopSettings,
 ): DevelopSettings {
-  // The look travels with the edit: the appearance being copied was made
-  // under it. On an image the look cannot apply to, the backend ignores it.
+  // On an image the look cannot apply to, the backend ignores it.
   return {
     ...target,
     params: copied.params,
@@ -648,13 +393,7 @@ export function pastedSettings(
   };
 }
 
-/**
- * The preset a slider measures its deviation from — its zero level.
- *
- * The stored basis, except that sitting exactly on some preset makes that one
- * the baseline instead: otherwise the bars would show a deviation from one
- * look while the panel named another.
- */
+/** The zero level a slider measures deviation from: the stored basis, unless the params sit exactly on some preset — then that one. */
 export function baselineOf(settings: DevelopSettings, presets: Preset[]): Preset | null {
   return (
     presetOfParams(settings.params, presets) ??
@@ -663,13 +402,7 @@ export function baselineOf(settings: DevelopSettings, presets: Preset[]): Preset
   );
 }
 
-/**
- * The preset a control should move to.
- *
- * From a preset, the next one along. From an edited state, back to the look
- * the edit was built on — the useful move is undoing your tweaks, not
- * jumping to whichever preset happens to be first.
- */
+/** From a preset, the next one along; from an edited state, back to the basis the edit was built on. */
 export function nextPreset(
   active: Preset | null,
   basis: Preset | null,
@@ -681,22 +414,13 @@ export function nextPreset(
   return presets[at < 0 ? 0 : (at + 1) % presets.length] ?? null;
 }
 
-/** Current preview edge; module state rather than store state because it is
- * a rendering detail the UI never displays. */
+/** Module state, not store state: a rendering detail the UI never displays. */
 let currentEdge = 1600;
 
-/**
- * How many neighbours to keep developed ahead.
- *
- * Two — the next and the previous — which is what the backend holds open
- * alongside the current image. Warming more would evict the ones actually
- * about to be needed, and the third image away is not one keystroke from
- * being on screen anyway.
- */
+/** Matches what the backend holds open alongside the current image; warming more would evict what is about to be needed. */
 const WARM_LIMIT = 2;
 
-/** A fresh session for a just-opened image. One place, so an image installed
- * from the warm cache is in exactly the state one opened the slow way is. */
+/** One place, so an image installed from the warm cache is in exactly the state a slow open produces. */
 function sessionFor(path: string, info: DevelopState, frame: DevelopFrame | null): Session {
   return {
     path,
@@ -716,26 +440,14 @@ function sessionFor(path: string, info: DevelopState, frame: DevelopFrame | null
 }
 
 export const useDevelopStore = create<DevelopStore>((set, get) => {
-  /**
-   * Render the session's current settings, coalescing concurrent requests.
-   * Every result is checked against the live session before being applied:
-   * the user may have navigated away, and a frame for the previous image
-   * must never appear under the current one's name.
-   */
+  /** Renders the session's current settings, coalescing; every result is checked against the live session before applying. */
   async function pump(): Promise<void> {
     const start = get().session;
     if (!start || start.rendering) return;
 
     set({ session: { ...start, rendering: true, dirty: false } });
     const { path, overlay } = start;
-    // Comparing renders what the image opened with instead of the live
-    // settings, so "before" means the same thing whether the edit is one
-    // slider or a whole preset.
-    //
-    // Cropping renders the whole frame, because a crop is drawn on the
-    // photograph as shot. Drawing it on an already-cropped image would mean
-    // every rectangle was relative to the last one, and there would be no way
-    // to grow a crop back.
+    // Cropping renders the whole frame: a crop is drawn on the photograph as shot, else there would be no way to grow one back.
     const live = get().cropping ? { ...start.settings, crop: WHOLE_FRAME } : start.settings;
     const settings = get().comparing ? start.info.settings : live;
 
@@ -748,14 +460,11 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (!now || now.path !== path) return; // navigated away mid-render
 
     if (result.ok) {
-      // The detail crop was developed from the previous settings, so it is
-      // now a lie about the image; drop it and let the canvas ask again.
       set({
         session: {
           ...now,
           frame: result.frame,
-          // Both crops were developed from the previous settings, so both are
-          // now lies about the image; the canvas asks for them again.
+          // Both crops were developed from the previous settings; the canvas asks for them again.
           detail: null,
           loupeFrame: null,
           rendering: false,
@@ -769,34 +478,20 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     if (get().session?.dirty) void pump();
   }
 
-  /* The image whose frame has already been developed a second time after its
-   * pixels went missing; see `frameLost`. */
+  /* The image already re-developed once after its pixels went missing; see `frameLost`. */
   let refetched: string | null = null;
 
-  /* Neighbours to develop ahead, nearest first, and whether the loop that
-   * does it is running. Module state: it is a scheduling detail, and nothing
-   * in the UI describes it. */
   let wanted: string[] = [];
   let warming = false;
 
-  /**
-   * Develop the wanted neighbours, one at a time, while nothing is waiting.
-   *
-   * One at a time because these renders share a thread pool with the one the
-   * user is watching, and two speculative renders in flight would make the
-   * next slider drag wait behind them.
-   */
+  /** One at a time: these renders share a thread pool with the one the user is watching. */
   async function warmUp(): Promise<void> {
     if (warming) return;
     warming = true;
     try {
       for (;;) {
         const session = get().session;
-        // Never ahead of the image actually on screen — including mid-drag,
-        // where a render has just landed and the next one is already owed.
-        // Opening a neighbour in that gap would stall the drag for seconds.
-        // The canvas asks again after every frame, so nothing is lost by
-        // waiting.
+        // Never ahead of the image on screen, including mid-drag; the canvas asks again after every frame.
         if (!session || session.rendering || session.dirty || session.frame === null) return;
         const path = wanted.find((p) => p !== session.path && !(p in get().warm));
         if (path === undefined) return;
@@ -804,8 +499,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         const warmed = await developState(path).then(
           async (info) => ({
             info,
-            // Only pixels somebody will look at: a plain JPEG with no edit is
-            // shown by the webview from the file itself.
+            // A plain JPEG with no edit is shown by the webview from the file itself.
             frame: needsDevelopedFrame(sessionFor(path, info, null))
               ? await developRender(path, info.settings, currentEdge, "none", FULL_REGION)
               : null,
@@ -821,9 +515,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     }
   }
 
-  /** Apply a settings change: the sliders move immediately, the pixels catch
-   * up. Persisting is fire-and-forget — an edit that fails to save is worth
-   * reporting, but never worth blocking the drag on. */
+  /** Sliders move immediately, pixels catch up; persisting is fire-and-forget, never blocking the drag. */
   function change(next: DevelopSettings): void {
     const session = get().session;
     if (!session) return;
@@ -839,8 +531,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
   return {
     session: null,
-    // Fetched once, on the way past: the catalog is fixed for the session and
-    // the panel is the only thing that ever waits on it.
+    // Fetched once at store creation; the catalog is fixed for the session.
     presets: (() => {
       void developPresets().then(
         (presets) => set({ presets }),
@@ -856,9 +547,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     comparing: false,
     cropping: false,
     cropWas: null,
-    // "as shot" by default: most crops are a tighter framing of the same
-    // picture, and the frame's own proportions are the ones every other
-    // frame of the shoot will match. "free" stays one click away.
+    // "as shot" by default: the frame's own proportions are what every other frame of the shoot will match.
     cropChoice: "original",
     cropPortrait: false,
     original: null,
@@ -869,21 +558,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
     open: async (path) => {
       if (get().session?.path === path) return;
-      // A different photograph: the "show me the file" look was about the
-      // previous one.
       if (get().original !== null) set({ original: null });
-      // Crop is about one photograph, and arriving at the next one already in
-      // crop mode would mean a drag across it meant something unexpected.
       if (get().cropping) set({ cropping: false, cropWas: null });
-      // And where the sharpest place is moves with the photograph — the eyes
-      // are not where they were in the previous take. Back to "wherever this
-      // frame is sharpest" until the user aims it themselves.
       if (get().loupeAt !== null) set({ loupeAt: null, loupeAimedByUser: false });
       refetched = null;
 
-      // Already developed while the user was looking at its neighbour: show
-      // it now, with no round trip at all. Taken out of the cache on the way
-      // past, so a later edit is never shadowed by a stale copy of it.
+      // Taken out of the warm cache on the way past, so a later edit is never shadowed by a stale copy.
       const warmed = get().warm[path];
       if (warmed) {
         const rest = Object.fromEntries(Object.entries(get().warm).filter(([p]) => p !== path));
@@ -895,24 +575,21 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       set({ opening: path, session: null });
       try {
         const info = await developState(path);
-        // A slower open for an image the user has already navigated past
-        // must not install itself over their current one.
+        // A slow open must not install itself over an image the user has navigated on from.
         if (get().opening !== path) return;
         set({ opening: null, session: sessionFor(path, info, null) });
         void pump();
       } catch (error) {
         if (get().opening !== path) return;
         set({ opening: null, session: null });
-        // Not every file has a develop plugin (AVIF); that is not an error
-        // worth surfacing, the viewer simply shows the file directly.
+        // Not every file has a develop plugin (AVIF); the viewer shows the file directly.
         void error;
       }
     },
 
     prefetch: (paths) => {
       wanted = paths.slice(0, WARM_LIMIT);
-      // Forget anything no longer nearby: the backend has probably evicted
-      // its scene by now, and a frame token outlives its pixels.
+      // Forget anything no longer nearby: the backend has likely evicted its scene, and a frame token outlives its pixels.
       const warm = get().warm;
       const near = Object.fromEntries(Object.entries(warm).filter(([p]) => wanted.includes(p)));
       if (Object.keys(near).length !== Object.keys(warm).length) set({ warm: near });
@@ -928,9 +605,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       if (Object.keys(kept).length !== Object.keys(warm).length) set({ warm: kept });
       const current = get().session?.path ?? get().opening ?? null;
       if (current !== null && stale.has(current)) {
-        // Through the front door rather than patching the session in place:
-        // `open` early-outs on the same path, so the session has to be gone
-        // before it is asked for again.
+        // `open` early-outs on the same path, so the session must be gone before it is asked for again.
         set({ session: null, opening: null });
         void get().open(current);
       }
@@ -990,8 +665,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       void developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
         (detail) => {
           const now = get().session;
-          // Only install it if it still describes the image on screen under
-          // the settings that produced it.
+          // Only install it if it still describes the image on screen under the settings that produced it.
           if (!now || now.path !== path || now.settings !== settings) {
             if (now) set({ session: { ...now, detailing: false } });
             return;
@@ -1014,13 +688,11 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     pickWhiteBalanceAt: async (x, y) => {
       const session = get().session;
       if (!session) return;
-      // The point is where the user clicked on the picture in front of them,
-      // which is the crop; the backend maps it back onto the sensor.
+      // The point is in crop coordinates; the backend maps it back onto the sensor.
       const balance = await developPickWhiteBalance(session.path, x, y, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
-      // Disarm on use: the eyedropper is a single action, not a mode you
-      // have to remember to leave.
+      // Disarm on use: the eyedropper is a single action, not a mode.
       set({ session: { ...now, picking: false } });
       change({ ...now.settings, whiteBalance: balance });
     },
@@ -1053,12 +725,9 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     },
 
     setCropping: (cropping) => {
-      // Entering remembers the crop as it stands, so Escape has something to
-      // put back; leaving by any route (Enter, the button, a click outside a
-      // drag) keeps what is on screen and forgets the remembered one.
+      // Leaving by any route keeps what is on screen; only Escape (cancelCrop) restores cropWas.
       set({ cropping, cropWas: cropping ? (get().session?.settings.crop ?? null) : null });
-      // Entering shows the whole frame and leaving shows the crop again, so
-      // both directions are a different picture and need a render.
+      // Entering shows the whole frame and leaving shows the crop again — both directions need a render.
       void pump();
     },
 
@@ -1072,18 +741,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       void pump();
     },
 
-    /**
-     * Every route to a crop lands here, and every crop that lands here is
-     * made to fit the frame first.
-     *
-     * That is the invariant the whole feature rests on. A rectangle whose
-     * corners have been swept outside the picture by a straighten cannot be
-     * rendered — the pixels were never recorded — and the renderer's only
-     * option is to clamp at the edge, which smears a border of stretched
-     * pixels down the side of the photograph and reads as a broken decoder.
-     * Shrinking the rectangle instead is what every editor does, and it is
-     * honest: straightening costs you edges.
-     */
+    // Every route to a crop lands here and is fitted first — a crop outside the frame renders as a smeared border.
     setCrop: (crop) => {
       const session = get().session;
       if (!session) return;
@@ -1096,8 +754,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const choice = ASPECT_CHOICES.find((c) => c.id === id);
       if (!session || !choice) return;
       const aspect = frameAspect(session.info);
-      // Applied at once rather than only to the next drag: a shape you have
-      // to re-draw the crop to see is a shape you cannot judge.
+      // Applied at once, not only to the next drag.
       const ratio = ratioOf(choice, aspect, get().cropPortrait);
       change({ ...session.settings, crop: withRatio(session.settings.crop, ratio, aspect) });
     },
@@ -1110,8 +767,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       if (!session) return;
       const aspect = frameAspect(session.info);
       const crop = session.settings.crop;
-      // Turning a free crop on its side is still a meaningful thing to ask
-      // for, so it stands the shape it has on end rather than doing nothing.
+      // A free crop still turns: it stands the shape it has on end rather than doing nothing.
       const ratio = choice ? ratioOf(choice, aspect, portrait) : null;
       change({
         ...session.settings,
@@ -1132,13 +788,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const session = get().session;
       const preset = get().presets.find((p) => p.id === id);
       if (!session || !preset) return;
-      // White balance is deliberately untouched. It is a measurement of the
-      // light the photograph was taken in, not part of anybody's look, and a
-      // preset that overwrote it would throw away the eyedropper's work.
-      //
-      // The basis moves with it: from here on, this is what the sliders
-      // measure their deviation from. So does the look — a preset names a
-      // whole rendering, the camera transform and the slider positions both.
+      // White balance is deliberately untouched; the basis and look move with the preset.
       change({
         ...session.settings,
         params: preset.params,
@@ -1165,12 +815,6 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     toggleFolded: (section) =>
       set((s) => ({ folded: { ...s.folded, [section]: !s.folded[section] } })),
 
-    // The pixels are kept, not dropped. They came with the region they cover,
-    // so the window can be re-centred over them for nothing — which is what
-    // makes dragging the loupe continuous instead of a series of blanks. It
-    // stays honest because the pixels are placed by where they are, so what
-    // is under the crosshair is always that place; when the aim leaves them
-    // entirely the canvas asks for more.
     aimLoupe: (at) => set({ loupeAt: at, loupeAimedByUser: at !== null }),
 
     caption: "briefly",
@@ -1183,9 +827,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const image = displayedSize(session.info, settings.crop);
       set({ session: { ...session, louping: true } });
 
-      // Where to point, when nobody has pointed it: the sharpest region,
-      // measured for this frame. Asked once per aim rather than per render,
-      // because it is a fact about the photograph, not about the settings.
+      // The default aim (sharpest region) is measured once per aim, not per render — a fact about the photograph, not the settings.
       const aim =
         get().loupeAt !== null
           ? Promise.resolve(get().loupeAt as { x: number; y: number })
@@ -1205,14 +847,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         .then(
           ({ at, frame, region }) => {
             const now = get().session;
-            // Only install it if it still describes the image on screen under
-            // the settings that produced it.
+            // Only install it if it still describes the image on screen under the settings that produced it.
             if (!now || now.path !== path || now.settings !== settings) {
               if (now) set({ session: { ...now, louping: false } });
               return;
             }
-            // Remember where the focus point put it, so the next render at
-            // the same aim does not measure the frame again.
+            // Cache the measured point so the next render does not measure again.
             if (get().loupeAt === null) set({ loupeAt: at });
             set({ session: { ...now, loupeFrame: { frame, region }, louping: false } });
           },
@@ -1223,9 +863,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         );
     },
 
-    // Once per photograph, and no more. A second failure is not a lost frame,
-    // it is a broken pipeline, and re-rendering forever would turn a blank
-    // canvas into a blank canvas with the fans on.
+    // Once per photograph: a second failure is a broken pipeline, not a lost frame.
     frameLost: () => {
       const session = get().session;
       if (!session || session.frame === null || refetched === session.path) return;
@@ -1237,8 +875,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     requestRender: (maxEdge) => {
       if (maxEdge === currentEdge) return;
       currentEdge = maxEdge;
-      // Warm frames were developed for the old viewport, so they are the
-      // wrong size now; dropping them has them warmed again at this one.
+      // Warm frames were developed for the old viewport size; dropping them re-warms at this one.
       if (Object.keys(get().warm).length > 0) set({ warm: {} });
       const session = get().session;
       if (!session) return;

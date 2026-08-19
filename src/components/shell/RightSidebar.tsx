@@ -5,7 +5,6 @@ import { useAppStore } from "../../state/store";
 import { PanelSection } from "./PanelSection";
 import { SidebarResizer } from "./SidebarResizer";
 
-/** Registered order is the default; the stored preference ranks first. */
 function ordered(panels: Panel[], order: string[]): Panel[] {
   const rank = new Map(order.map((id, i) => [id, i]));
   return [...panels].sort(
@@ -13,15 +12,13 @@ function ordered(panels: Panel[], order: string[]): Panel[] {
   );
 }
 
-/** Right-edge counterpart of the sidebar; hosts panels registered with side
- * "right" — flat sections the user folds and reorders to their own habits. */
 export function RightSidebar() {
   const visible = useAppStore((s) => s.inspectorVisible);
   const toggleInspector = useAppStore((s) => s.toggleInspector);
   const order = useAppStore((s) => s.panelOrder);
   const setPanelOrder = useAppStore((s) => s.setPanelOrder);
   const width = useAppStore((s) => s.rightbarWidth);
-  // `when` guards read these; subscribing keeps the section set current.
+  // Bare subscriptions: `when` guards read this state via getState(), so subscribe to keep the section set current.
   useAppStore((s) => s.galleryLayout);
   useAppStore((s) => s.viewMode);
   useAppStore((s) => s.selectedIndex !== null);
@@ -46,8 +43,7 @@ export function RightSidebar() {
     );
   }
 
-  // Moving swaps with the neighbor as displayed; hidden sections keep
-  // their stored slot.
+  // Moving swaps with the neighbor as displayed; hidden sections keep their stored slot.
   const move = (id: string, dir: -1 | 1) => {
     const shown = panels.map((p) => p.id);
     const at = shown.indexOf(id);

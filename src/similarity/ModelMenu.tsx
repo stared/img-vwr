@@ -5,11 +5,7 @@ export function downloadLabel(mb: number): string {
   return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`;
 }
 
-/**
- * The model dropdown behind the chip's `with <model>` segment. Switching
- * downloads the weights if needed, loads the model, and re-ranks the
- * current anchor (wired via the embedding status listener).
- */
+/** Selecting downloads/loads the model; the re-rank arrives via the embedding status listener. */
 export function ModelMenu({ close }: { close: () => void }) {
   const models = useAppStore((s) => s.embedModels);
   const status = useAppStore((s) => s.embedStatus);

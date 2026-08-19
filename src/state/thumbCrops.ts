@@ -4,16 +4,7 @@ import { isCropped } from "./crop";
 import { useDevelopStore } from "./develop";
 import { useAppStore } from "./store";
 
-/**
- * Keeps the store's path → crop map current, so a cropped photograph's
- * miniature is drawn cropped everywhere it appears.
- *
- * Two sources. The develop DB answers for a scope's entries as they land —
- * the same streaming, asked-once-per-path pattern the labels use. The open
- * darkroom session answers for the photograph being edited right now, so
- * the filmstrip cell recrops while the crop is still being dragged and
- * falls back to the whole frame the moment a reset lands.
- */
+/** Keeps the store's path → crop map current from the develop DB and the open darkroom session. */
 export function registerThumbCrops(): void {
   let lastEntries: FileEntry[] | null = null;
   let lastEpoch = -1;
@@ -35,9 +26,7 @@ export function registerThumbCrops(): void {
     );
   });
 
-  // Identity-guarded: `change()` replaces the whole settings object but a
-  // tone edit carries the crop through by reference, so only actual crop
-  // changes (and session opens, harmlessly) reach the app store.
+  // Identity guard works: `change()` replaces the settings object but carries the crop through by reference on non-crop edits.
   let last: { path: string; crop: Crop } | null = null;
   useDevelopStore.subscribe((state) => {
     const session = state.session;

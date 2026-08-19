@@ -1,48 +1,32 @@
 import type { useAppStore } from "../state/store";
 
-/**
- * Command registry — the UI-side extension seam. The palette, keybindings
- * and menus all resolve through here; a future plugin API registers into
- * the same table.
- */
-
 export interface CommandContext {
   store: typeof useAppStore;
 }
 
-/** Context menus a command can surface in, besides the palette. */
 export type CommandMenu = "image";
 
 /** Separator groups of a context menu, in render order; destructive last. */
 export const MENU_SECTIONS = ["open", "labels", "develop", "transfer", "danger"] as const;
 export type MenuSection = (typeof MENU_SECTIONS)[number];
 
-/** One placement of a command in a context menu. */
 export interface MenuPlacement {
   menu: CommandMenu;
-  /** Which separator group the row belongs to. */
   section: MenuSection;
-  /** Placements sharing a submenu title collapse under one row ("Rating");
-   * null = top level. */
+  /** Placements sharing a submenu title collapse under one row; null = top level. */
   submenu: string | null;
-  /** Row text in that menu, Title Case — short and in-context ("★★★");
-   * the palette always shows the full title ("Rate ★★★"). */
+  /** Row text in that menu; the palette always shows the full `title` instead. */
   label: string;
 }
 
 export interface Command {
   id: string;
   title: string;
-  /** Extra palette search terms. */
   keywords?: string[];
   /** If set, the palette collects a text argument before running. */
   input?: { placeholder: string };
-  /**
-   * Menus this command appears in — every command states its placements
-   * ([] = palette only). Right-clicking an image lists the "image" ones.
-   */
+  /** Every command states its placements; [] = palette only. */
   menus: MenuPlacement[];
-  /** Shown in the palette next to the title (derived from keybindings). */
   when?: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, arg?: string) => void | Promise<void>;
 }
@@ -71,8 +55,7 @@ export interface MenuEntry {
   enabled: boolean;
 }
 
-/** Every entry for a context menu, disabled ones included, in
- * MENU_SECTIONS order; registration order within a section. */
+/** Disabled entries included; MENU_SECTIONS order, registration order within a section. */
 export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[] {
   const rank = (e: MenuEntry) => MENU_SECTIONS.indexOf(e.placement.section);
   return allCommands()
@@ -84,7 +67,6 @@ export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[]
     .sort((a, b) => rank(a) - rank(b));
 }
 
-/** Runs the command if it exists and its `when` guard passes. */
 export function executeCommand(id: string, ctx: CommandContext, arg?: string): boolean {
   const command = registry.get(id);
   if (!command || (command.when && !command.when(ctx))) {
@@ -94,16 +76,11 @@ export function executeCommand(id: string, ctx: CommandContext, arg?: string): b
   return true;
 }
 
-/** Test-only: reset global registry state between test cases. */
 export function clearCommandsForTest(): void {
   registry.clear();
 }
 
-/**
- * Case-insensitive subsequence match of `query` against a command's
- * searchable text; higher score = better (consecutive and word-start
- * matches score extra). Null = no match.
- */
+/** Case-insensitive subsequence match; higher = better, null = no match. */
 export function fuzzyScore(query: string, text: string): number | null {
   const q = query.toLowerCase();
   const t = text.toLowerCase();

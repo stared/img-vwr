@@ -8,12 +8,7 @@
 
 export const commands = {
 /**
- * Run a streamed folder scan: entries arrive as `ScanBatch` events, the
- * last one marked `done`. Walking a big (or cloud-backed) tree can take
- * seconds, so nothing here may touch the main thread — the command is
- * async and the walk runs on the blocking pool, epoch-guarded so opening
- * another scope cancels it. The first batch is small for a fast first
- * paint. Resolves when the walk ends; an unreadable root rejects.
+ * Entries arrive as `ScanBatch` events (last marked `done`), epoch-guarded so a newer scope cancels the walk.
  */
 async scanFolder(path: string, recursive: boolean, epoch: number) : Promise<Result<null, string>> {
     try {
@@ -23,10 +18,6 @@ async scanFolder(path: string, recursive: boolean, epoch: number) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Async: listing a cloud-backed directory can block for seconds, and this
- * runs on every folder-tree navigation.
- */
 async listSubdirs(path: string) : Promise<Result<DirEntry[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_subdirs", { path }) };
@@ -44,12 +35,7 @@ async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
 }
 },
 /**
- * Move photographs to the platform Trash, reporting on each one.
- * 
- * The frontend has already asked the user, and asks every time — this end
- * never prompts, never guesses which paths were meant, and never reports
- * more as gone than actually went. Async + `spawn_blocking` like every other
- * filesystem command: a slow volume must not freeze the window.
+ * Never prompts (confirmation is the frontend's job) and never reports more as trashed than actually went.
  */
 async deleteFiles(paths: string[]) : Promise<Result<TrashOutcome, string>> {
     try {
@@ -60,8 +46,7 @@ async deleteFiles(paths: string[]) : Promise<Result<TrashOutcome, string>> {
 }
 },
 /**
- * Put the selected photographs on the system clipboard as file references,
- * so a paste elsewhere — the Finder, a chat — receives the files themselves.
+ * Copies file references, not pixel data — a paste receives the files themselves.
  */
 async copyFiles(paths: string[]) : Promise<Result<number, string>> {
     try {
@@ -72,12 +57,7 @@ async copyFiles(paths: string[]) : Promise<Result<number, string>> {
 }
 },
 /**
- * Begin a new collection, invalidating everything in flight for the old one.
- * 
- * Also stops watching: every scope change goes through here, and a folder
- * nobody is looking at should not be reported on. A folder scope re-watches
- * a moment later in `scan_folder`; a remote source has no folder to watch,
- * which is exactly the case that would otherwise have leaked a watcher.
+ * Also stops the watcher: a remote scope never re-watches and would otherwise leak one.
  */
 async newEpoch() : Promise<number> {
     return await TAURI_INVOKE("new_epoch");
@@ -86,17 +66,13 @@ async requestThumbnails(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("request_thumbnails", { paths, epoch });
 },
 /**
- * Count images per folder off the main thread, emitting one event per
- * result — cloud-backed folders (Dropbox, iCloud) can take seconds each,
- * so this must never block the tree display.
+ * Results arrive as `DirCountReady` events, one per folder.
  */
 async requestDirCounts(paths: string[]) : Promise<void> {
     await TAURI_INVOKE("request_dir_counts", { paths });
 },
 /**
- * Read per-image metadata (dimensions, EXIF) for the stats panel off the
- * main thread, emitting batched events. Sequential on one thread — gentle
- * on cloud-backed folders — and epoch-guarded so a folder change stops it.
+ * Results arrive as `MetaBatchReady` events, epoch-guarded.
  */
 async requestMeta(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("request_meta", { paths, epoch });
@@ -105,15 +81,13 @@ async embeddingModels() : Promise<EmbedModelInfo[]> {
     return await TAURI_INVOKE("embedding_models");
 },
 /**
- * Download (first time) and activate a model; progress arrives as
- * `embedding-status` events.
+ * Downloads on first use; progress arrives as `embedding-status` events.
  */
 async embeddingSelect(modelId: string) : Promise<void> {
     await TAURI_INVOKE("embedding_select", { modelId });
 },
 /**
- * Compute (or load from cache) one vector per image in the background;
- * progress arrives as `embedding-progress` events.
+ * Progress arrives as `embedding-progress` events.
  */
 async embeddingIndex(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("embedding_index", { paths, epoch });
@@ -135,10 +109,7 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
 }
 },
 /**
- * Similarity of each of `paths` to the few before it (scores[i][d-1]
- * describes paths[i] and paths[i-d]), from vectors already indexed; null
- * where a vector is not yet known. Scene detection calls this over whole
- * collections, which is exactly why it never computes vectors itself.
+ * scores[i][d-1] compares paths[i] with paths[i-d]; null until indexed — never computes vectors itself.
  */
 async embeddingBandedScores(paths: string[], band: number) : Promise<Result<((number | null)[])[], string>> {
     try {
@@ -149,17 +120,13 @@ async embeddingBandedScores(paths: string[], band: number) : Promise<Result<((nu
 }
 },
 /**
- * Detect faces over the collection in the background; progress arrives as
- * `faces-progress` events. Per-photo results are cached as sidecars, so a
- * repeat pass over an unchanged folder is a cache read.
+ * Progress arrives as `faces-progress` events.
  */
 async facesIndex(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("faces_index", { paths, epoch });
 },
 /**
- * Cluster every detected face of `paths` into people, propagating identity
- * onto near-identical faceless photos. Cheap to re-run: vectors and
- * detections are cached, so this is dot products and bookkeeping.
+ * Also propagates identity onto near-identical faceless photos.
  */
 async facesPeople(paths: string[], threshold: number, merge: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
     try {
@@ -170,9 +137,7 @@ async facesPeople(paths: string[], threshold: number, merge: number, propagate: 
 }
 },
 /**
- * Name (or, with an empty name, un-name) a person cluster of the most
- * recent clustering. Names anchor to the cluster's identity vectors, so
- * naming two fragments alike merges them on the next clustering.
+ * An empty name un-names; naming two fragments alike merges them on the next clustering.
  */
 async facesRename(clusterId: string, name: string, merge: number) : Promise<Result<null, string>> {
     try {
@@ -182,9 +147,6 @@ async facesRename(clusterId: string, name: string, merge: number) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Every name ever given to a person, for the rename input's suggestions.
- */
 async facesNames() : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("faces_names") };
@@ -194,8 +156,7 @@ async facesNames() : Promise<Result<string[], string>> {
 }
 },
 /**
- * Per-image pixel statistics (histograms, color triangle) for the info
- * panel — computed from the cached thumbnail, off the main thread.
+ * Computed from the cached thumbnail, not the original.
  */
 async imageStats(path: string) : Promise<Result<ImageStats, string>> {
     try {
@@ -229,11 +190,6 @@ async labelsToggleTag(paths: string[], tag: string) : Promise<Result<Partial<{ [
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Open an image for editing and report its size, camera white balance and
- * any stored edit. Slow on first call for a raw file (the decoder parses and
- * sets up demosaicing); every later render of the same image is cheap.
- */
 async developState(path: string) : Promise<Result<DevelopState, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("develop_state", { path }) };
@@ -243,12 +199,7 @@ async developState(path: string) : Promise<Result<DevelopState, string>> {
 }
 },
 /**
- * The named starting points an edit can be set to.
- * 
- * Synchronous work, but async like its neighbours so the frontend calls every
- * develop command the same way. Fetched rather than duplicated in TypeScript:
- * the numbers are measured against real files by the `match_camera` example
- * and there should be exactly one place they live.
+ * Fetched rather than duplicated in TypeScript: the preset numbers live only in `imgvwr_develop`.
  */
 async developPresets() : Promise<Result<Preset[], string>> {
     try {
@@ -259,8 +210,7 @@ async developPresets() : Promise<Result<Preset[], string>> {
 }
 },
 /**
- * The exposure this image wants, in stops, measured from the light it
- * recorded rather than from the preview it currently produces.
+ * Returns stops, measured from the recorded light rather than the current preview.
  */
 async developAutoExposure(path: string, settings: DevelopSettings) : Promise<Result<number, string>> {
     try {
@@ -270,10 +220,6 @@ async developAutoExposure(path: string, settings: DevelopSettings) : Promise<Res
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Where this frame is sharpest — what the loupe points at before the user
- * has pointed it anywhere themselves.
- */
 async developFocusPoint(path: string, settings: DevelopSettings) : Promise<Result<[number, number], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("develop_focus_point", { path, settings }) };
@@ -283,9 +229,7 @@ async developFocusPoint(path: string, settings: DevelopSettings) : Promise<Resul
 }
 },
 /**
- * Render a preview at `max_edge` under `settings`. The pixels are fetched
- * separately over the `develop:` protocol using the returned token; the
- * histogram of those same pixels comes back here.
+ * Pixels are fetched separately over the `develop:` protocol using the returned token.
  */
 async developRender(path: string, settings: DevelopSettings, maxEdge: number, overlay: Overlay, region: RegionArg) : Promise<Result<DevelopFrame, string>> {
     try {
@@ -303,9 +247,6 @@ async developSave(path: string, settings: DevelopSettings) : Promise<Result<null
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Drop an image's edit so it counts as untouched again.
- */
 async developReset(path: string) : Promise<Result<DevelopState, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("develop_reset", { path }) };
@@ -314,9 +255,6 @@ async developReset(path: string) : Promise<Result<DevelopState, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Which of these paths have a stored edit — for badging the gallery.
- */
 async developEditedPaths(paths: string[]) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("develop_edited_paths", { paths }) };
@@ -326,9 +264,7 @@ async developEditedPaths(paths: string[]) : Promise<Result<string[], string>> {
 }
 },
 /**
- * The stored crops among these paths, so the gallery can draw a cropped
- * photograph's miniature already cropped. Whole-frame edits are left out:
- * only paths whose crop actually takes something are returned.
+ * Whole-frame crops are omitted: only crops that actually take something are returned.
  */
 async developCrops(paths: string[]) : Promise<Result<Partial<{ [key in string]: Crop }>, string>> {
     try {
@@ -339,11 +275,7 @@ async developCrops(paths: string[]) : Promise<Result<Partial<{ [key in string]: 
 }
 },
 /**
- * Export one photograph into the folder the plan names.
- * 
- * One file per call rather than a whole batch, so the UI owns the progress,
- * the cancellation and the order — and so a single failure is one line in a
- * report rather than the end of the export.
+ * One file per call, not a batch: the UI owns progress, cancellation and order.
  */
 async developExport(job: ExportJob, plan: ExportPlan) : Promise<Result<Exported, string>> {
     try {
@@ -353,10 +285,6 @@ async developExport(job: ExportJob, plan: ExportPlan) : Promise<Result<Exported,
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Sample a point and report the white balance that renders it neutral —
- * the eyedropper. Runs off the main thread like every other develop call.
- */
 async developPickWhiteBalance(path: string, x: number, y: number, settings: DevelopSettings) : Promise<Result<WhiteBalance, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("develop_pick_white_balance", { path, x, y, settings }) };
@@ -366,13 +294,7 @@ async developPickWhiteBalance(path: string, x: number, y: number, settings: Deve
 }
 },
 /**
- * Install which paths open as fused exposure brackets — the face frame's
- * path mapped to every frame of its bracket, the whole folder at once.
- * 
- * Detection lives on the UI side, where the EXIF is; from this call on the
- * registered paths simply *are* the fused photographs: the viewer shows
- * the fusion, edits store against the face path, and export renders it.
- * Nothing is written anywhere by this — the merge is virtual until Export.
+ * Writes nothing: the merge stays virtual until Export.
  */
 async developSetFusions(fusions: Partial<{ [key in string]: FusionRecipe }>) : Promise<void> {
     await TAURI_INVOKE("develop_set_fusions", { fusions });
@@ -431,14 +353,11 @@ export type Crop = { x: number; y: number; width: number; height: number;
  */
 angle: number }
 /**
- * A rendered preview: the pixels live in the service under `token` and are
- * fetched by the `develop:` protocol; the histogram comes back inline.
+ * Pixels live under `token`, fetched via the `develop:` protocol; the histogram comes inline.
  */
 export type DevelopFrame = { token: number; width: number; height: number; source: FrameSource; histogram: Histogram; 
 /**
- * The part of the frame these pixels cover, normalised. A full-frame
- * preview reports the unit rect; a 1:1 detail render reports the crop it
- * developed, so the viewer knows where to place it.
+ * The covered part of the frame, normalised: unit rect for a full-frame preview, the developed crop for a 1:1 detail.
  */
 regionX: number; regionY: number; regionWidth: number; regionHeight: number }
 /**
@@ -530,36 +449,13 @@ basis: string;
  * would render every old edit twice as strong.
  */
 look?: string }
+export type DevelopState = { width: number; height: number; asShot: WhiteBalance; settings: DevelopSettings; edited: boolean; 
 /**
- * Everything the develop UI needs to show an image before any edit is made.
+ * True when the webview cannot display this file itself.
  */
-export type DevelopState = { width: number; height: number; 
+needsRender: boolean; hdr: HdrOutcome }
 /**
- * The white balance the camera chose — the neutral the sliders start at.
- */
-asShot: WhiteBalance; 
-/**
- * Stored edit, or the neutral one if this image has never been touched.
- */
-settings: DevelopSettings; 
-/**
- * True when the settings came from the database rather than being neutral.
- */
-edited: boolean; 
-/**
- * True when the webview cannot display this file itself, so the viewer
- * must go through the develop pipeline to show anything at all.
- */
-needsRender: boolean; 
-/**
- * What this path is showing, HDR-wise. The refusal used to be an
- * eprintln, which meant a set that would not align was indistinguishable
- * on screen from one that fused — the panel has to be able to say which.
- */
-hdr: HdrOutcome }
-/**
- * Direct image count of one folder, computed in the background. Keyed by
- * absolute path, so it is never stale — no epoch needed.
+ * Keyed by absolute path, so it is never stale — hence no epoch.
  */
 export type DirCountReady = { path: string; imageCount: number }
 export type DirEntry = { path: string; name: string }
@@ -567,26 +463,12 @@ export type DirEntry = { path: string; name: string }
  * Catalog entry as shown in the UI picker.
  */
 export type EmbedModelInfo = { id: string; label: string; quality: string; speed: string; downloadMb: number; dim: number; downloaded: boolean; active: boolean }
-/**
- * Progress of a background indexing pass over the current collection.
- */
 export type EmbeddingProgress = { done: number; total: number; epoch: number }
 /**
- * Lifecycle of the user-selected embedding model:
- * "downloading" → "loading" → "ready", or "error".
+ * `phase` runs "downloading" → "loading" → "ready", or "error".
  */
 export type EmbeddingStatus = { modelId: string; phase: string; error: string | null }
-/**
- * Where an export's metadata comes from.
- * 
- * A discriminated choice rather than an optional path, because "there is no
- * JPEG of this frame" is a state the caller knows and should have to say.
- */
-export type ExifSource = { kind: "none" } | 
-/**
- * Carry the EXIF of this file — the camera's JPEG of the same frame.
- */
-{ kind: "file"; path: string }
+export type ExifSource = { kind: "none" } | { kind: "file"; path: string }
 export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; lens: string | null; 
 /**
  * The exposure, as a photographer states it. Kept as numbers rather than
@@ -608,61 +490,27 @@ focalLength: number | null;
  * Decimal degrees; positive = north/east.
  */
 gpsLat: number | null; gpsLon: number | null }
-/**
- * What an exported file is encoded as.
- */
-export type ExportFormat = 
-/**
- * Quality on the usual 1–100 scale; 90 is the "good enough that the
- * codec is not what you are looking at" setting.
- */
-{ kind: "jpeg"; quality: number } | { kind: "png" }
-/**
- * One photograph's worth of work.
- */
+export type ExportFormat = { kind: "jpeg"; quality: number } | { kind: "png" }
 export type ExportJob = 
 /**
- * Develop this file under its stored edit — or, where there is none,
- * under what it opens with.
- * 
- * The settings are not carried in the job: they are already in
- * `develop.db`, every change saves there as it is made, and a batch that
- * had to fetch them first would open every raw file twice.
+ * Settings are not in the job: they are already saved in `develop.db`.
  */
-{ kind: "render"; path: string; exif: ExifSource } | 
-/**
- * Take this JPEG as it stands. What an untouched frame in a raw + JPEG
- * shoot exports as, and the reason exporting a whole take is fast.
- */
-{ kind: "copy"; path: string }
-/**
- * The settings shared by every file in one export.
- */
+{ kind: "render"; path: string; exif: ExifSource } | { kind: "copy"; path: string }
 export type ExportPlan = { folder: string; format: ExportFormat; size: ExportSize }
-/**
- * How big the exported file is.
- */
 export type ExportSize = 
 /**
- * Everything the crop holds. Never more: an export is not an upscaler.
+ * Never more than the source holds: an export is not an upscaler.
  */
 { kind: "full" } | { kind: "longest"; pixels: number }
-/**
- * What actually happened to one photograph.
- */
 export type Exported = { source: string; 
 /**
- * Where it landed — not always the name asked for, since an export never
- * overwrites a file that is already there.
+ * Not always the name asked for: an export never overwrites an existing file.
  */
 path: string; 
 /**
- * True when the camera's own JPEG was taken rather than pixels rendered.
+ * True only for the byte-for-byte case — a resized copy re-encodes and reports false.
  */
 copied: boolean }
-/**
- * Progress of a background face-detection pass over the current collection.
- */
 export type FacesProgress = { done: number; total: number; epoch: number }
 export type FileEntry = { path: string; name: string; size: number; modifiedMs: number; 
 /**
@@ -670,72 +518,27 @@ export type FileEntry = { path: string; name: string; size: number; modifiedMs: 
  */
 formatHint: string }
 /**
- * The open folder, re-read after something changed on disk.
- * 
- * The whole list rather than a diff: the watcher reports what a scan found,
- * and the frontend compares it with what it is showing. That one comparison
- * covers files appearing, disappearing, being renamed, and being rewritten —
- * all of which a diff computed from OS events would have to handle
- * separately, and would get wrong whenever events were coalesced or dropped.
+ * The whole re-scanned list, not a diff: coalesced or dropped OS events make diffs wrong.
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
-/**
- * What produced a rendered frame's pixels. Reported per frame so the panel
- * states it rather than the user inferring it — the `camera` look shows the
- * camera's own JPEG only while nothing is edited, and the switch to the
- * developed raw must be visible, not silent.
- */
-export type FrameSource = 
-/**
- * The JPEG the camera itself wrote, served as-is.
- */
-"cameraJpeg" | 
-/**
- * Pixels developed from the sensor data by this app.
- */
-"rawDevelop"
-/**
- * Everything a path needs to open as a merge: which frames, and how they
- * become one photograph.
- */
+export type FrameSource = "cameraJpeg" | "rawDevelop"
 export type FusionRecipe = { frames: string[]; method: HdrMethod }
-/**
- * How a bracket becomes one photograph. An enum, because the choices are
- * few and each is a different *kind* of result — not a parameter sweep.
- */
 export type HdrMethod = 
 /**
- * Mertens exposure fusion: a blend of the best-exposed pixels. Looks
- * like the camera's pictures; deliberately has no knobs.
+ * Mertens exposure fusion — deliberately no knobs.
  */
 "fusion" | 
 /**
- * Scene-linear radiance: the light itself, with the darker exposures'
- * headroom kept above 1.0. The develop pipeline's tone controls are
- * the knobs — this is the "professional HDR" path.
+ * Scene-linear radiance, headroom kept above 1.0; the develop tone controls are the knobs.
  */
 "radiance"
+export type HdrOutcome = { kind: "plain" } | 
 /**
- * Whether the scene behind a path is a fused bracket, and if not, why not.
- * 
- * A total answer rather than an optional field: every open scene is exactly
- * one of these, and the panel renders whichever it is told.
- */
-export type HdrOutcome = 
-/**
- * An ordinary file — no bracket registered at this path.
- */
-{ kind: "plain" } | 
-/**
- * The fused photograph. Alignment is per frame, so `left_out` names
- * any frames that were misaligned and left out rather than ghosted
- * in — facts the panel must state per file, not round up.
+ * `left_out` names frames that were misaligned and left out rather than ghosted in.
  */
 { kind: "fused"; frames: number; leftOut: string[] } | 
 /**
- * A bracket was registered but its frames would not align to the pixel,
- * so the path shows the face file alone. `reason` is the measurement
- * that said no.
+ * The path shows the face file alone; `reason` is the measurement that said no.
  */
 { kind: "refused"; frames: number; reason: string }
 /**
@@ -749,9 +552,7 @@ export type Histogram = { luma: number[]; red: number[]; green: number[]; blue: 
  */
 clippedShadows: number; clippedHighlights: number }
 /**
- * User labels for one image. `stars` is genuinely absent until rated;
- * `tags` is the (possibly empty) full set. This is the wire type — the
- * frontend keeps a `path → ImageLabels` map mirroring the database.
+ * `stars` is genuinely absent until rated; `tags` is the full (possibly empty) set.
  */
 export type ImageLabels = { stars: number | null; tags: string[] }
 export type ImageMeta = { 
@@ -782,9 +583,6 @@ luma: number[]; red: number[]; green: number[]; blue: number[];
  * vectors are N×N with the structurally empty slots at zero.
  */
 triangleN: number; triUp: number[]; triDown: number[] }
-/**
- * A batch of per-image metadata read in the background for the stats panel.
- */
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
 /**
@@ -805,48 +603,13 @@ export type Overlay =
  * Mark the pixels that have run out of range at either end.
  */
 "clipping"
-/**
- * A person the clustering found: their face chips and their photographs.
- */
 export type PersonCluster = { 
 /**
- * The filter value and map key. A named person's id IS their name —
- * names are anchored to identity vectors, so they survive reclustering
- * and follow the person into other folders; run ordinals do neither.
+ * A named person's id IS their name (it survives reclustering); unnamed clusters get run ordinals.
  */
-id: string; 
+id: string; name: string | null; cover: string; chips: string[]; photos: string[]; solo: string[]; few: string[]; background: string[]; 
 /**
- * The user's name for this person, if they gave one.
- */
-name: string | null; 
-/**
- * The crop that stands for this person in the panel.
- */
-cover: string; 
-/**
- * A few more member crops — enough to judge at a glance whether the
- * cluster really is one person.
- */
-chips: string[]; 
-/**
- * Photographs where a face of this person was detected, any role.
- */
-photos: string[]; 
-/**
- * Photographs where they are the sole focus — the only sizable face.
- */
-solo: string[]; 
-/**
- * Photographs where they share the frame with a few comparable faces.
- */
-few: string[]; 
-/**
- * Photographs where they are small or behind others — background.
- */
-background: string[]; 
-/**
- * Photographs with no visible face, but near-identical to a member —
- * the person turned away between two shots of the same moment.
+ * Faceless photos near-identical to a member — the person turned away between shots.
  */
 implied: string[] }
 export type Preset = { id: string; 
@@ -859,31 +622,21 @@ label: string;
  */
 note: string; params: DevelopParams }
 /**
- * The wire form of a render region. Mirrors `imgvwr_core::Region`, which is
- * a pure-core type and deliberately carries no serialisation attributes.
+ * Mirrors `imgvwr_core::Region`, which deliberately carries no serde attributes.
  */
 export type RegionArg = { x: number; y: number; width: number; height: number }
-/**
- * A slice of an in-progress folder scan. Batches stream in walk order as
- * the tree is traversed — cloud-backed folders can take seconds to walk,
- * so the gallery fills progressively; `done` marks the final batch.
- */
 export type ScanBatch = { entries: FileEntry[]; epoch: number; done: boolean }
 export type SimilarityScore = { path: string; score: number }
 export type ThumbnailFailed = { path: string; error: string; epoch: number }
 export type ThumbnailReady = { path: string; 
 /**
- * Absolute path of the cached WebP (or the original file when no codec
- * matched and the webview should decode it natively).
+ * The cached WebP — or the original file when no codec matched and the webview decodes natively.
  */
 cacheFile: string; epoch: number }
 export type TrashFailure = { path: string; error: string }
-/**
- * What became of a batch: what actually went, and what did not, with why.
- */
 export type TrashOutcome = { 
 /**
- * Paths that reached the Trash — exactly what the collection may drop.
+ * Only paths that actually reached the Trash — exactly what the collection may drop.
  */
 removed: string[]; failed: TrashFailure[] }
 /**

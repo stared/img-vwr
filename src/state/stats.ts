@@ -4,12 +4,6 @@ import type { Dims } from "./derived";
 import { aspectLabelOf } from "./derived";
 import { formatChoices } from "./query";
 
-/**
- * Collection statistics — pure functions over the visible entries and the
- * per-image metadata streamed in from Rust. Everything here returns labelled
- * buckets the stats panel renders as bars.
- */
-
 export interface Bucket {
   label: string;
   count: number;
@@ -20,13 +14,7 @@ export interface Bucket {
   to?: number;
 }
 
-/**
- * Count per format group (jpg/jpeg fold into JPEG), most common first.
- *
- * Only what is here: a bar chart of things there are none of is a chart of
- * nothing. The *menu* keeps the empty rows, because that is a list of what
- * you may ask for; this is a description of what you have.
- */
+/** Count per format group (jpg/jpeg fold into JPEG), most common first; zero-count formats excluded (the menu keeps them). */
 export function formatCounts(entries: readonly FileEntry[]): Bucket[] {
   return formatChoices(entries)
     .filter((c) => c.count > 0)
@@ -71,10 +59,7 @@ function bucketLabel(unit: TimeUnit, start: Date): string {
   }
 }
 
-/**
- * Contiguous time histogram (zero buckets kept — the shape is the point) at
- * the finest of day/month/year granularity that fits in `maxBuckets`.
- */
+/** Contiguous time histogram (zero buckets kept) at the finest of day/month/year that fits `maxBuckets`. */
 export function timeBuckets(timesMs: readonly number[], maxBuckets = 32): Bucket[] {
   const valid = timesMs.filter((t) => t > 0);
   if (valid.length === 0) return [];
@@ -127,15 +112,11 @@ export function cameraCounts(metas: readonly ImageMeta[], top = 8): Bucket[] {
   const rest = sorted.slice(top - 1);
   return [
     ...sorted.slice(0, top - 1),
-    // Fold-up bucket: no single value to filter on, so no `value`.
     { label: `other (${rest.length})`, count: rest.reduce((sum, b) => sum + b.count, 0) },
   ];
 }
 
-/**
- * Nearest named ratio of long/short edge. Named ratios sort by count (most
- * common first); the catch-alls "wider" and "other" always trail.
- */
+/** Named ratios sort by count; the catch-alls "wider" and "other" always trail. */
 export function aspectBuckets(dims: readonly Dims[]): Bucket[] {
   const counts = new Map<string, number>();
   for (const d of dims) {
@@ -153,7 +134,7 @@ export function aspectBuckets(dims: readonly Dims[]): Bucket[] {
   return [...named, ...rest];
 }
 
-export interface OrientationSplit {
+interface OrientationSplit {
   landscape: number;
   portrait: number;
   square: number;
@@ -176,10 +157,7 @@ export interface NumericHistogram {
   maxLabel: string;
 }
 
-/**
- * Log-scale bins — for heavy-tailed values like file sizes or pixel edges.
- * `binsPerOctave` sets the resolution: 1 = bins doubling in width.
- */
+/** Log-scale bins for heavy-tailed values; `binsPerOctave` 1 means bins doubling in width. */
 export function log2Bins(
   values: readonly number[],
   fmt: (n: number) => string = String,

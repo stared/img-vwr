@@ -3,16 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { FileEntry } from "../../ipc";
 import { stripCells, stripRange } from "./Filmstrip";
 
-/* The strip's cells are `height - 12` wide with a 6 px gap and 8 px of
- * container padding, so at height 160 the pitch is 154 and the first cell
- * starts at 8. Those are the numbers the CSS actually produces. */
+// The numbers Filmstrip's CSS actually produces at height 160: cells `height - 12` wide, 6 px gap, 8 px padding.
 const layout = { origin: 8, pitch: 154 };
 
 describe("stripRange", () => {
   it("covers what is on screen, deep into a long strip", () => {
-    // Frame 117 of 170: the case that was broken. A pitch guessed as
-    // `height + 6` (166) instead of the real 154 put the requested window
-    // nine cells past the visible one, and the strip sat blank.
+    // Guards: a pitch guessed as `height + 6` (166) put the requested window nine cells past the visible one.
     const scrollLeft = 117 * 154;
     const { first, last } = stripRange({ scrollLeft, clientWidth: 1540 }, layout, 170);
     expect(first).toBeLessThanOrEqual(117);
@@ -51,9 +47,7 @@ const file = (name: string): FileEntry => ({
   formatHint: name.slice(name.lastIndexOf(".") + 1).toLowerCase(),
 });
 
-/* A raw+JPEG pair, a lone frame, and — through `hdrKeys` — a three-frame
- * HDR set fronted by its face. The visible list is what collapse produces:
- * one cell per photograph. */
+// A raw+JPEG pair, a lone frame, and a three-frame HDR set fronted by its face; `visible` is the collapsed list.
 const rawOfPair = file("DSC_0001.NEF");
 const jpgOfPair = file("DSC_0001.JPG");
 const lone = file("DSC_0002.JPG");
@@ -79,8 +73,7 @@ describe("stripCells", () => {
       "DSC_0004.JPG",
       "DSC_0005.JPG",
     ]);
-    // The shown member keeps its place in the visible list; the extras are
-    // the strip's own, addressed by path rather than index.
+    // The shown member keeps its visible index; the extras are addressed by path, not index.
     expect(cells.map((c) => c.index)).toEqual([0, 1, null, 2, null]);
     // Every spread cell still belongs to the one photograph.
     expect(new Set(cells.slice(2).map((c) => c.key))).toEqual(new Set([face.path]));
@@ -88,8 +81,6 @@ describe("stripCells", () => {
 
   it("spreads a raw+JPEG pair the same way, in name order however the disk listed it", () => {
     const key = "/shoot/DSC_0001";
-    // `all` lists the NEF before the JPG, the way the disk happened to;
-    // the spread still comes out in name order.
     const cells = stripCells(visible, all, { [key]: true }, hdrKeys, true);
     expect(cells.map((c) => c.entry.name)).toEqual([
       "DSC_0001.JPG",
@@ -101,10 +92,8 @@ describe("stripCells", () => {
   });
 
   it("ignores a spread that no longer names a pile, and all of them with stacking off", () => {
-    // A key whose stack shrank to one file spreads to nothing special.
     const cells = stripCells([lone], [lone], { "/shoot/DSC_0002": true }, null, true);
     expect(cells).toEqual([{ entry: lone, index: 0, key: "/shoot/DSC_0002" }]);
-    // Stacking off: every file is its own cell already; spreads mean nothing.
     const flat = stripCells(all, all, { [face.path]: true }, hdrKeys, false);
     expect(flat).toHaveLength(all.length);
     expect(flat.every((c) => c.index !== null)).toBe(true);

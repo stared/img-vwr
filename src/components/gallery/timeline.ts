@@ -1,43 +1,27 @@
-/**
- * Pure math behind the timeline view: lane packing (photos never overlap —
- * a photo whose slot is taken moves one lane further), calendar-aware axis
- * ticks, and the pan/zoom window. All time is UNIX ms; all lengths are px.
- *
- * The view is a WINDOW over time, not a giant scrollable canvas: at deep
- * zoom a year is millions of pixels, past what a DOM element can be, so
- * panning moves `t0` and rendering maps t → (t - t0) / msPerPx.
- */
+/* All time is UNIX ms, all lengths px. The view is a window over time, not a scrolled canvas: at deep zoom a year is millions of pixels, past what a DOM element can be. */
 
-/** Time window shown along the main axis. */
 export interface TimeWindow {
   /** Time at the viewport's main-axis start. */
   t0: number;
-  /** Zoom: how many milliseconds one pixel covers (smaller = closer). */
   msPerPx: number;
 }
 
 export const MINUTE_MS = 60_000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
-export const YEAR_MS = Math.round(365.25 * DAY_MS);
+const YEAR_MS = Math.round(365.25 * DAY_MS);
 
-/** Deepest zoom: one minute per 240px — single-burst photos fan out. */
 export const MIN_MS_PER_PX = MINUTE_MS / 240;
 
-/** Shortest range treated as the full span (a folder shot in one burst). */
-export const MIN_SPAN_MS = HOUR_MS;
+const MIN_SPAN_MS = HOUR_MS;
 
-/** Margin around the data range, each side, as a fraction of its span. */
 const RANGE_MARGIN = 0.05;
 
-/** The navigable time bounds: the data range plus the margin. Zooming and
- * panning never leave these — there is nothing to see out there. */
 function rangeBounds(tMin: number, tMax: number): { lo: number; hi: number } {
   const span = Math.max(tMax - tMin, MIN_SPAN_MS);
   return { lo: tMin - span * RANGE_MARGIN, hi: tMin + span * (1 + RANGE_MARGIN) };
 }
 
-/** Keep the window inside the navigable bounds (centered when it's wider). */
 function clampWindow(win: TimeWindow, tMin: number, tMax: number, viewPx: number): TimeWindow {
   const { lo, hi } = rangeBounds(tMin, tMax);
   const viewSpan = Math.max(viewPx, 1) * win.msPerPx;
@@ -48,14 +32,12 @@ function clampWindow(win: TimeWindow, tMin: number, tMax: number, viewPx: number
   return { t0, msPerPx: win.msPerPx };
 }
 
-/** The window showing the whole navigable range in `viewPx`. */
 export function fitWindow(tMin: number, tMax: number, viewPx: number): TimeWindow {
   const { lo, hi } = rangeBounds(tMin, tMax);
   return { t0: lo, msPerPx: (hi - lo) / Math.max(viewPx, 1) };
 }
 
-/** Zoom the window by `factor` keeping the time under `anchorPx` fixed.
- * Fit is the far end of zooming out; MIN_MS_PER_PX the near end. */
+/** Zoom by `factor` keeping the time under `anchorPx` fixed; clamped between fit and MIN_MS_PER_PX. */
 export function zoomedWindow(
   win: TimeWindow,
   factor: number,
@@ -70,7 +52,6 @@ export function zoomedWindow(
   return clampWindow({ t0: anchorT - anchorPx * msPerPx, msPerPx }, tMin, tMax, viewPx);
 }
 
-/** Pan by `deltaPx`, staying inside the navigable bounds. */
 export function pannedWindow(
   win: TimeWindow,
   deltaPx: number,
@@ -86,29 +67,18 @@ export function pannedWindow(
   );
 }
 
-/** Log-grid step for `packSpan`. */
 export const PACK_STEP = 1.25;
 
-/**
- * Snap a packing span UP onto a coarse log grid. Continuous zooming then
- * re-packs lanes only when crossing a grid step — never per wheel event —
- * and items still never overlap, because the snapped span is at least the
- * true one (they just sit up to one step further apart).
- */
+/** Snaps UP onto a log grid: lanes re-pack only at grid steps, and snapping up keeps items non-overlapping. */
 export function packSpan(spanMs: number): number {
   let out = PACK_STEP ** Math.ceil(Math.log(spanMs) / Math.log(PACK_STEP));
   while (out < spanMs) out *= PACK_STEP; // float-edge guard
   return out;
 }
 
-/**
- * Assign non-overlapping lanes to time-sorted items: each item occupies
- * `spanMs` of axis; an item landing on an occupied stretch goes to the
- * lowest free lane (one further, as many times as needed). O(n log n).
- */
+/** Non-overlapping lanes for time-sorted items, each occupying `spanMs`; collisions take the lowest free lane. */
 export function packLanes(ts: number[], spanMs: number): { lanes: number[]; laneCount: number } {
   const lanes = new Array<number>(ts.length);
-  // Busy lanes as a min-heap by end time; freed lanes as a min-heap by index.
   const busy = new MinHeap<{ end: number; lane: number }>((a, b) => a.end - b.end);
   const free = new MinHeap<number>((a, b) => a - b);
   let laneCount = 0;
@@ -172,12 +142,11 @@ class MinHeap<T> {
   }
 }
 
-export interface Tick {
+interface Tick {
   t: number;
   label: string;
 }
 
-/** Tick steps from minutes to centuries; approxMs picks the density. */
 const TICK_STEPS: { unit: "minute" | "hour" | "day" | "month" | "year"; count: number }[] = [
   { unit: "minute", count: 1 },
   { unit: "minute", count: 5 },
@@ -226,11 +195,7 @@ function tickLabel(date: Date, unit: (typeof TICK_STEPS)[number]["unit"]): strin
 /** Guard against a degenerate window producing an absurd tick list. */
 const MAX_TICKS = 500;
 
-/**
- * Calendar-aligned axis ticks for [tA, tB], spaced at least `minGapPx`
- * apart at the window's zoom. Month and year ticks land on true calendar
- * boundaries (months are not 30-day approximations).
- */
+/** Calendar-aligned ticks for [tA, tB] at least `minGapPx` apart; month/year ticks land on true calendar boundaries. */
 export function timeTicks(tA: number, tB: number, msPerPx: number, minGapPx = 90): Tick[] {
   if (!(tB > tA)) return [];
   const step =
@@ -241,7 +206,6 @@ export function timeTicks(tA: number, tB: number, msPerPx: number, minGapPx = 90
   const d = new Date(tA);
   d.setMilliseconds(0);
   d.setSeconds(0);
-  // Floor to the step's boundary, then walk forward one step at a time.
   switch (step.unit) {
     case "minute":
       d.setMinutes(Math.floor(d.getMinutes() / step.count) * step.count);

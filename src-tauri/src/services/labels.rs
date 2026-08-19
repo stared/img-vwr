@@ -5,9 +5,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use serde::Serialize;
 
-/// User labels for one image. `stars` is genuinely absent until rated;
-/// `tags` is the (possibly empty) full set. This is the wire type — the
-/// frontend keeps a `path → ImageLabels` map mirroring the database.
+/// `stars` is genuinely absent until rated; `tags` is the full (possibly empty) set.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageLabels {
@@ -15,10 +13,7 @@ pub struct ImageLabels {
     pub tags: Vec<String>,
 }
 
-/// App-local label store — one SQLite database in the app data dir, keyed
-/// by absolute path. Deliberately never writes anywhere near the images:
-/// labeling must be zero-risk to the user's files. (XMP export can come
-/// later as a command over this same data.)
+/// Deliberately never writes anywhere near the images: labeling must be zero-risk to the user's files.
 pub struct LabelService {
     conn: Mutex<Connection>,
 }
@@ -81,10 +76,6 @@ impl LabelService {
     }
 
     /// Set or clear (None) the star rating of every path, in one transaction.
-    ///
-    /// Takes a list because rating is something the user does to a selection,
-    /// and a selection can be the whole folder: one round trip and one
-    /// transaction rather than a thousand of each.
     pub fn set_stars(
         &self,
         paths: &[String],
@@ -112,12 +103,7 @@ impl LabelService {
         self.labels_of(paths)
     }
 
-    /// Toggle a tag across every path.
-    ///
-    /// One verdict for the whole selection rather than each file flipping on
-    /// its own: if they all carry the tag this takes it off, and otherwise it
-    /// goes on all of them. Per-file flipping would make a mixed selection
-    /// swap which half is tagged, which is never what anyone means.
+    /// One verdict for the whole selection: all tagged removes from all, otherwise adds to all — never per-file flips.
     pub fn toggle_tag(
         &self,
         paths: &[String],
@@ -157,9 +143,7 @@ impl LabelService {
         self.labels_of(paths)
     }
 
-    /// Labels for exactly these paths — including the ones that now have
-    /// none, which `for_paths` leaves out. A write has to answer for every
-    /// path it was given, or the caller cannot tell "cleared" from "unchanged".
+    /// Unlike `for_paths`, answers for every path given — else the caller cannot tell "cleared" from "unchanged".
     fn labels_of(&self, paths: &[String]) -> Result<HashMap<String, ImageLabels>, String> {
         let mut map = self.for_paths(paths)?;
         for path in paths {
@@ -187,7 +171,6 @@ mod tests {
         (dir, svc)
     }
 
-    /// One path, as the single-image paths in the app pass it.
     fn one(path: &str) -> Vec<String> {
         vec![path.to_string()]
     }
@@ -209,9 +192,7 @@ mod tests {
         let rated = svc.set_stars(&three, Some(4)).unwrap();
         assert_eq!(rated.len(), 3);
         assert!(rated.values().all(|l| l.stars == Some(4)));
-        // Clearing answers for every path it was given, including the ones
-        // that now have no labels at all — otherwise the caller cannot tell
-        // "cleared" from "left alone".
+        // Clearing must answer for every path, or the caller cannot tell "cleared" from "left alone".
         let cleared = svc.set_stars(&three, None).unwrap();
         assert_eq!(cleared.len(), 3);
         assert!(cleared.values().all(|l| l.stars.is_none()));

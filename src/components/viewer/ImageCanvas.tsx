@@ -24,15 +24,6 @@ import {
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 import { ImageCaption } from "./ImageCaption";
 
-/**
- * The zoomable image surface: one photograph, panned and zoomed, showing the
- * developed frame whenever the file needs one.
- *
- * Shared by the full-screen viewer and the darkroom so there is exactly one
- * place that decides between an original and a developed frame, and exactly
- * one place that knows a preview frame stands in for a much larger image.
- */
-
 const ZOOM_WHEEL_SENSITIVITY = 0.0022;
 
 interface Point2 {
@@ -51,8 +42,7 @@ export function ImageCanvas() {
   const entry = useSelectedEntry();
 
   const session = useDevelopStore((s) => s.session);
-  // The HDR panel's "check the frame the camera wrote": show the file at
-  // this path rather than the fusion the path opens as.
+  // When set, show the file at this path rather than the fusion the path opens as.
   const original = useDevelopStore((s) => s.original);
   const requestRender = useDevelopStore((s) => s.requestRender);
   const requestDetail = useDevelopStore((s) => s.requestDetail);
@@ -70,14 +60,6 @@ export function ImageCanvas() {
   const setCrop = useDevelopStore((s) => s.setCrop);
   const cropChoice = useDevelopStore((s) => s.cropChoice);
   const cropPortrait = useDevelopStore((s) => s.cropPortrait);
-  /**
-   * What a press on the picture is doing to the crop.
-   *
-   * Three gestures, told apart by where the press landed rather than by a
-   * mode: a handle resizes, the inside moves, the outside draws a new
-   * rectangle. Nothing to arm, nothing to remember — the cursor over each
-   * says which it is.
-   */
   const [drag, setDrag] = useState<
     | { kind: "draw"; from: Point2; to: Point2 }
     | { kind: "move"; grab: Point2 }
@@ -87,8 +69,6 @@ export function ImageCanvas() {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track canvas size in the store so zoom commands can center correctly,
-  // and keep the develop preview rendered for roughly this many pixels.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -112,18 +92,7 @@ export function ImageCanvas() {
     }
   }, [entries, index]);
 
-  // The loupe itself lives at the top of the develop column (DevelopLoupe);
-  // the canvas keeps only the aiming gesture — a drag on the photograph is
-  // where "show me this bit" belongs, and the loupe's pixels following the
-  // pointer are their own answer to where it is looking.
-
-  // And develop the neighbours ahead, which is the expensive half. Only once
-  // this image's own frame has arrived: the user is waiting on that one, and
-  // a speculative render must never be what they are waiting behind. Next
-  // before previous — forward is the way a shoot is usually walked. Asked
-  // after every frame rather than once per image, because the warm cache is
-  // dropped whenever the viewport resizes and this is what fills it again;
-  // `prefetch` itself decides when there is room to do any of it.
+  // Prefetch only after this image's own frame settles, and after every frame — resizes drop the warm cache.
   const prefetch = useDevelopStore((s) => s.prefetch);
   const settled = session?.path === entry?.path ? (session?.frame?.token ?? null) : null;
   useEffect(() => {
@@ -134,9 +103,7 @@ export function ImageCanvas() {
     prefetch(near);
   }, [entries, index, settled, prefetch]);
 
-  // Zoomed in past what the preview resolves? Develop just the visible crop
-  // at full sensor resolution, so 1:1 shows real detail instead of an
-  // upscaled preview. Only the crop is developed, so it stays affordable.
+  // Past what the preview resolves, develop just the visible region at full sensor resolution.
   const frameForDetail = session?.frame ?? null;
   const detail = session?.detail ?? null;
   useEffect(() => {
@@ -170,8 +137,7 @@ export function ImageCanvas() {
     }
   };
 
-  /** Where a pointer is, in the coordinates of the picture on screen (the
-   *  crop), or null when it is off the photograph. */
+  /** Pointer position in shown-picture (crop) coordinates, or null off the photograph. */
   const shownPointOf = (e: { clientX: number; clientY: number; currentTarget: Element }) => {
     if (!session || !view) return null;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -185,7 +151,6 @@ export function ImageCanvas() {
     return { x, y };
   };
 
-  /** The eyedropper's neutral point: one deliberate click, one sample. */
   const handleClick = (e: React.MouseEvent) => {
     if (session?.picking !== true) return;
     const at = shownPointOf(e);
@@ -194,17 +159,7 @@ export function ImageCanvas() {
     void pickWhiteBalanceAt(at.x, at.y);
   };
 
-  /**
-   * Where a pointer is while cropping, as an offset from the crop's centre in
-   * the *turned* frame — the space the rectangle is axis-aligned in, and so
-   * the only space a corner drag means anything in.
-   *
-   * The canvas shows the whole frame while cropping, turned by the straighten
-   * angle so the horizon is level and the rectangle can sit square on screen.
-   * Screen coordinates are therefore already the turned frame's, minus the
-   * crop's centre — no rotation happens here, which is exactly the point of
-   * turning the picture rather than the rectangle.
-   */
+  /** Pointer as an offset from the crop's centre in the turned frame; the canvas shows the frame turned, so screen coordinates already are that space. */
   const cropPointOf = (e: React.PointerEvent): Point2 | null => {
     if (!view || !img || !session) return null;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -218,22 +173,7 @@ export function ImageCanvas() {
     };
   };
 
-  /**
-   * Aiming the loupe: press to put it somewhere, drag to move it there.
-   *
-   * A drag rather than a click per look, because aiming a loupe is a search —
-   * you push it around until the thing you wanted to check is under it — and
-   * a click at a time makes that a guessing game with a round trip between
-   * each guess. Held pixels and a margin (see `LOUPE_MARGIN`) are what let
-   * the movement itself be immediate.
-   */
-  /* The drag itself lives in a ref and only its appearance in the store. A
-   * handler has to know whether a drag is running *now*, and store state is
-   * whatever the last render saw — pointer events that arrive in one batch
-   * (a synthetic sequence, or moves the browser coalesced) would all read the
-   * value from before the drag began, and the release would be missed. In the
-   * store rather than local state because the loupe brightening with the drag
-   * sits in the develop column, not on this canvas. */
+  // A ref: batched pointer events must read whether the drag runs now; the store copy only styles the loupe.
   const aimingRef = useRef(false);
   const setLoupeAiming = useDevelopStore((s) => s.setLoupeAiming);
   const setAimingNow = (on: boolean) => {
@@ -242,10 +182,7 @@ export function ImageCanvas() {
   };
   const aimsLoupe = !cropping && session?.picking !== true;
 
-  /* Pointer capture is what keeps a drag alive once it wanders off the canvas,
-   * and it is deliberately never load-bearing: the state is set first and
-   * released only if it was granted, so a drag still works where capture is
-   * refused rather than stranding the loupe following an unpressed pointer. */
+  // Capture is never load-bearing: state is set first and released only if granted, so a refused capture still drags.
   const capture = (e: React.PointerEvent) => e.currentTarget.setPointerCapture(e.pointerId);
   const release = (e: React.PointerEvent) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -270,15 +207,11 @@ export function ImageCanvas() {
     const crop = session.settings.crop;
     const inside =
       Math.abs(at.x) <= crop.width / 2 && Math.abs(at.y) <= crop.height / 2;
-    // Inside the rectangle the drag moves the picture within it; outside it
-    // draws a new one. A handle press never reaches here — the handle's own
-    // element takes it and says which one.
+    // A handle press never reaches here — the handle's own element takes it (handleGrab).
     setDrag(inside ? { kind: "move", grab: at } : { kind: "draw", from: at, to: at });
     capture(e);
   };
 
-  /** A handle taken hold of: the resize runs on the canvas from here on, so
-   * the pointer may leave the little square without the drag ending. */
   const handleGrab = (handle: Handle) => (e: React.PointerEvent) => {
     if (!cropping) return;
     e.preventDefault();
@@ -289,8 +222,7 @@ export function ImageCanvas() {
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (aimingRef.current) {
-      // Only while the button is really down. Without this, a capture that was
-      // never granted leaves the loupe chasing the pointer for good.
+      // Without the buttons check, a capture that was never granted leaves the loupe chasing the pointer for good.
       if ((e.buttons & 1) === 0) {
         setAimingNow(false);
         return;
@@ -308,14 +240,8 @@ export function ImageCanvas() {
       setDrag({ ...drag, to: at });
       return;
     }
-    // Move and resize commit as they go: the rectangle is what the render is
-    // about, and a crop that only appeared on release would be a guess until
-    // then. Drawing waits, because a half-finished rectangle is not a crop.
     if (drag.kind === "move") {
-      // Measured against the crop as it stands, not as it was pressed: every
-      // move puts the grabbed point back under the pointer, so the next
-      // event's offset is again relative to the same place on the rectangle.
-      // Reading from a remembered start would double every delta.
+      // Offset is against the crop as it stands — each move re-centres the grab, so a remembered start would double every delta.
       setCrop(moved(crop, at.x - drag.grab.x, at.y - drag.grab.y, aspect));
     } else {
       const choice = ASPECT_CHOICES.find((c) => c.id === cropChoice) ?? null;
@@ -334,8 +260,7 @@ export function ImageCanvas() {
     release(e);
     if (drag.kind === "draw" && session) {
       const went = Math.abs(drag.to.x - drag.from.x) + Math.abs(drag.to.y - drag.from.y);
-      // A click that went nowhere leaves crop mode instead of cropping to a
-      // speck — the commonest way to say "never mind".
+      // A click that went nowhere leaves crop mode instead of cropping to a speck.
       if (went < 0.01) setCropping(false);
       else setCrop(drawn(session.settings.crop, drag.from, drag.to, frameAspect(session.info)));
     }
@@ -356,11 +281,6 @@ export function ImageCanvas() {
     );
   }
 
-  // Show the developed frame when the file cannot be displayed directly (raw)
-  // or when an edit is applied; otherwise the original, which the webview
-  // decodes itself and can zoom to full resolution. The "check the frame
-  // the camera wrote" look overrides towards the file: the path opens as a
-  // fusion, but the file at it is a real JPEG worth looking at.
   const developed =
     session !== null &&
     session.path === entry.path &&
@@ -369,12 +289,7 @@ export function ImageCanvas() {
   const frame = developed ? session.frame : null;
   const src = frame !== null ? developFrameUrl(frame.token) : developed ? null : fileUrl(entry.path);
 
-  // The viewport works in real image pixels, so "100%" means actual pixels
-  // and fit is computed against the full 6048 px frame regardless of what is
-  // on screen. A developed frame is a downscaled stand-in for that image, so
-  // the transform has to undo the preview's own reduction — otherwise a
-  // 24 MP raw renders at preview size, a twentieth of where it belongs.
-  // While cropping the whole frame is on screen; otherwise it is the crop.
+  // The viewport works in real image pixels; the transform must undo the preview frame's own downscale.
   const shown =
     developed && session
       ? displayedSize(session.info, cropping ? FULL_CROP : session.settings.crop)
@@ -382,21 +297,7 @@ export function ImageCanvas() {
   const previewScale =
     frame !== null && shown !== null && frame.width > 0 ? shown.width / frame.width : 1;
 
-  /**
-   * The turn that makes cropping judgeable: the photograph rotates under a
-   * rectangle that stays square on screen.
-   *
-   * The stored rectangle is axis-aligned in a frame turned by `angle`, so
-   * showing the frame turned by the same amount puts the two in the same
-   * space — the rectangle can be drawn as an ordinary box, dragged with
-   * ordinary handles, and what you see inside it is what will be rendered.
-   * Turning the rectangle instead would leave the horizon crooked and the
-   * rectangle crooked with it, and you would have to tilt your head to judge
-   * whether you had got it straight.
-   *
-   * About the crop's own centre, in percentages of the element, so it works
-   * whatever size preview happens to be standing in for the frame.
-   */
+  // The stored rectangle is axis-aligned in the frame turned by `angle`, so the picture turns about the crop's centre and the box stays square on screen.
   const turning = cropping && session !== null && session.settings.crop.angle !== 0;
   const turn = turning && session
     ? (() => {
@@ -407,10 +308,6 @@ export function ImageCanvas() {
     : "";
 
   if (src === null) {
-    // A raw file whose first frame has not arrived. The decode takes a couple
-    // of seconds, and this is the one moment the filename belongs on the
-    // image itself: the canvas is empty anyway, so it costs the photograph
-    // nothing, and it is exactly when you want to know what is coming.
     return (
       <div ref={containerRef} className="viewer-canvas">
         <p className="canvas-waiting">
@@ -448,14 +345,12 @@ export function ImageCanvas() {
         alt={entry.name}
         onLoad={(e) =>
           imageLoaded({
-            // A developed frame is a downscaled preview; the viewport must
-            // size itself to the real image so zoom and fit stay honest.
+            // Report the real image size, not the downscaled preview's.
             width: shown ? shown.width : e.currentTarget.naturalWidth,
             height: shown ? shown.height : e.currentTarget.naturalHeight,
           })
         }
-        // A developed frame whose token has been evicted; ask for it again
-        // rather than leaving a black canvas nothing would ever repair.
+        // An evicted frame token errors; ask again rather than leave a black canvas.
         onError={() => {
           if (frame !== null) frameLost();
         }}
@@ -467,14 +362,6 @@ export function ImageCanvas() {
           visibility: view ? "visible" : "hidden",
         }}
       />
-      {/* While cropping, the rectangle: the one being dragged out if there is
-          a drag, otherwise the one already stored, so entering crop mode shows
-          what you have rather than a blank frame.
-
-          It is always square on screen, because the picture behind it is the
-          thing that turns. Its handles are what a crop is adjusted by — a
-          rectangle you can only ever re-draw is one where nudging an edge
-          means starting again. */}
       {cropping && view !== null && img !== null && session !== null && (() => {
         const c =
           drag?.kind === "draw"
@@ -488,9 +375,6 @@ export function ImageCanvas() {
         };
         return (
           <div className="viewer-crop" style={box}>
-            {/* Thirds inside the crop, which is where a composition is
-                judged — the frame they used to describe is half thrown away
-                by the time you are here. */}
             <span className="viewer-crop-third down" style={{ left: "33.333%" }} />
             <span className="viewer-crop-third down" style={{ left: "66.667%" }} />
             <span className="viewer-crop-third across" style={{ top: "33.333%" }} />
@@ -505,9 +389,6 @@ export function ImageCanvas() {
           </div>
         );
       })()}
-      {/* Thirds guides, laid over the image itself rather than the viewport,
-          so they follow it as it pans and zooms — guides that stayed put on
-          screen would be measuring the window, not the photograph. */}
       {gridlines && view !== null && img !== null && (
         <div
           className="viewer-guides"
@@ -524,15 +405,11 @@ export function ImageCanvas() {
           <span className="across" style={{ top: "66.667%" }} />
         </div>
       )}
-      {/* Pixels on their way, said in the corner of the picture. Only that:
-          the magnification is the zoom slider's readout, and a second copy
-          of the number would be one more thing saying the same thing. */}
       {developed && session !== null && (session.rendering || session.detailing) && (
         <span className="canvas-marker">rendering…</span>
       )}
       <ImageCaption entry={entry} />
-      {/* The 1:1 crop, laid exactly over the part of the preview it replaces.
-          Drawn on top rather than instead of, so panning never blanks. */}
+      {/* The 1:1 detail is drawn on top of the preview, not instead of it, so panning never blanks. */}
       {developed && detail !== null && view !== null && (
         <img
           className="viewer-detail"

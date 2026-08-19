@@ -15,22 +15,14 @@ interface ThumbCellProps {
 export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const cacheFile = useAppStore((s) => s.thumbs[entry.path]);
   const error = useAppStore((s) => s.thumbErrors[entry.path]);
-  // Two marks, because they mean different things: every selected cell is
-  // what an action reaches, and the lead is the one the panels describe.
   const selected = useAppStore((s) => s.selection.includes(entry.path));
   const lead = useAppStore((s) => s.selectedIndex === index);
   const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
-  // The face of an HDR set wears the set's name: this cell is not one file
-  // but the photograph fused from its bracket.
   const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
-  // A stored crop draws the miniature cropped; the frame's pixel aspect is
-  // needed to give the crop box its shape, so it waits for the metadata.
   const crop = useAppStore((s) => s.crops[entry.path]);
   const meta = useAppStore((s) => s.meta[entry.path]);
   const dims = meta === undefined ? null : effectiveDims(meta);
-  // Collapsed views (scenes) name every file of the stack; the grid lists
-  // each file on its own.
   const caption = useAppStore((s) =>
     stacksCollapse(s)
       ? pairedName(entry, siblingsOf(s.entries, entry, hdrOf(s).keyByStack))

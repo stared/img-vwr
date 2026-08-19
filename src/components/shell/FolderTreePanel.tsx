@@ -5,17 +5,10 @@ import { listSubdirs, requestDirCounts } from "../../ipc";
 import { executeCommand } from "../../registry/commands";
 import { useAppStore } from "../../state/store";
 
-/** How many trailing path segments the breadcrumb shows. */
 const CRUMB_SEGMENTS = 2;
 
-/**
- * Where you are + where you can go: an abbreviated clickable breadcrumb of
- * the current folder, then its subfolders. Clicking navigates and re-roots
- * the list, so there is no in-place tree expansion to manage.
- */
 export function FolderTreePanel() {
   const folderPath = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.path : null));
-  // Navigating keeps the include-subfolders mode you are browsing in.
   const recursive = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.recursive : false));
   const openFolder = useAppStore((s) => s.openFolder);
   const dirCounts = useAppStore((s) => s.dirCounts);
@@ -30,8 +23,7 @@ export function FolderTreePanel() {
       .then((dirs) => {
         if (stale) return;
         setSubdirs(dirs);
-        // Counts stream in as background events; slow (cloud) folders must
-        // never delay showing the list itself.
+        // Counts stream in as background events so slow (cloud) folders never delay the list itself.
         if (dirs.length > 0) {
           void requestDirCounts(dirs.map((d) => d.path));
         }
@@ -44,7 +36,6 @@ export function FolderTreePanel() {
     };
   }, [folderPath]);
 
-  // VS Code-style: the explorer itself offers to open a folder.
   if (!folderPath) {
     return (
       <div className="panel-empty">
@@ -91,7 +82,6 @@ export function FolderTreePanel() {
         )}
       </div>
 
-      {/* Cloud-backed folders can list slowly; the wait must be visible. */}
       {subdirs === null && <span className="tree-empty">listing…</span>}
       {subdirs?.map((dir) => {
         const count = dirCounts[dir.path];

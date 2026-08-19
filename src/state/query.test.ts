@@ -27,8 +27,7 @@ import {
   withSort,
 } from "./query";
 
-// Sort and filter behavior lives in the registries; the engine tests
-// exercise them through registered fields — the same seam plugins use.
+// The engine is exercised through registered fields — the same seam plugins use.
 beforeAll(() => {
   clearSortsForTest();
   registerBuiltinSorts();
@@ -162,7 +161,6 @@ beforeAll(() => {
   });
 });
 
-/** QueryData with every channel empty unless a test provides it. */
 function data(part: Partial<QueryData> = {}): QueryData {
   return { meta: {}, scores: {}, labels: {}, people: {}, ...part };
 }
@@ -171,8 +169,7 @@ function entry(name: string, ext: string, size: number, modifiedMs: number): Fil
   return { path: `/p/${name}`, name, formatHint: ext, size, modifiedMs };
 }
 
-/* Every field: ExifSubset is a total contract, so a fixture must say what
- * the photograph does not carry as well as what it does. */
+// ExifSubset is a total contract: the fixture must state what the photograph does not carry.
 const NO_EXIF = {
   orientation: 1,
   dateTime: null,
@@ -406,9 +403,7 @@ describe("query editing", () => {
   });
 
   it("filters formats nobody bothered to name a group for", () => {
-    // The bug this guards: an extension with no display group belonged to no
-    // group at all, so a folder of NEFs could not be filtered by format —
-    // while the statistics panel happily listed NEF and offered the click.
+    // Guards: an extension with no display group belonged to no group, so NEFs could not be filtered by format.
     const shoot = [
       entry("DSC_1.NEF", "nef", 1, 1),
       entry("DSC_1.JPG", "jpg", 1, 1),
@@ -530,8 +525,7 @@ describe("formatChoices", () => {
   });
 
   it("keeps the formats that are absent, at zero", () => {
-    // A filter outlives the folder it was set in, so the menu is a list of
-    // what you may ask for — not only of what happens to be here.
+    // A filter outlives the folder it was set in, so absent formats stay listed.
     const choices = formatChoices(ENTRIES);
     expect(choices.filter((c) => c.count === 0).map((c) => c.id).sort()).toEqual([
       "avif",
@@ -545,8 +539,7 @@ describe("formatChoices", () => {
   });
 
   it("orders stably while a scan streams in", () => {
-    // Ties break by name rather than by arrival, so rows do not shuffle
-    // under the cursor as batches land.
+    // Ties break by name, not arrival, so rows do not shuffle as batches land.
     const a = formatChoices([entry("z.webp", "webp", 1, 1), entry("a.png", "png", 1, 1)]);
     const b = formatChoices([entry("a.png", "png", 1, 1), entry("z.webp", "webp", 1, 1)]);
     expect(a.map((c) => c.id)).toEqual(b.map((c) => c.id));

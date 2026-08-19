@@ -20,12 +20,6 @@ import {
   type ParamSpec,
 } from "../../state/develop";
 
-/**
- * A section of the panel, folded and unfolded by its own heading — the same
- * disclosure the sidebar's panels wear, one level down. What is folded stays
- * folded across photographs: it is a statement about the work of the
- * sitting, not about any one image.
- */
 function Group({ title, children }: { title: string; children: ReactNode }) {
   const folded = useDevelopStore((s) => s.folded[title] === true);
   const toggleFolded = useDevelopStore((s) => s.toggleFolded);
@@ -41,18 +35,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
     </section>
   );
 }
-
-/* The two shot readings that are bare numbers get an icon; everything else
- * in the row names itself with its unit. Stroke-drawn at the text's own
- * dim weight, so they read as marks, not decoration. */
-
-/**
- * The develop panel: white balance, tone and colour for the selected image,
- * with the histogram of what those settings actually produce.
- *
- * Every control states its current value in words beside its name, so the
- * panel reads as a description of the edit rather than a wall of handles.
- */
 
 export function DevelopPanel() {
   const entry = useSelectedEntry();
@@ -82,9 +64,6 @@ export function DevelopPanel() {
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
   const toggleStacking = useAppStore((s) => s.toggleStacking);
-  // The set this photograph belongs to, from either side: the face fronts
-  // it, a member sits inside it. The *outcome* — fused, and which frames
-  // made it — comes from the session, because the backend ran the alignment.
   const hdrSet = useAppStore((s) => {
     if (entry === null) return null;
     const hdr = hdrOf(s);
@@ -96,16 +75,12 @@ export function DevelopPanel() {
   const allMeta = useAppStore((s) => s.meta);
   const hdrMethods = useAppStore((s) => s.hdrMethod);
   const setHdrMethod = useAppStore((s) => s.setHdrMethod);
-  // Whether stacking has anything to do in this collection at all. A switch
-  // for something that never happens is noise, so a folder of single files
-  // never shows it.
   const hasStacks = useMemo(
     () => [...groupStacks(allEntries).values()].some((members) => members.length > 1),
     [allEntries],
   );
 
-  // The session follows the selection app-wide (App's useDevelopSession);
-  // this panel only renders it.
+  // Session lifecycle is owned by App's useDevelopSession; this panel only renders it.
   const isLocal = entry !== null && !entry.path.startsWith("http");
 
   if (!entry) return <p className="panel-hint">No image selected.</p>;
@@ -113,18 +88,12 @@ export function DevelopPanel() {
   if (opening !== null) return <p className="panel-hint">Opening {entry.name}…</p>;
   if (!session) return <p className="panel-hint">No develop support for this format.</p>;
 
-  // One other file is the ordinary case (raw beside a JPEG); if a stack ever
-  // holds more, this offers the first and the rest are reachable with
-  // stacking off.
   const sibling = siblingsOf(allEntries, entry)[0] ?? null;
   const { settings, info } = session;
   const active = presetOf(settings, presets);
   const baseline = baselineOf(settings, presets);
-  // A raw file opens with a look already on it, so "is this the identity edit"
-  // is the wrong question for whether there is anything to undo.
+  // A raw opens with a non-identity look, so "untouched" means at-opening, not the identity edit.
   const untouched = !info.edited && isAtOpening(session);
-  // What a crop actually produces, in pixels. The one number that says what a
-  // trim has cost, and it belongs beside the control that did the trimming.
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
@@ -147,16 +116,6 @@ export function DevelopPanel() {
 
       {session.error !== null && <p className="develop-error">{session.error}</p>}
 
-      {/* The HDR set as its files, not as a footnote over the sliders. The
-          merge is a row of its own — it is a different photograph from any
-          frame — and every original stays checkable, the middle one
-          included: its row shows the file the camera wrote even though its
-          path opens as the fusion. Fates are per frame because alignment
-          is per frame: the merge is the longest run of exposures that
-          verified against each other, so any frame — the middle one
-          included — can be the one left out. The outcome is the backend's
-          word: it ran the alignment, this panel only repeats the
-          measurement. */}
       {hdrSet !== null && (() => {
         const face = hdrSet.face;
         const onFace = entry.path === face.path;
@@ -189,9 +148,6 @@ export function DevelopPanel() {
             >
               {note}
             </p>
-            {/* How the frames become one photograph. Every option is its
-                own button with the active one marked — a click means the
-                word on it, never "whatever comes next". */}
             {(() => {
               const method = hdrMethods[face.path] ?? "fusion";
               return (
@@ -244,9 +200,7 @@ export function DevelopPanel() {
               const isFace = frame.path === face.path;
               const ev = evOf(frame.path);
               const step = faceEv === null || ev === null ? null : faceEv - ev;
-              // The face gets no special fate: since the merge anchors on
-              // whichever run of exposures verified, the middle frame can
-              // itself be the one left out.
+              // The merge anchors on whichever run of exposures verified, so the face frame itself can be the one left out.
               const fate =
                 leftOut !== null
                   ? leftOut.has(frame.path)
@@ -289,8 +243,6 @@ export function DevelopPanel() {
         );
       })()}
 
-      {/* One grammar for the pair: which file this photograph shows and
-          edits, and whether pairs collapse at all. */}
       {sibling && (
         <div className="develop-switch" title="which file this photograph shows and edits">
           <span className="develop-switch-label">show</span>
@@ -352,7 +304,6 @@ export function DevelopPanel() {
           title="Green to the left, magenta to the right. The mark is the camera's own reading."
           onChange={setTint}
         />
-        {/* One button saying what state it is in; clicking arms or disarms. */}
         <button
           className={session.picking ? "develop-toggle armed" : "develop-toggle"}
           onClick={() => setPicking(!session.picking)}
@@ -366,12 +317,7 @@ export function DevelopPanel() {
       </Group>
 
       <Group title="Tone">
-        {/* Every look on show, the one in effect marked. An edited state
-            marks nothing, and clicking a look puts the sliders back to its
-            starting point. Sensor pixels only: a preset now selects the
-            fitted camera transform, and a finished JPEG already has the
-            camera's rendering baked in — offering to apply it again would
-            be a row of buttons that do nothing. */}
+        {/* Presets are sensor-pixels only: a finished JPEG already has the camera's rendering baked in. */}
         {presets.length > 0 && info.needsRender && (
           <div className="develop-switch">
             <span className="develop-switch-label">preset</span>
@@ -389,9 +335,6 @@ export function DevelopPanel() {
             ))}
           </div>
         )}
-        {/* The frame says what produced its pixels, so the switch from the
-            camera's own JPEG to this app's raw develop is stated, never
-            inferred. The backend reports it per rendered frame. */}
         {info.needsRender && session.frame && (
           <p className="develop-note">
             {session.frame.source === "cameraJpeg"
@@ -401,10 +344,7 @@ export function DevelopPanel() {
         )}
         {PARAM_SPECS.map((spec: ParamSpec) => {
           const value = settings.params[spec.key];
-          // Zero level is the preset, not the bottom of the scale. So an
-          // untouched image shows bare hairlines however strong its look is,
-          // any bar at all means the user moved that control, and
-          // double-clicking puts it back to the preset rather than to flat.
+          // Slider zero level is the preset baseline, not flat, so double-click returns to the preset.
           const from = baseline ? baseline.params[spec.key] : 0;
           return (
             <Slider
@@ -416,9 +356,7 @@ export function DevelopPanel() {
               max={spec.max}
               step={spec.step}
               display={showDeviation ? spec.format(value - from) : spec.format(value)}
-              // Typed values are read the way the panel is currently showing
-              // them, or "+12" would mean two different edits depending on a
-              // switch somewhere else on the panel.
+              // Typed values are parsed in the display's current mode, or "+12" would mean two different edits.
               parse={(text) => {
                 const typed = parseNumber(text);
                 return typed === null ? null : showDeviation ? from + typed : typed;
@@ -430,8 +368,6 @@ export function DevelopPanel() {
             />
           );
         })}
-        {/* The numbers can read either way; the bars always show the
-            deviation, because that is what there is to see. */}
         <div className="develop-switch">
           <span className="develop-switch-label">values</span>
           <button
@@ -457,9 +393,6 @@ export function DevelopPanel() {
         >
           {cropping ? "cropping: Enter when done" : "crop"}
         </button>
-        {/* The shapes, as a row: there are seven of them, they are a closed
-            set, and which one is on is a fact worth being able to read
-            without opening anything. */}
         <div className="develop-choices">
           {ASPECT_CHOICES.map((choice) => (
             <button
@@ -503,10 +436,6 @@ export function DevelopPanel() {
             </div>
           );
         })()}
-        {/* Straightening turns the photograph under the rectangle and gives
-            back as much of it as still fits inside the frame — so the crop
-            gets smaller as the angle grows, and never contains a corner that
-            was never photographed. */}
         <Slider
           label="straighten"
           value={settings.crop.angle}

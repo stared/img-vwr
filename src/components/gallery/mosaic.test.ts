@@ -82,9 +82,7 @@ describe("banded one-scale packing", () => {
   });
 
   it("shows a rotated sensor at one scale: equal diagonals for both orientations", () => {
-    // 3:2 frames both ways. In a height-only row a portrait renders at two
-    // thirds the landscape's scale; here the diagonals must come out equal
-    // within each band, and bands must stay close to one another too.
+    // In a height-only row a portrait renders at 2/3 the landscape's scale; here diagonals must come out equal.
     const aspects = Array.from({ length: 48 }, (_, i) => (i % 5 < 2 ? 2 / 3 : 1.5));
     const bands = bandedMosaic(aspects, W, L);
     expect(bands.length).toBeGreaterThan(1);
@@ -92,9 +90,7 @@ describe("banded one-scale packing", () => {
       const diagonals = band.cells.map((c) => Math.hypot(c.width, c.height));
       const [min, max] = [Math.min(...diagonals), Math.max(...diagonals)];
       expect(max - min).toBeLessThan(max * 0.02);
-      // And near the nominal diagonal, so the wall as a whole holds a
-      // scale. The justify correction shrinks with the pane: this narrow
-      // test pane (6.7 landscape-widths) is close to the worst case.
+      // This narrow pane (6.7 landscape-widths) is near the worst case for the justify correction, hence the loose 0.3.
       expect(Math.abs(max - Math.hypot(1.5, 1) * L) / max).toBeLessThan(0.3);
     }
   });
@@ -109,9 +105,7 @@ describe("banded one-scale packing", () => {
   });
 
   it("never zooms an orphan: a lone portrait finds its partner beyond the window", () => {
-    // One portrait, twenty landscapes, then its only partner. The window
-    // (16) cannot see it — the packing must look further rather than blow
-    // the portrait up past its thumbnail.
+    // The only partner sits past the packing window (16): the packing must look further, not blow the portrait up.
     const aspects = [2 / 3, ...Array<number>(20).fill(1.5), 2 / 3];
     const bands = bandedMosaic(aspects, W, L);
     const nominal = Math.hypot(1.5, 1) * L;
@@ -162,8 +156,7 @@ describe("vertical neighbor", () => {
   });
 
   it("walks a banded stack cell by cell before leaving the band", () => {
-    // All landscapes: bands of three-high columns. Below the top cell of a
-    // column is the middle cell of the same column, not the next band.
+    // All landscapes pack as three-high columns; below the top cell is the same column's middle, not the next band.
     const bands = bandedMosaic(Array<number>(24).fill(1.5), 1200, 180);
     const first = bands[0];
     const top = first?.cells.find((c) => c.y === 0);

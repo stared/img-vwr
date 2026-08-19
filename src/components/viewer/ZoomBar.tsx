@@ -2,24 +2,7 @@ import { parseNumber, Slider } from "../shell/Slider";
 import { useAppStore } from "../../state/store";
 import { fitToWindow, zoomLabel } from "./viewport";
 
-/**
- * The magnification, as a compact slider at the end of the top bar.
- *
- * A slider because zoom is a continuous quantity — the same track, marks
- * and readout as every other slider in the app, in the bar that is already
- * there rather than on a line of its own.
- *
- * It runs from fit to 1:1 and no further, because those are the ends that
- * mean anything: below fit is the photograph with room around it, beyond
- * 1:1 is invented pixels. The marks are the three magnifications a
- * photographer asks for by name — fit the longer edge (the whole
- * photograph), fit the shorter edge (no letterbox) and 1:1 (actual
- * pixels). Everything between is a place you dragged to, and the readout
- * says its number.
- *
- * The track runs in log2 of the scale, because zoom is multiplicative:
- * halving and doubling are the same distance everywhere on the track.
- */
+// The track runs in log2 of the scale: halving and doubling are the same distance everywhere on it.
 export function ZoomBar() {
   const view = useAppStore((s) => s.viewerView);
   const img = useAppStore((s) => s.viewerImg);
@@ -60,8 +43,7 @@ export function ZoomBar() {
         layout="inline"
         title="From fit to actual pixels, log scale. The marks are fit the longer edge, fit the shorter edge, and 1:1; double-click comes back to fit. Keys: = and − zoom, ⌘0 fits, ⌘1 is 1:1."
         onChange={(v) => {
-          // Landing on the fit mark is fit, the named state — not a
-          // percentage that happens to equal it until the window resizes.
+          // Landing on the fit mark becomes the named fit state, not a percentage that equals it only until the window resizes.
           if (Math.abs(v - fitAt) < 0.02) zoomFit();
           else zoom(2 ** v / view.scale);
         }}

@@ -17,35 +17,24 @@ const REQUEST_DEBOUNCE_MS = 50;
 /* Must mirror the .gallery-scene-header CSS height. */
 const SCENE_HEADER_HEIGHT = 28;
 
-/** Below this a thumbnail stops being a picture, so it bounds the column count. */
 const MIN_CELL_PX = 96;
 const MIN_COLUMNS = 2;
 
-/** Widest column count worth offering at this width — a viewport-relative
- * limit rather than an arbitrary one, so the slider always ends somewhere
- * that still shows photographs. */
 export function maxColumnsFor(width: number): number {
   if (width <= 0) return MIN_COLUMNS;
   return Math.max(MIN_COLUMNS, Math.floor((width + CELL_GAP) / (MIN_CELL_PX + CELL_GAP)));
 }
 
-/** Cell edge that makes `columns` of them exactly fill the width. */
 export function cellSizeFor(width: number, columns: number): number {
   const usable = width - CELL_GAP * (columns - 1);
   return Math.max(MIN_CELL_PX, Math.floor(usable / columns));
 }
 
-/**
- * One virtual row: a run of cells, or a scene's header above its first run.
- * Descriptors only — the entries are sliced at render, so a scene change
- * costs row bookkeeping, never a copy of the collection.
- */
-export type GridRow =
+type GridRow =
   | { kind: "photos"; firstIndex: number; count: number }
   | { kind: "header"; label: string };
 
-/** The index one visual row away (+1 down, -1 up), holding the column;
- * null at the edge. Scene headers are skipped. */
+/** Index one visual row away (+1 down, -1 up), holding the column; null at the edge; headers skipped. */
 export function rowNeighbor(
   rows: readonly GridRow[],
   index: number,
@@ -64,7 +53,6 @@ export function rowNeighbor(
   return null;
 }
 
-/** The rows the grid shows: plain runs, or scenes with their headers. */
 export function gridRows(
   entryCount: number,
   scenes: Scene[] | null,
@@ -80,8 +68,6 @@ export function gridRows(
   let previous: Scene | null = null;
   for (const scene of scenes) {
     rows.push({ kind: "header", label: sceneLabel(scene, previous, scene.end - scene.start) });
-    // Each scene starts its own row — the header marks a break in time, and
-    // the break in the layout is what makes it readable at a glance.
     for (let i = scene.start; i < scene.end; i += columns) {
       rows.push({ kind: "photos", firstIndex: i, count: Math.min(columns, scene.end - i) });
     }
@@ -90,11 +76,6 @@ export function gridRows(
   return rows;
 }
 
-/**
- * The grid, and the scenes view: the same rows of cells, except that scenes
- * groups them into moments with a header per scene. One component because
- * everything else — virtualization, selection, thumbnails — is identical.
- */
 export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const entries = useVisibleEntries();
   const epoch = useAppStore((s) => s.epoch);
@@ -104,8 +85,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const preferredColumns = useAppStore((s) => s.gridColumns);
   const sceneGapMin = useAppStore((s) => s.sceneGapMin);
   const contentWeight = useAppStore((s) => s.sceneContentWeight);
-  // Subscribed only in the scenes view — metadata streams in by the
-  // hundreds, and a plain contact sheet has no business re-rendering for it.
+  // Subscribed only when grouped: metadata streams in by the hundreds and would re-render the plain grid.
   const meta = useAppStore((s) => (grouped ? s.meta : null));
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
@@ -117,9 +97,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const cellSize = cellSizeFor(width, columns);
   const rowHeight = cellSize + CELL_INNER_GAP + CAPTION_HEIGHT + 2 * CELL_PADDING + CELL_GAP;
 
-  // Scene grouping wants when each photo was taken; ask once per folder for
-  // whatever EXIF has not streamed in yet (same pattern as the stats panel —
-  // getState() keeps in-flight paths from re-firing the request).
+  // getState() keeps received meta out of the effect's deps, so streaming results don't re-fire the request.
   useEffect(() => {
     if (!grouped || status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
@@ -147,7 +125,6 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     [entries.length, scenes, columns],
   );
 
-  // ↑/↓ move by these rows.
   const setRowNavigator = useAppStore((s) => s.setRowNavigator);
   useEffect(() => {
     setRowNavigator((direction) => {
@@ -169,15 +146,11 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     overscan: OVERSCAN_ROWS,
   });
 
-  // Rows change height when the column count does, and change kind when
-  // scenes come and go; the virtualizer caches measurements, so it has to be
-  // told rather than left showing gaps.
+  // The virtualizer caches measurements; without measure() after height/kind changes it shows gaps.
   useEffect(() => {
     virtualizer.measure();
   }, [virtualizer, rowHeight, rows]);
 
-  // Keep the lead photograph on screen: stepping with the arrows — and
-  // jumping by scene — must never walk the selection off the bottom.
   useEffect(() => {
     if (selectedIndex === null) return;
     const at = rows.findIndex(
@@ -188,7 +161,6 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
 
   const virtualRows = virtualizer.getVirtualItems();
 
-  // Ask Rust for thumbnails of the visible rows (debounced while scrolling).
   const firstRow = virtualRows[0]?.index ?? 0;
   const lastRow = virtualRows[virtualRows.length - 1]?.index ?? 0;
   useEffect(() => {
@@ -224,8 +196,6 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
       <div
         ref={scrollRef}
         className="gallery-scroll"
-        // Clicking past the last thumbnail, or in the gaps, means "none of
-        // these" — the counterpart to Esc.
         onClick={(e) => {
           if (e.target === e.currentTarget) select(null);
         }}

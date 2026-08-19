@@ -8,16 +8,6 @@ import {
   useDevelopStore,
 } from "../../state/develop";
 
-/**
- * The loupe: true 100% pixels of one small region, at the top of the develop
- * column.
- *
- * In the column rather than floating over the photograph, because an inset
- * covers the very picture it is meant to help you judge — nothing is drawn
- * on the canvas at all. Aiming stays a drag on the photograph itself: the
- * pixels here follow the pointer, which is its own answer to "where is it
- * looking".
- */
 export function DevelopLoupe() {
   const session = useDevelopStore((s) => s.session);
   const aimed = useDevelopStore((s) => s.loupeAt);
@@ -27,9 +17,7 @@ export function DevelopLoupe() {
   const setLoupeSide = useDevelopStore((s) => s.setLoupeSide);
   const requestLoupe = useDevelopStore((s) => s.requestLoupe);
 
-  // The box is as wide as the column, and the column's width is the
-  // sidebar's business — so measure rather than assume, and share the
-  // number through the store for the canvas's mark to agree with.
+  // Measured width goes through the store so the canvas aim mark uses the same number.
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = boxRef.current;
@@ -43,10 +31,7 @@ export function DevelopLoupe() {
     return () => observer.disconnect();
   }, [setLoupeSide]);
 
-  // Ask for pixels when there is nothing to show — on opening, on a new
-  // photograph, after an edit — and when the aim has been dragged past the
-  // edge of the pixels in hand. Re-runs when pixels land, which is also what
-  // retries a request that arrived while one was already in flight.
+  // Effect re-runs when new pixels land, which retries a request made while one was already in flight.
   const frame = session?.loupeFrame ?? null;
   const shown = session ? displayedSize(session.info, session.settings.crop) : null;
   const want =
@@ -64,10 +49,7 @@ export function DevelopLoupe() {
   return (
     <div ref={boxRef} className={aiming ? "develop-loupe aiming" : "develop-loupe"}>
       {frame && aimed && shown ? (
-        /* Placed by where its pixels are rather than centred blindly: the
-           window slides across a patch wider than itself, so the point under
-           the centre is the point being aimed at even when the render for
-           this exact position is still coming. */
+        /* The patch is wider than the box; offsetting by its region keeps the aimed point under the centre while a fresh render is in flight. */
         <img
           src={developFrameUrl(frame.frame.token)}
           alt=""
@@ -82,8 +64,6 @@ export function DevelopLoupe() {
       ) : (
         <span className="develop-loupe-waiting" />
       )}
-      {/* Everyone knows a loupe is 1:1; the only fact worth a word is that
-          the aim was measured, not chosen. Aimed by hand, it says nothing. */}
       {!aimedByUser && <span className="develop-loupe-note">sharpest</span>}
     </div>
   );

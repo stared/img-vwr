@@ -1,10 +1,6 @@
 import { registerCommand } from "../registry/commands";
 import { allSources } from "../registry/sources";
 
-/**
- * Every registered source gets one palette command: pick it, type the
- * argument (subreddit, search…), Enter loads it as the gallery scope.
- */
 export function registerSourceCommands(): void {
   for (const source of allSources()) {
     registerCommand({

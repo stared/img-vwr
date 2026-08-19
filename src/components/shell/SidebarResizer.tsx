@@ -1,6 +1,5 @@
 import { useAppStore } from "../../state/store";
 
-/** Drag handle on a sidebar's inner edge; double-click resets the width. */
 export function SidebarResizer({ side }: { side: "left" | "right" }) {
   const set = useAppStore((s) => (side === "left" ? s.setSidebarWidth : s.setRightbarWidth));
   return (

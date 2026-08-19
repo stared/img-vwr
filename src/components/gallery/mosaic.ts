@@ -2,29 +2,15 @@ import type { Crop, FileEntry, ImageMeta } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { croppedBoxRatio } from "./CroppedThumb";
 
-/**
- * The mosaic's geometry: justified rows, like a page of contact prints cut
- * to fit. Every photograph keeps its own shape — a cropped one the crop's —
- * and each row is scaled so its pictures fill the width edge to edge, so
- * the layout has no letterboxing and no dead cell space anywhere.
- *
- * Pure: aspects in, row descriptors out. The component slices entries at
- * render, the same bargain the grid's rows strike.
- */
-
-/** What a photograph looks like before its metadata has arrived. */
 const DEFAULT_ASPECT = 3 / 2;
 
-/** One justified row: a run of entries, its height, and each cell's width. */
-export interface MosaicRow {
+interface MosaicRow {
   firstIndex: number;
   count: number;
   height: number;
   widths: number[];
 }
 
-/** Each entry's display aspect (width over height): the crop's shape where
- * one is stored — the miniature is the crop — else the frame's own. */
 export function mosaicAspects(
   entries: readonly FileEntry[],
   meta: Record<string, ImageMeta>,
@@ -39,14 +25,8 @@ export function mosaicAspects(
   });
 }
 
-/* ---- Bands: the true one-scale packing ---- */
-
-/**
- * One placed photograph: where it sits within its band, which entry it is.
- * `index` is the index into the visible list — packing moves pixels, never
- * the selection's coordinates.
- */
-export interface BandCell {
+interface BandCell {
+  /** Index into the visible list; packing never reorders selection coordinates. */
   index: number;
   x: number;
   y: number;
@@ -54,14 +34,12 @@ export interface BandCell {
   height: number;
 }
 
-/** One horizontal band of the mosaic, fully tiled by its cells. */
-export interface MosaicBand {
+interface MosaicBand {
   height: number;
   cells: BandCell[];
 }
 
-/** The entry visually below (+1) or above (-1) `index`, or null at the
- * edge. Cells sharing horizontal ground beat nearer ones off to the side. */
+/** Entry visually below (+1) or above (-1) `index`, null at the edge; cells sharing horizontal overlap beat nearer ones aside. */
 export function verticalNeighbor(
   bands: readonly MosaicBand[],
   index: number,
@@ -110,7 +88,6 @@ export function verticalNeighbor(
   return best === null ? null : best.index;
 }
 
-/** Justified rows re-expressed as bands, so one renderer draws both modes. */
 export function rowsToBands(rows: readonly MosaicRow[]): MosaicBand[] {
   return rows.map((row) => {
     let x = 0;
@@ -123,28 +100,7 @@ export function rowsToBands(rows: readonly MosaicRow[]): MosaicBand[] {
   });
 }
 
-/**
- * The one-scale packing: bands three landscape-rows tall, tiled by vertical
- * stacks.
- *
- * A row of one height cannot show a rotated sensor honestly: the portrait
- * next to a landscape comes out at two thirds the scale. Equal scale means
- * the portrait stands taller — so the layout goes two-dimensional. Each
- * band is `3 × rowHeight` tall and fills with columns; a column is a stack
- * of same-orientation photographs whose heights must sum to the band's
- * exactly, which pins its width at `band / Σ(1/aspect)` — no holes, by
- * construction. Three landscapes stack to a column of the familiar row
- * height; two portraits stack half again as tall and narrower — and those
- * two cells have the same diagonal, which for a rotated sensor is the same
- * scale. Odd shapes (crops, squares, panoramas) pick their own stack count,
- * whichever brings their diagonal closest to nominal: squares pair up
- * exactly, a tall crop stands alone, panoramas stack three.
- *
- * Chronology anchors it: every column starts with the oldest photograph
- * still waiting and fills from a small look-ahead window, so order bends
- * only locally. A band that overshoots the width is justified by one small
- * uniform scale — the whole wall still reads at one size.
- */
+/** Bands 3×rowHeight tall, tiled by stacks; a column's width is band/Σ(1/aspect) so its cells fill the band exactly. */
 export function bandedMosaic(
   aspects: readonly number[],
   width: number,
@@ -158,21 +114,15 @@ export function bandedMosaic(
   const B = 3 * rowHeight;
   // The nominal cell diagonal: a 3:2 landscape at the familiar row height.
   const diagonal = Math.hypot(1.5, 1) * rowHeight;
-  // Past this a cell reads as zoomed — bigger than the wall's scale, and
-  // bigger than its thumbnail has pixels for.
+  // Past this a cell is zoomed beyond its thumbnail's pixels.
   const ZOOM_CAP = 1.2;
   const pool = aspects.map((_, i) => i);
 
   while (pool.length > 0) {
-    // Columns laid at nominal scale; justified to the width afterwards.
     const columns: { width: number; picks: number[] }[] = [];
     let x = 0;
     while (pool.length > 0 && x < width) {
-      // Stack size: whichever count lands its worst cell's diagonal nearest
-      // the nominal one. The column must fill the band top to bottom, so
-      // its width is a consequence of what it holds, never a free choice —
-      // and a cell blown past nominal is a photograph zoomed beyond its
-      // thumbnail, which is the one thing this layout must never do.
+      // Stack size: the count whose worst cell's diagonal lands nearest nominal.
       const evaluate = (cands: number[]) => {
         let take = 1;
         let bestErr = Infinity;
@@ -205,11 +155,7 @@ export function bandedMosaic(
         return out;
       };
 
-      // The anchor's orientation, from the look-ahead window first. An
-      // orphan — no partner in the window — would zoom; before letting it,
-      // look for partners anywhere later, and failing that share a mixed
-      // column with whatever comes next: an orientation shown a little
-      // small beats one blown up soft.
+      // An orphan orientation would zoom past the cap: try partners anywhere later, then a mixed column.
       let candidates = sameClass(Math.min(window, pool.length));
       let pick = evaluate(candidates);
       if (pick.zoom > diagonal * ZOOM_CAP) {
@@ -240,10 +186,7 @@ export function bandedMosaic(
       x += colWidth;
     }
 
-    // Close the band on whichever reads truer: squeezing the overshooting
-    // column in, or handing it back and stretching without it. Either way
-    // the correction stays well under half a column, so band-to-band scale
-    // barely moves.
+    // The overshooting column is kept or handed back to the pool, whichever leaves the smaller correction.
     const last = columns[columns.length - 1];
     if (columns.length > 1 && last !== undefined && x > width) {
       const withoutX = x - last.width;
@@ -276,15 +219,7 @@ export function bandedMosaic(
   return bands;
 }
 
-/**
- * Pack aspects into justified rows.
- *
- * Greedy: a row takes photographs until they would have to shrink below the
- * target height to fit, then is scaled to fill the width exactly — so rows
- * come out at or a little under `targetHeight`, never above it except for
- * the last row, which keeps the target height rather than stretching its
- * few photographs into billboards.
- */
+/** Greedy justified rows at or under `targetHeight`; the last row keeps the target height instead of stretching. */
 export function mosaicRows(
   aspects: readonly number[],
   width: number,
@@ -307,8 +242,6 @@ export function mosaicRows(
     }
     const usable = width - gap * (count - 1);
     const filled = usable / sum;
-    // The last row justifies only if it already fills; otherwise its
-    // photographs keep the target height and the row ends where they do.
     const last = first + count >= aspects.length;
     const height = Math.round(last && filled > targetHeight ? targetHeight : filled);
 
@@ -316,8 +249,7 @@ export function mosaicRows(
     let used = 0;
     for (let i = 0; i < count; i += 1) {
       const aspect = Math.max(0.1, aspects[first + i] ?? DEFAULT_ASPECT);
-      // The final cell of a justified row absorbs the rounding, so the row
-      // meets the right edge to the pixel.
+      // The final cell of a justified row absorbs the rounding so the row meets the right edge to the pixel.
       const exact =
         i === count - 1 && (!last || filled <= targetHeight)
           ? usable - used

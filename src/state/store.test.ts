@@ -122,9 +122,7 @@ describe("sortForScope", () => {
 
 describe("scopeLoading", () => {
   it("forgets the previous folder's people and their finished detection", () => {
-    // A completed facesProgress left standing would auto-cluster the new
-    // folder's (unscanned) photos and announce "No faces found." for a
-    // search that never ran.
+    // A completed facesProgress left standing would auto-cluster the new folder and announce "No faces found.".
     const reset = scopeLoading(FOLDER_SCOPE, 7);
     expect(reset.people).toBeNull();
     expect(reset.peopleByPath).toEqual({});
@@ -213,9 +211,7 @@ describe("selection can be empty", () => {
   });
 
   it("leaves the viewport alone, so a zoomed-in comparison survives the move", () => {
-    // Fit is a state the viewport tracks, not something re-imposed on every
-    // step: a view sitting at fit refits itself when the next image loads,
-    // and one that has been zoomed in stays where the user put it.
+    // Fit is a state the viewport tracks; nothing here re-imposes it.
     expect(movedSelection({ selectedIndex: null }, 3, 1)).toEqual({ selectedIndex: 0 });
     expect(withSelection(showing([]), 2)).toEqual({
       selectedIndex: 2,
@@ -225,9 +221,6 @@ describe("selection can be empty", () => {
   });
 
   it("leaves the viewer when the filter excludes the photograph being viewed", () => {
-    // Viewing b.jpg, then filtering to names with "a.": the viewer would be
-    // an empty screen saying "No image selected." — the gallery is the
-    // thing worth showing instead.
     const stranded = withQuery(
       { ...showing([1]), viewMode: "viewer" as const },
       { ...defaultQuery, filters: [{ kind: "name", substring: "a." }] },
@@ -245,7 +238,6 @@ describe("selection can be empty", () => {
   });
 
   it("clears rather than reassigns when the selected image is filtered out", () => {
-    // A name filter that keeps only "a" drops the selected "b".
     const dropped = withQuery(showing([1]), {
       ...defaultQuery,
       filters: [{ kind: "name", substring: "a." }],
@@ -306,8 +298,7 @@ describe("several photographs at once", () => {
     expect(reached.selection).toEqual(["/b.jpg", "/c.jpg"]);
     expect(reached.selectionAnchor).toBe("/b.jpg");
 
-    // Reaching the other way corrects the range rather than adding to it:
-    // b is still the anchor, so this is b..a, not a..c.
+    // b is still the anchor, so reaching the other way is b..a, not a..c.
     const corrected = withSelectionAt({ ...showing([1, 2], 1), selectedIndex: 2 }, 0, "range");
     expect(corrected.selection).toEqual(["/a.jpg", "/b.jpg"]);
   });
@@ -320,9 +311,6 @@ describe("several photographs at once", () => {
   });
 
   it("moves the lead onto another chosen photograph when the lead is filtered away", () => {
-    // Selecting a and c, leading on c, then filtering to just a: c is gone,
-    // but a is still one the user picked, so it leads rather than the whole
-    // selection being dropped for one missing member.
     const state = { ...showing([0, 2]), selectedIndex: 2 };
     const kept = withQuery(state, {
       ...defaultQuery,
@@ -413,8 +401,7 @@ describe("a selection follows its photograph across a collapse", () => {
     labels: {},
     peopleByPath: {},
     stacking: true,
-    // Raw-led here so the collapse genuinely swaps which file is showing —
-    // the harder case for holding the selection.
+    // Raw-led so the collapse genuinely swaps which file is showing — the harder case.
     stackLead: "raw" as const,
     preferredMember: {},
     viewMode: "gallery" as const,
@@ -423,14 +410,9 @@ describe("a selection follows its photograph across a collapse", () => {
     selectionAnchor: null as string | null,
   };
 
-  /* Sorted by name, the grid lists DSC_1.JPG, DSC_1.NEF, DSC_2.JPG; the
-   * darkroom collapses the first two into one photograph led by the raw
-   * file, and lists DSC_1, DSC_2. */
+  // Name-sorted grid: DSC_1.JPG, DSC_1.NEF, DSC_2.JPG; the darkroom collapses to DSC_1 (raw-led), DSC_2.
 
   it("lands on the stack's lead when the selected file is the one collapsed away", () => {
-    // Looking at DSC_1.JPG in the grid, then opening the darkroom: that file
-    // is not in the list any more, but its photograph is — under the raw
-    // file. Emptying the selection there would be losing the user's place.
     const held = withSelectionHeld({ ...base, selectedIndex: 0 }, { galleryLayout: "darkroom" });
     expect(held.selectedIndex).toBe(0);
   });
@@ -464,8 +446,7 @@ describe("folderRescanned", () => {
   });
 
   it("returns nothing at all when the folder is unchanged", () => {
-    // A watched folder must cost nothing while it is quiet — an empty patch
-    // means no consumer re-renders and no memo is thrown away.
+    // An empty patch means no consumer re-renders and no memo is thrown away.
     const entries = [file("a.jpg"), file("b.jpg")];
     expect(folderRescanned(state(entries), [file("a.jpg"), file("b.jpg")])).toEqual({});
   });
@@ -493,9 +474,7 @@ describe("folderRescanned", () => {
   });
 
   it("re-fetches a file that changed on disk", () => {
-    // The case that matters: the previous scan caught this one mid-copy, so
-    // its thumbnail is a picture of a truncated file and its recorded error
-    // is about a file that no longer exists in that state.
+    // The previous scan caught this file mid-copy: its thumbnail and recorded error describe a truncated file.
     const patch = folderRescanned(
       state([file("half.nef", 1000)], { "/p/half.nef": "t" }, { "/p/half.nef": "decode failed" }),
       [file("half.nef", 24_000_000, 99)],

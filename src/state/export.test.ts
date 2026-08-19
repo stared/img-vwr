@@ -33,8 +33,7 @@ function file(path: string): FileEntry {
   };
 }
 
-/** Index into a fixture, insisting it is there — a missing one is a broken
- * test, not a case to handle. */
+/** Index into a fixture, insisting it is there — a missing one is a broken test. */
 function need<T>(value: T | undefined, what: string): T {
   if (value === undefined) throw new Error(`the fixture has no ${what}`);
   return value;
@@ -74,8 +73,6 @@ describe("planFor", () => {
   });
 
   it("gives a developed frame the metadata of the JPG shot beside it", () => {
-    // Rendered pixels have no EXIF of their own; the frame next to them on
-    // the card knows the date, the lens and the exposure.
     const planned = planFor(candidate("/shoot/DSC_0002", true), DEFAULT_OPTIONS);
     expect(planned.job).toEqual({
       kind: "render",
@@ -102,7 +99,6 @@ describe("planFor", () => {
   });
 
   it("copies an untouched JPEG rather than encoding it again", () => {
-    // Re-encoding pixels nobody changed can only lose, and takes longer.
     const jpg = need(SCAN.find((f) => f.path === "/shoot/DSC_0001.JPG"), "the JPG");
     const planned = planFor(
       { entry: jpg, stack: [jpg], edited: false, hdr: false },
@@ -112,8 +108,6 @@ describe("planFor", () => {
   });
 
   it("always develops an HDR face — the file at its path is one exposure", () => {
-    // The fused photograph lives behind this path in the develop service;
-    // copying the JPEG would export a single frame of the bracket instead.
     const face = need(SCAN.find((f) => f.path === "/shoot/DSC_0001.JPG"), "the JPG");
     const planned = planFor(
       { entry: face, stack: [face], edited: false, hdr: true },
@@ -143,8 +137,6 @@ describe("candidatesOf", () => {
   });
 
   it("counts a photograph as edited when any of its files is", () => {
-    // The edit was made on whichever half of the pair was on screen; the
-    // frame is one photograph either way.
     const chosen = [need(SCAN[1], "the JPG")];
     const [candidate] = candidatesOf(chosen, SCAN, new Set(["/shoot/DSC_0001.NEF"]));
     expect(candidate?.edited).toBe(true);
@@ -181,8 +173,6 @@ describe("the size scale", () => {
   const mine = { longest: 6048, mixed: false };
 
   it("puts a size back where it came from", () => {
-    // The thumb has to sit on the value the readout claims, or the control is
-    // lying about what it will export.
     for (const pixels of [512, 1024, 1600, 2048, 4096, 6048]) {
       const size = { kind: "longest", pixels } as const;
       expect(sizeFromSlider(sliderFromSize(size, shoot), shoot)).toEqual(size);
@@ -193,8 +183,7 @@ describe("the size scale", () => {
   });
 
   it("spends its track on sizes people pick", () => {
-    // Logarithmic: doubling the size is the same distance wherever you are,
-    // so half the track is not wasted on the very large end.
+    // Logarithmic: doubling the size is the same distance anywhere on the track.
     const a = sliderFromSize({ kind: "longest", pixels: 1024 }, shoot);
     const b = sliderFromSize({ kind: "longest", pixels: 2048 }, shoot);
     const c = sliderFromSize({ kind: "longest", pixels: 4096 }, shoot);
@@ -202,12 +191,9 @@ describe("the size scale", () => {
   });
 
   it("ends at the largest photograph rather than at some fixed ceiling", () => {
-    // An export never upscales, so a track that ran past the real maximum
-    // would have a stretch where every position meant the same thing.
     expect(shoot.max).toBe(6048);
     expect(sizeFromSlider(0.97, shoot)).toEqual({ kind: "longest", pixels: 6048 });
     expect(sizeFromSlider(1, shoot)).toEqual({ kind: "full" });
-    // ...and a small collection gets a small track.
     const small = sizeScaleFor(1600);
     expect(sizeFromSlider(0.97, small)).toEqual({ kind: "longest", pixels: 1600 });
   });
@@ -228,12 +214,10 @@ describe("the size scale", () => {
   });
 
   it("says which size 'full size' means", () => {
-    // "full size" alone is a question, not an answer.
     expect(sizeLabel({ kind: "full" }, mine)).toBe("full size · 6048 px");
     expect(sizeLabel({ kind: "full" }, { longest: 6048, mixed: true })).toBe(
       "full size · up to 6048 px",
     );
-    // ...and says nothing it does not know.
     expect(sizeLabel({ kind: "full" }, UNKNOWN_SIZE)).toBe("full size");
   });
 
@@ -249,7 +233,6 @@ describe("the size scale", () => {
       "4096 px",
       "full size · 6048 px",
     ]);
-    // A collection of small photographs has no business offering 4096.
     expect(sizeMarksFor(sizeScaleFor(1600)).map((m) => m.size.kind)).toEqual([
       "longest",
       "full",
@@ -281,8 +264,6 @@ describe("nativeSizeOf", () => {
   });
 
   it("does not wait for metadata that has not arrived", () => {
-    // The number labels a control. Waiting for the slowest file in a folder of
-    // two thousand would mean it never appeared at all.
     expect(nativeSizeOf([{ path: "/nothing/known.JPG" }], lookup)).toEqual(UNKNOWN_SIZE);
     const partial = [{ path: "/nothing/known.JPG" }, { path: "/shoot/DSC_0002.JPG" }];
     expect(nativeSizeOf(partial, lookup)).toEqual({ longest: 3000, mixed: false });
@@ -291,7 +272,6 @@ describe("nativeSizeOf", () => {
 
 describe("qualityLabel", () => {
   it("says which neighbourhood a number is in", () => {
-    // "90" means nothing to somebody who has not encoded a JPEG by hand.
     expect(qualityLabel(100)).toBe("100 · maximum");
     expect(qualityLabel(90)).toBe("90 · high");
     expect(qualityLabel(80)).toBe("80 · web");
@@ -307,8 +287,7 @@ describe("qualityLabel", () => {
   });
 });
 
-// Kept honest: the summary is derived from the jobs, never from the options,
-// so it cannot claim a split the export will not carry out.
+// The summary is derived from the jobs, never from the options.
 describe("the summary and the jobs agree", () => {
   it("counts exactly the copies that will happen", () => {
     const planned = planAll(

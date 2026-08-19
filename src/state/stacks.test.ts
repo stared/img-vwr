@@ -36,8 +36,6 @@ describe("stackKeyOf", () => {
   });
 
   it("keeps two shoots apart when a camera restarts its numbering", () => {
-    // The failure this prevents is merging unrelated photographs, which is
-    // worse than not stacking at all.
     expect(stackKeyOf(file("/monday/DSC_0001.NEF"))).not.toBe(
       stackKeyOf(file("/tuesday/DSC_0001.NEF")),
     );
@@ -69,8 +67,6 @@ describe("collapseStacks", () => {
   });
 
   it("keeps each stack where its first member sat, so the sort still holds", () => {
-    // Reverse-name order: the pair must stay at the front, not jump to
-    // wherever the raw file happened to be.
     const reversed = [...shoot].reverse();
     const collapsed = collapseStacks(reversed, {}, "raw");
     expect(collapsed.map((e) => e.name)).toEqual([
@@ -86,8 +82,7 @@ describe("collapseStacks", () => {
   });
 
   it("ignores a preference for a file the query has filtered away", () => {
-    // Only the raw file survives the filter; the stored preference names the
-    // JPEG, which is no longer there to show.
+    // The stored preference names the JPEG, which the filter removed.
     const onlyRaw = shoot.filter((e) => e.formatHint === "nef");
     const collapsed = collapseStacks(onlyRaw, { "/p/DSC_0001": "/p/DSC_0001.JPG" }, "jpg");
     expect(collapsed.map((e) => e.name)).toEqual(["DSC_0001.NEF", "DSC_0003.NEF"]);
@@ -149,14 +144,12 @@ describe("siblingsOf and stackCaption", () => {
   });
 
   it("names the photograph in every format it exists in", () => {
-    // The status bar's wording: one photograph, two files, both said.
     expect(pairedName(file("/p/DSC_1234.JPG"), [file("/p/DSC_1234.NEF")])).toBe(
       "DSC_1234.JPG+NEF",
     );
     expect(pairedName(file("/p/DSC_1234.NEF"), [file("/p/DSC_1234.JPG")])).toBe(
       "DSC_1234.NEF+JPG",
     );
-    // Alone, a file is just its name — no invented decoration.
     expect(pairedName(file("/p/DSC_0002.JPG"), [])).toBe("DSC_0002.JPG");
   });
 });

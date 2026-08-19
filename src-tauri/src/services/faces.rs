@@ -1,18 +1,3 @@
-//! Faces: who is in the photographs.
-//!
-//! Three stages, each cheap to redo because the one before it is cached:
-//! detection (the platform's Vision framework, run once per photo and kept
-//! as a sidecar next to the thumbnail cache), face crops (small JPEGs that
-//! double as the People panel's chips), and clustering (embedding vectors
-//! of the crops, grouped greedily — recomputed freely, since vectors come
-//! from the embedding service's own cache).
-//!
-//! Identity is also propagated to photographs where no face is visible: a
-//! frame nearly identical to one where a person IS visible (they turned
-//! away between shots) shows the same person. That reuses the whole-photo
-//! vectors the Similarity panel already indexes, and only ever adds
-//! near-certain matches.
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,8 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::services::embeddings::EmbeddingService;
 
-/// One detected face in a photograph. Coordinates are normalized to the
-/// displayed (EXIF-oriented) image, origin top-left.
+/// Coordinates are normalized to the EXIF-oriented image, origin top-left.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Face {
@@ -32,42 +16,27 @@ pub struct Face {
     pub y: f32,
     pub width: f32,
     pub height: f32,
-    /// The face crop file — the People panel's chip (loose, with context).
+    /// The loose crop with context — the People panel's chip.
     pub crop: String,
-    /// The aligned 112×112 crop the identity model reads. Chips are for
-    /// people; this one is for the recognizer.
+    /// The aligned 112×112 crop the identity model reads.
     pub id_crop: String,
-    /// Whether the crop is landmark-aligned. Unaligned faces (no landmarks,
-    /// or a true profile the template cannot fit) never cluster: a degraded
-    /// embedding joins other degraded embeddings, not its own person.
+    /// Unaligned faces (no landmarks, or a true profile) never cluster: a degraded embedding joins other degraded embeddings.
     pub aligned: bool,
 }
 
-/// A person the clustering found: their face chips and their photographs.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonCluster {
-    /// The filter value and map key. A named person's id IS their name —
-    /// names are anchored to identity vectors, so they survive reclustering
-    /// and follow the person into other folders; run ordinals do neither.
+    /// A named person's id IS their name (it survives reclustering); unnamed clusters get run ordinals.
     pub id: String,
-    /// The user's name for this person, if they gave one.
     pub name: Option<String>,
-    /// The crop that stands for this person in the panel.
     pub cover: String,
-    /// A few more member crops — enough to judge at a glance whether the
-    /// cluster really is one person.
     pub chips: Vec<String>,
-    /// Photographs where a face of this person was detected, any role.
     pub photos: Vec<String>,
-    /// Photographs where they are the sole focus — the only sizable face.
     pub solo: Vec<String>,
-    /// Photographs where they share the frame with a few comparable faces.
     pub few: Vec<String>,
-    /// Photographs where they are small or behind others — background.
     pub background: Vec<String>,
-    /// Photographs with no visible face, but near-identical to a member —
-    /// the person turned away between two shots of the same moment.
+    /// Faceless photos near-identical to a member — the person turned away between shots.
     pub implied: Vec<String>,
 }
 
@@ -76,44 +45,31 @@ struct Sidecar {
     faces: Vec<Face>,
 }
 
-/// Longest edge of the oriented bitmap faces are detected on. Enough for a
-/// face across a dance floor; small enough to decode hundreds of photos.
 const DETECT_EDGE: u32 = 1600;
 
-/// Margin added around a detected face box before cropping, as a share of
-/// the box — chin, hair and some context make both better chips and better
-/// embeddings than a tight face rectangle.
 const CROP_MARGIN: f32 = 0.35;
 
 const CROP_EDGE: u32 = 256;
 
-/// Faces smaller than this share of the image's longest edge are ignored:
-/// below it a face is a handful of pixels that embeds as noise and clusters
-/// with nothing.
+/// Below this share of the longest edge a face embeds as noise and clusters with nothing.
 const MIN_FACE_SHARE: f32 = 0.03;
 
 pub struct FaceService {
-    /// photo path → its detected faces, for everything seen this session.
     faces: Mutex<HashMap<String, Arc<Vec<Face>>>>,
-    /// One detection pass at a time, like the embedding indexer.
     indexing: AtomicBool,
     /// Sidecars: {thumb_key}.json under the cache root.
     sidecars_dir: PathBuf,
     /// Face crops: {thumb_key}-{i}.jpg under the cache root.
     crops_dir: PathBuf,
-    /// The identity model, loaded (and first downloaded) on first use.
     face_model: Mutex<Option<Arc<imgvwr_embed::FaceEmbedder>>>,
-    /// id-crop path → identity vector, for everything embedded this session.
     face_vectors: Mutex<HashMap<String, Arc<Vec<f32>>>>,
     /// Identity vectors on disk: {id-crop stem}.vec (f32 LE).
     face_vectors_dir: PathBuf,
     /// Hugging Face cache, shared with the similarity models.
     models_dir: PathBuf,
-    /// Named identities: user data, not a cache — names must survive every
-    /// cache wipe. One row per exemplar vector, keyed by name.
+    /// User data, not a cache: names must survive every cache wipe.
     names: Mutex<Connection>,
-    /// The clusters of the most recent `people()` run, so a rename can find
-    /// the vectors behind the id the frontend is pointing at.
+    /// The most recent `people()` run, so a rename can find the vectors behind a cluster id.
     last_clusters: Mutex<Vec<LastCluster>>,
 }
 
@@ -123,22 +79,16 @@ struct LastCluster {
     vectors: Vec<Arc<Vec<f32>>>,
 }
 
-/// A saved name with the exemplar vectors that recognize its person.
 struct Identity {
     name: String,
     exemplars: Vec<Vec<f32>>,
 }
 
-/// Exemplar vectors saved per name. Enough to cover a person across
-/// lighting conditions without the matching cost growing with their photos.
 const MAX_EXEMPLARS: usize = 24;
 
-/// Exemplars contributed by one naming action — a spread sample of the
-/// cluster being named.
 const NAME_SAMPLE: usize = 8;
 
-/// A spread sample of up to `take` vectors — the same "not just the head"
-/// sampling the linkage merge uses, since mistakes cluster at the tail.
+/// A spread sample rather than the head: mistakes cluster at the tail.
 fn spread<T: Clone>(items: &[T], take: usize) -> Vec<T> {
     let step = (items.len() / take).max(1);
     items.iter().step_by(step).take(take).cloned().collect()
@@ -184,7 +134,6 @@ impl FaceService {
         })
     }
 
-    /// Every named identity with its exemplar vectors.
     fn identities(&self) -> Result<Vec<Identity>, String> {
         let conn = self.names.lock().unwrap();
         let mut stmt = conn
@@ -230,7 +179,6 @@ impl FaceService {
         tx.commit().map_err(|e| e.to_string())
     }
 
-    /// Every name ever given, for the rename input's suggestions.
     pub fn known_names(&self) -> Result<Vec<String>, String> {
         let conn = self.names.lock().unwrap();
         let mut stmt = conn
@@ -242,14 +190,7 @@ impl FaceService {
         rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
     }
 
-    /// Name (or, with an empty name, un-name) a cluster of the most recent
-    /// `people()` run.
-    ///
-    /// Naming saves a spread sample of the cluster's vectors as the name's
-    /// exemplars — giving two fragments the same name therefore merges them
-    /// on the next clustering, because both keep matching those exemplars.
-    /// Renaming away first withdraws the exemplars this cluster accounts
-    /// for, so a wrong merge is undone the same way it was made.
+    /// Naming saves exemplar vectors (so two fragments named alike merge next clustering); renaming away withdraws this cluster's exemplars.
     pub fn rename(&self, cluster_id: &str, name: &str, merge: f32) -> Result<(), String> {
         let mut last = self.last_clusters.lock().unwrap();
         let cluster = last
@@ -265,11 +206,7 @@ impl FaceService {
 
         if let Some(old) = cluster.name.take() {
             if Some(&old) != new_name.as_ref() {
-                // Withdraw this cluster's contribution: an exemplar leaves
-                // when ANY member vouches for it — exemplars are copies of
-                // member vectors, so their people are in this cluster. Max,
-                // not average: a merged cluster is a mixed bag, and an
-                // average against it dilutes every fragment's agreement.
+                // Max over members, not average: a merged cluster is a mixed bag and an average dilutes each fragment's agreement.
                 let members = cluster.vectors.clone();
                 let kept: Vec<Vec<f32>> = self
                     .identities()?
@@ -304,8 +241,6 @@ impl FaceService {
         Ok(())
     }
 
-    /// The identity model, loading it on first call (a ~13 MB download the
-    /// first time ever).
     fn face_model(&self) -> Result<Arc<imgvwr_embed::FaceEmbedder>, String> {
         let mut slot = self.face_model.lock().unwrap();
         if let Some(model) = slot.as_ref() {
@@ -318,7 +253,6 @@ impl FaceService {
         Ok(model)
     }
 
-    /// The identity vector of one face: session memory → disk → compute.
     fn face_vector(&self, id_crop: &str) -> Result<Arc<Vec<f32>>, String> {
         if let Some(v) = self.face_vectors.lock().unwrap().get(id_crop) {
             return Ok(Arc::clone(v));
@@ -351,9 +285,7 @@ impl FaceService {
         Ok(vector)
     }
 
-    /// Detect faces in every path not already known (memory → sidecar →
-    /// detect), reporting progress through `on_progress`. Runs on the
-    /// calling thread — the command wraps it in a background task.
+    /// Runs on the calling thread; the command wraps it in a background task.
     pub fn index(&self, paths: &[String], mut on_progress: impl FnMut(u32, u32)) {
         if self.indexing.swap(true, Ordering::SeqCst) {
             return;
@@ -375,9 +307,7 @@ impl FaceService {
         }
     }
 
-    /// Already-known faces of one photo: session memory → sidecar. Never
-    /// detects — clustering reads whole collections through this, and a
-    /// photo nobody indexed is simply not clustered yet.
+    /// Never detects: an unindexed photo is simply not clustered yet.
     fn cached_faces_of(&self, path: &str) -> Option<Arc<Vec<Face>>> {
         if let Some(known) = self.faces.lock().unwrap().get(path) {
             return Some(Arc::clone(known));
@@ -393,7 +323,6 @@ impl FaceService {
         Some(faces)
     }
 
-    /// The faces of one photo: session memory → sidecar → detection.
     fn faces_of(&self, path: &str) -> Result<Arc<Vec<Face>>, String> {
         if let Some(known) = self.cached_faces_of(path) {
             return Ok(known);
@@ -416,8 +345,7 @@ impl FaceService {
         Ok(faces)
     }
 
-    /// Decode, orient, detect, crop, save. The oriented bitmap serves both
-    /// the detector and the crops, so their coordinates always agree.
+    /// One oriented bitmap serves both the detector and the crops, so their coordinates always agree.
     fn detect_and_crop(&self, path: &str, key: &str) -> Result<Vec<Face>, String> {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         let decoded = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
@@ -455,13 +383,7 @@ impl FaceService {
             crop.to_rgb8()
                 .save_with_format(&crop_file, image::ImageFormat::Jpeg)
                 .map_err(|e| e.to_string())?;
-            // The recognizer's crop: landmark-ALIGNED to the ArcFace
-            // template when the landmarks allow it. Alignment is what makes
-            // the embedding measure the face rather than the hat, the tilt
-            // of a lying-down head, or the colour of the stage light around
-            // it. Faces the template cannot fit (true profiles) keep an
-            // unaligned crop and are marked so — shown, counted, never
-            // clustered.
+            // Landmark-aligned to the ArcFace template; faces it cannot fit (true profiles) keep an unaligned crop, marked so.
             let id_file = self.crops_dir.join(format!("{key}-{i}-al.jpg"));
             let landmarks_px = d.landmarks.map(|pts| pts.map(|[x, y]| [x * w, y * h]));
             let aligned = match landmarks_px.and_then(|pts| align_transform(&pts)) {
@@ -500,13 +422,7 @@ impl FaceService {
         Ok(faces)
     }
 
-    /// Group every known face of `paths` into people.
-    ///
-    /// Greedy centroid clustering over the crops' embedding vectors: a face
-    /// joins the best-matching cluster above `threshold`, else starts its
-    /// own. Order-dependent and unapologetic about it — with cached vectors
-    /// the whole thing reruns in milliseconds, so tuning the threshold is a
-    /// slider, not a batch job.
+    /// Greedy centroid clustering, order-dependent by design: cached vectors make a rerun milliseconds.
     pub fn people(
         &self,
         embeddings: &EmbeddingService,
@@ -519,19 +435,13 @@ impl FaceService {
             centroid: Vec<f32>,
             members: u32,
             faces: Vec<(String, String, Role)>, // (photo, crop, role)
-            /// The member vectors, kept for average-linkage merging.
+            /// Kept for average-linkage merging.
             vectors: Vec<Arc<Vec<f32>>>,
             best: (f32, String), // closest crop to centroid = cover
-            /// The stored identity this cluster matched, if any.
             name: Option<String>,
         }
 
-        /// Average pairwise similarity between two clusters, sampled.
-        ///
-        /// NOT centroid-vs-centroid: every face shares a large "generic
-        /// face" component, so as clusters grow their centroids converge on
-        /// it and different people begin to agree. Averages of individual
-        /// pair similarities keep the identity signal undiluted.
+        /// Average pairwise similarity, NOT centroid-vs-centroid: growing centroids converge on the generic-face component.
         fn linkage(a: &Cluster, b: &Cluster) -> f32 {
             let sample = |c: &Cluster| -> Vec<Arc<Vec<f32>>> {
                 let step = (c.vectors.len() / 12).max(1);
@@ -597,11 +507,7 @@ impl FaceService {
             }
         }
 
-        // The greedy pass fragments: the same person under stage light and
-        // in daylight starts two clusters, because single faces are noisy.
-        // Fragments of one person keep agreeing pair-by-pair, so merge on
-        // the average pairwise similarity — see `linkage` for why not
-        // centroids.
+        // The greedy pass fragments one person (stage light vs daylight); merge fragments on average pairwise similarity.
         loop {
             let mut merged_any = false;
             let mut i = 0;
@@ -632,23 +538,14 @@ impl FaceService {
             }
         }
 
-        // Named identities: exemplar vectors saved when the user named a
-        // cluster. Each cluster takes the name it agrees with best, by the
-        // same average-linkage measure the merge uses — so a name given
-        // once keeps finding its person across reclusters and folders.
+        // Each cluster takes the stored name it agrees with best, so a name keeps finding its person across reclusters.
         let identities = self.identities()?;
         for c in clusters.iter_mut() {
             let sample = spread(&c.vectors, 12);
-            // Best-scoring name wins when identities compete for a cluster;
-            // one name may claim several clusters — those merge below.
+            // Best-scoring name wins; one name may claim several clusters — those merge below.
             let mut best: Option<(f32, &String)> = None;
             for identity in &identities {
-                // The best-agreeing exemplar decides, NOT the average over
-                // all of them: an identity's exemplars deliberately span
-                // fragments the user merged by hand — fragments whose
-                // cross-similarity sits BELOW the merge bar (that is why
-                // they needed the hand) — so averaging across the set
-                // dilutes every fragment's own agreement under the bar.
+                // The best-agreeing exemplar decides, NOT the average: exemplars deliberately span fragments below the merge bar.
                 let score = identity
                     .exemplars
                     .iter()
@@ -664,8 +561,7 @@ impl FaceService {
             c.name = best.map(|(_, name)| name.clone());
         }
 
-        // Two clusters wearing one name are one person the user has
-        // vouched for — union them regardless of what the vectors say.
+        // Two clusters wearing one name union regardless of what the vectors say.
         let mut i = 0;
         while i < clusters.len() {
             let mut j = i + 1;
@@ -689,8 +585,7 @@ impl FaceService {
             i += 1;
         }
 
-        // Subjects first: a person mostly in backgrounds sorts after one the
-        // camera was actually pointed at, whatever the raw face count says.
+        // Subjects sort before background-only people, whatever the raw face count says.
         clusters.sort_by_key(|c| {
             std::cmp::Reverse(
                 c.faces
@@ -723,8 +618,7 @@ impl FaceService {
                     .cloned()
                     .collect()
             };
-            // The turned-away shots: a faceless photo near-identical to a
-            // member belongs to the same moment, so the same person is in it.
+            // A faceless photo near-identical to a member belongs to the same moment, so the same person is in it.
             let mut implied = Vec::new();
             'candidates: for candidate in &faceless {
                 let Some(cv) = embeddings.known_vector_for_path(candidate) else {
@@ -739,8 +633,7 @@ impl FaceService {
                     }
                 }
             }
-            // Spread the sample chips across the cluster rather than taking
-            // the first few — the mistakes cluster at the tail.
+            // Spread, not the first few: mistakes cluster at the tail.
             let step = (c.faces.len() / 8).max(1);
             let chips: Vec<String> = c
                 .faces
@@ -750,8 +643,7 @@ impl FaceService {
                 .map(|(_, crop, _)| crop.clone())
                 .collect();
             out.push(PersonCluster {
-                // The name where there is one; otherwise a bare number (the
-                // filter chip already says "person:").
+                // Unnamed clusters get a bare number; the filter chip already says "person:".
                 id: c.name.clone().unwrap_or_else(|| format!("{}", i + 1)),
                 name: c.name.clone(),
                 cover: c.best.1.clone(),
@@ -776,8 +668,7 @@ impl FaceService {
     }
 }
 
-/// How present a face is in its photograph. Ordered: a smaller
-/// discriminant is a stronger presence, so `min` picks the best role.
+/// Ordered: a smaller discriminant is a stronger presence, so `min` picks the best role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     Solo = 0,
@@ -785,15 +676,8 @@ pub enum Role {
     Background = 2,
 }
 
-/// A face too small relative to the frame reads as background whoever
-/// else is there.
 const BACKGROUND_HEIGHT: f32 = 0.10;
 
-/// Classify a face against every face in its photograph.
-///
-/// Background: small in the frame, or half the size of the biggest face —
-/// someone behind the actual subject. Among the remaining comparable
-/// faces: alone means the sole focus, company means one of a few.
 pub fn role_of(face: &Face, all: &[Face]) -> Role {
     let max_h = all.iter().map(|f| f.height).fold(0.0f32, f32::max);
     if face.height < BACKGROUND_HEIGHT || face.height < 0.5 * max_h {
@@ -834,14 +718,9 @@ fn norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6)
 }
 
-/// The sidecar's identity salt. Historically the thumbnail edge; pinned so
-/// a display-thumbnail resolution bump cannot orphan every detected face —
-/// and with them the names the user has hung on people.
+/// Pinned so a display-thumbnail resolution bump cannot orphan every detected face and the names hung on people.
 const SIDECAR_KEY_EDGE: u32 = 256;
 
-/// The face sidecar's identity key: the file's path, mtime and size, plus
-/// the pinned salt above. Detection decodes the original file, so no
-/// thumbnail size belongs in this identity.
 fn cache_key_of(path: &str) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
     let mtime_ms = meta
@@ -858,7 +737,6 @@ fn cache_key_of(path: &str) -> Result<String, String> {
     ))
 }
 
-/// EXIF orientation 1–8 → the upright bitmap.
 fn apply_orientation(img: image::DynamicImage, orientation: u32) -> image::DynamicImage {
     match orientation {
         2 => img.fliph(),
@@ -872,7 +750,7 @@ fn apply_orientation(img: image::DynamicImage, orientation: u32) -> image::Dynam
     }
 }
 
-/// A face box normalized to the oriented bitmap, origin top-left.
+/// Normalized to the oriented bitmap, origin top-left.
 pub struct FaceBox {
     pub x: f32,
     pub y: f32,
@@ -880,17 +758,13 @@ pub struct FaceBox {
     pub height: f32,
 }
 
-/// One detection: the box, and — when Vision found them — the five
-/// alignment landmarks (left eye, right eye, nose, mouth corners),
-/// normalized to the image, origin top-left.
+/// Landmarks, when found: left eye, right eye, nose, mouth corners — normalized to the image, origin top-left.
 pub struct DetectedFace {
     pub rect: FaceBox,
     pub landmarks: Option<[[f32; 2]; 5]>,
 }
 
-/// Where the five landmarks sit in an aligned 112×112 crop — insightface's
-/// canonical ArcFace template. Alignment means solving for the similarity
-/// transform that carries the detected points here.
+/// insightface's canonical ArcFace template: where the five landmarks land in an aligned 112×112 crop.
 const FACE_TEMPLATE: [[f32; 2]; 5] = [
     [38.2946, 51.6963],
     [73.5318, 51.5014],
@@ -907,12 +781,10 @@ struct Similarity2D {
     ty: f32,
 }
 
-/// Alignment residual (mean landmark error, template px) above which the
-/// fit is fiction — a true profile squeezed onto a frontal template.
+/// Mean landmark error (template px) above which the fit is a true profile squeezed onto a frontal template.
 const MAX_ALIGN_RESIDUAL: f32 = 8.0;
 
-/// Least-squares similarity transform from detected landmarks (image px)
-/// onto the template, or None when the fit is too poor to trust.
+/// Least-squares fit of detected landmarks (image px) onto the template; None when too poor to trust.
 fn align_transform(points: &[[f32; 2]; 5]) -> Option<Similarity2D> {
     let mean = |pts: &[[f32; 2]; 5]| {
         let (mut mx, mut my) = (0f32, 0f32);
@@ -951,8 +823,6 @@ fn align_transform(points: &[[f32; 2]; 5]) -> Option<Similarity2D> {
     Some(t)
 }
 
-/// The aligned 112×112 crop: each output pixel looked up through the
-/// INVERSE transform, bilinearly. Plain nested loops — 12k pixels.
 fn warp_aligned(img: &image::DynamicImage, t: &Similarity2D) -> image::RgbImage {
     let src = img.to_rgb8();
     let (w, h) = (src.width() as i64, src.height() as i64);
@@ -997,12 +867,7 @@ mod platform {
 
     use super::{DetectedFace, FaceBox};
 
-    /// Vision face detection WITH landmarks on an already-oriented bitmap.
-    ///
-    /// The bitmap goes in as encoded JPEG bytes: Vision decodes them itself,
-    /// and feeding it the oriented pixels sidesteps the whole
-    /// orientation-mapping question — boxes and landmarks come back in the
-    /// same geometry the crops are cut from.
+    /// Vision gets the already-oriented pixels (as JPEG bytes), so boxes and landmarks come back in the crops' own geometry.
     pub fn detect_faces(img: &image::DynamicImage) -> Result<Vec<DetectedFace>, String> {
         let mut jpeg = Vec::new();
         img.to_rgb8()
@@ -1012,8 +877,7 @@ mod platform {
             )
             .map_err(|e| e.to_string())?;
 
-        // SAFETY: plain Objective-C message sends on objects we own; the
-        // request handler runs synchronously on this thread.
+        // SAFETY: message sends on objects we own; the handler runs synchronously on this thread.
         unsafe {
             let data = NSData::with_bytes(&jpeg);
             let handler = VNImageRequestHandler::initWithData_options(
@@ -1022,7 +886,6 @@ mod platform {
                 &NSDictionary::new(),
             );
             let request = VNDetectFaceLandmarksRequest::new();
-            // Up the class hierarchy: …FaceLandmarksRequest → VNImageBasedRequest → VNRequest.
             let as_request: Retained<VNRequest> =
                 Retained::into_super(Retained::into_super(request.clone()));
             let requests = NSArray::from_retained_slice(&[as_request]);
@@ -1043,8 +906,7 @@ mod platform {
                         width: b.size.width as f32,
                         height: b.size.height as f32,
                     };
-                    // Region points are normalized to the face box, origin
-                    // bottom-left; map into top-left image coordinates.
+                    // Region points are normalized to the face box, origin bottom-left; map to top-left image coordinates.
                     let to_image = |p: [f32; 2]| -> [f32; 2] {
                         [
                             b.origin.x as f32 + p[0] * b.size.width as f32,

@@ -9,15 +9,8 @@ import { DevelopHistogram } from "../develop/DevelopHistogram";
 import { formatBytes } from "../../state/stats";
 import { filesBehind, useAppStore, useSelectedEntry } from "../../state/store";
 
-/**
- * The right column's describing sections, one component per registered
- * panel: Shot (caption lines), Labels, Histogram (the live render's),
- * Colors. Each is a flat block — the panel header is the only heading.
- */
-
 const STATS_DEBOUNCE_MS = 150;
 
-/** Shutter speed: a stopwatch. */
 function ShutterIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -29,7 +22,6 @@ function ShutterIcon() {
   );
 }
 
-/** Aperture: the iris, six blades. */
 function ApertureIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -44,7 +36,6 @@ function ApertureIcon() {
   );
 }
 
-/** Focal length: a length. */
 function FocalIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -55,7 +46,6 @@ function FocalIcon() {
   );
 }
 
-/** Camera: the body, lens forward. */
 function CameraIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -66,7 +56,6 @@ function CameraIcon() {
   );
 }
 
-/** Lens: the front element. */
 function LensIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -76,7 +65,6 @@ function LensIcon() {
   );
 }
 
-/** Taken: a calendar page. */
 function TakenIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -88,7 +76,6 @@ function TakenIcon() {
   );
 }
 
-/** File size: the file itself. */
 function FileIcon() {
   return (
     <svg className="exif-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -101,17 +88,10 @@ function FileIcon() {
 interface ExifCell {
   key: string;
   title: string;
-  /** The dim mark anchoring the cell: an icon, or a short unit word. */
   mark: ReactNode;
   text: string;
 }
 
-/**
- * The shot on an invisible three-column grid, every cell a dim mark and a
- * bright value: how the light was captured (shutter, aperture, ISO), then
- * how the frame was chosen (focal length, EV). Camera bright over lens
- * dim; taken and size hold the footer's corners.
- */
 export function ShotPanel() {
   const entry = useSelectedEntry();
   const meta = useAppStore((s) => (entry ? s.meta[entry.path] : undefined));
@@ -166,7 +146,7 @@ export function ShotPanel() {
         .filter(Boolean)
         .join(", ")
     : "";
-  // To the minute; dimensions live in the status bar.
+  // slice(0, 16) keeps the timestamp to the minute.
   const taken = (exif?.dateTime ?? new Date(entry.modifiedMs).toLocaleString()).slice(0, 16);
   const place =
     exif?.gpsLat != null && exif?.gpsLon != null
@@ -221,11 +201,6 @@ export function ShotPanel() {
   );
 }
 
-/**
- * The rating, set by clicking; the digits stay the fast way. Clicking the
- * star a photograph already has clears it (Lightroom's rule). A collapsed
- * raw+JPEG pair is rated whole.
- */
 export function LabelsPanel() {
   const entry = useSelectedEntry();
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
@@ -261,18 +236,12 @@ export function LabelsPanel() {
   );
 }
 
-/** The render's histogram — the one histogram in the app. */
 export function HistogramPanel() {
   const histogram = useDevelopStore((s) => s.session?.frame?.histogram ?? null);
   return <DevelopHistogram histogram={histogram} />;
 }
 
-/**
- * Maxwell triangle, equilateral: blue bottom-left, red bottom-right, green
- * top, tessellated into N² small ▲/▽ triangles. Each cell is painted in its
- * own hue; opacity is log-scaled pixel density. Stats come from Rust on the
- * cached thumbnail, following the selection with a short debounce.
- */
+/** Maxwell triangle of pixel hues; opacity is log-scaled density, computed by Rust on the cached thumbnail. */
 export function ColorsPanel() {
   const entry = useSelectedEntry();
   const path = entry?.path;

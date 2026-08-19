@@ -3,11 +3,6 @@ import { useEffect, useState, type ComponentType } from "react";
 import type { ImageSource } from "../../registry/sources";
 import { useAppStore } from "../../state/store";
 
-/**
- * Sidebar panel for one registered source: type the argument (subreddit,
- * search…), Enter loads it as the gallery scope. Shows the active argument
- * while its source is the current scope.
- */
 export function makeSourcePanel(source: ImageSource): ComponentType {
   return function SourcePanel() {
     const activeArg = useAppStore((s) =>

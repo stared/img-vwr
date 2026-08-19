@@ -6,20 +6,13 @@ function hasSession(): boolean {
   return useDevelopStore.getState().session !== null;
 }
 
-/**
- * Develop commands. Export is the only path by which developed pixels leave
- * the app, and it always goes into a folder the user picks — nothing is ever
- * written beside the user's originals.
- */
+/** Export is the only path developed pixels leave by, always into a user-picked folder — never beside the originals. */
 export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.export",
     title: "Export…",
     keywords: ["save", "jpeg", "png", "render", "develop", "share"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Export…" }],
-    // Everything selected, not just the one in the darkroom: exporting a take
-    // is the ordinary case, and exporting one photograph is that with one
-    // selected.
     when: (ctx: CommandContext) => {
       const s = ctx.store.getState();
       return s.scope?.kind === "folder" && s.selection.length > 0;
@@ -41,9 +34,7 @@ export function registerDevelopCommands(): void {
     },
   });
 
-  // Lightroom's contract for leaving the tool, and the one hands expect:
-  // Enter keeps the crop on screen, Escape puts back the one it found. Both
-  // are bound ahead of the keys' ordinary meanings and apply only mid-crop.
+  // Bound to Enter/Escape ahead of the keys' ordinary meanings, only mid-crop.
   registerCommand({
     id: "develop.cropDone",
     title: "Crop: Done",

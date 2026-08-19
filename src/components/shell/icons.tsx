@@ -1,12 +1,6 @@
 import { IconBrandReddit, IconBrandWikipedia, IconFolder, IconSparkles } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
-/**
- * Activity-bar icons come from ONE library: Tabler — a stroke set that,
- * unlike Lucide, also ships brand icons drawn to the same grid and weight,
- * so UI glyphs and source logos stay visually consistent.
- */
-
 const ICON = { size: 18, stroke: 1.7 } as const;
 
 export function FolderIcon() {

@@ -109,14 +109,11 @@ describe("content decides, time modulates", () => {
   });
 
   it("bridges a long pause when the pictures barely moved", () => {
-    // The photographer waited out a speech; the stage did not change.
     const entries = [shot("a.jpg", NOON), shot("b.jpg", NOON + 20 * MIN)];
     expect(groupScenes(entries, {}, 2 * MIN, 1, [[], [0.95]])).toHaveLength(1);
   });
 
   it("needs more similarity the longer the pause", () => {
-    // 0.8 continues the scene across a short pause but not across a long
-    // one — the same content evidence decays in credibility.
     const short = [shot("a.jpg", NOON), shot("b.jpg", NOON + 30_000)];
     expect(groupScenes(short, {}, 2 * MIN, 1, [[], [0.8]])).toHaveLength(1);
     const long = [shot("a.jpg", NOON), shot("b.jpg", NOON + 20 * MIN)];
@@ -124,8 +121,7 @@ describe("content decides, time modulates", () => {
   });
 
   it("holds alternating wide and close shots together via the band", () => {
-    // Close-up c matches neither neighbour but strongly matches the wide
-    // shot two back — same scene, different framing.
+    // The close-up matches neither neighbour but strongly matches the wide shot two back.
     const entries = [
       shot("wide1.jpg", NOON),
       shot("close.jpg", NOON + 5_000),
@@ -136,8 +132,7 @@ describe("content decides, time modulates", () => {
   });
 
   it("keeps one odd frame inside when the next rejoins the scene", () => {
-    // A passer-by mid-burst: b matches nothing, but c matches a over b's
-    // head, so b is part of the scene rather than a boundary.
+    // b matches nothing, but c matches a over b's head, so b is not a boundary.
     const entries = [
       shot("a.jpg", NOON),
       shot("odd.jpg", NOON + 5_000),
@@ -148,8 +143,7 @@ describe("content decides, time modulates", () => {
   });
 
   it("still splits when the odd frame truly starts a new scene", () => {
-    // b matches nothing behind it, and c matches only b: the scene changed
-    // at b.
+    // b matches nothing behind it, and c matches only b: the scene changed at b.
     const entries = [
       shot("a.jpg", NOON),
       shot("b.jpg", NOON + 5_000),
@@ -266,8 +260,7 @@ describe("the content weight", () => {
   });
 
   it("between the poles the requirement moves monotonically", () => {
-    // Below tau the threshold rises with weight (content gains veto power);
-    // above tau it falls from impossible toward the smooth curve.
+    // Below tau the threshold rises with weight; above tau it falls from impossible toward the smooth curve.
     expect(sceneThreshold(30_000, 2 * MIN, 0.5)).toBeGreaterThan(0);
     expect(sceneThreshold(30_000, 2 * MIN, 0.5)).toBeLessThan(
       sceneThreshold(30_000, 2 * MIN, 1),

@@ -22,7 +22,6 @@ describe("packLanes", () => {
   });
 
   it("overlapping items move one lane further, never overlapping", () => {
-    // Three photos within one span: each next one is pushed outward.
     const { lanes, laneCount } = packLanes([0, 10, 20], 50);
     expect(lanes).toEqual([0, 1, 2]);
     expect(laneCount).toBe(3);
@@ -66,7 +65,6 @@ describe("packSpan", () => {
 
   it("is constant between grid steps, so zooming re-packs only at crossings", () => {
     const base = packSpan(1000);
-    // Nudging the span slightly must not change the snapped value.
     expect(packSpan(base * 0.99)).toBe(base);
     expect(packSpan(base)).toBe(base);
     const distinct = new Set<number>();
@@ -101,7 +99,6 @@ describe("time window", () => {
   it("zoom clamps at the deepest level and cannot leave the fit range", () => {
     const fit = fitWindow(0, DAY_MS, 1000);
     expect(zoomedWindow(fit, 1e-12, 0, 0, DAY_MS, 1000).msPerPx).toBe(MIN_MS_PER_PX);
-    // Zooming out stops AT fit: the range plus its margin, nothing beyond.
     const out = zoomedWindow(fit, 1e12, 0, 0, DAY_MS, 1000);
     expect(out.msPerPx).toBeCloseTo(fit.msPerPx, 6);
     expect(out.t0).toBeCloseTo(fit.t0, 6);

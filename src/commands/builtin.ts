@@ -15,7 +15,6 @@ function hasImages(ctx: CommandContext): boolean {
   return ctx.store.getState().entries.length > 0;
 }
 
-/** Registered once at startup; a future plugin manifest merges into the same registry. */
 export function registerBuiltinCommands(): void {
   registerCommand({
     id: "folder.open",
@@ -53,7 +52,6 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleSidebar(),
   });
 
-  // The whole right column, not just statistics.
   registerCommand({
     id: "inspector.toggle",
     title: "Toggle Inspector",
@@ -62,7 +60,6 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleInspector(),
   });
 
-  // One command per layout; from the viewer the key first steps back.
   const views: { layout: GalleryLayout; title: string; keywords: string[] }[] = [
     { layout: "grid", title: "Grid View", keywords: ["thumbnails", "cells"] },
     { layout: "mosaic", title: "Mosaic View", keywords: ["packed", "wall", "justified"] },
@@ -103,8 +100,6 @@ export function registerBuiltinCommands(): void {
     title: "Select All",
     keywords: ["every", "everything", "whole folder", "multiple"],
     menus: [],
-    // Everything the query is showing — which is the point of it being the
-    // visible list: filter first, then select what the filter left.
     when: (ctx) => hasImages(ctx) && !inViewer(ctx),
     run: ({ store }) => store.getState().selectAll(),
   });
@@ -143,7 +138,6 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().navigate(-1),
   });
 
-  // The mounted view registers what a visual row is (store.rowNavigator).
   registerCommand({
     id: "image.below",
     title: "Image Below",
@@ -225,14 +219,10 @@ export function registerBuiltinCommands(): void {
   });
 }
 
-/**
- * One palette command per registered sort — called after sources register,
- * so their scope-specific sorts (hot, relevance) get commands too.
- */
+/** Must run after sources register, so their scope-specific sorts get commands too. */
 export function registerSortCommands(): void {
   for (const provider of allSorts()) {
-    // Parameterized sorts (similarity) register their own commands that
-    // collect the parameter; a bare "Sort by closest" would do nothing.
+    // Parameterized sorts register their own parameter-collecting commands.
     if (provider.param !== null) continue;
     registerCommand({
       id: `sort.${provider.id}`,

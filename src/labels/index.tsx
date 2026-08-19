@@ -7,26 +7,7 @@ import { registerSort } from "../registry/sorts";
 import { numberRangeSpec } from "../state/query";
 import { chosenEntries, filesBehind, useAppStore } from "../state/store";
 
-/**
- * Labels module — the first WRITE path: user-assigned stars and tags,
- * persisted app-locally in Rust (never touching the image files). Both
- * label kinds enter the query language purely by registering fields and a
- * sort; nothing here is special-cased in the engine.
- *
- * Keys (Lightroom-style): 1–5 rate, 0 clears, t tags — on the selected
- * grid cell and in the viewer.
- */
-
-/**
- * What the keys act on: every selected photograph, in the query-applied view,
- * down to the files behind it — a stacked raw+JPEG pair is one photograph,
- * and its rating belongs to both files, not to whichever one the stack
- * happened to be showing.
- *
- * A label is exactly the kind of thing there is no reason to apply one at a
- * time — picking out the ten frames worth keeping and pressing 3 once is the
- * point of being able to select ten frames.
- */
+/** A stacked raw+JPEG pair is one photograph; its labels go to both files. */
 function labelTargets(): { photographs: FileEntry[]; files: FileEntry[] } {
   const s = useAppStore.getState();
   const photographs = chosenEntries(s);
@@ -47,10 +28,6 @@ async function tagSelected(tag: string): Promise<void> {
   useAppStore.getState().labelsApplied(labels);
 }
 
-/**
- * Ratings are six values, so every question worth asking fits in one menu —
- * a click is the whole filter, not an operator and then a typed number.
- */
 const STAR_ROWS: { label: string; from: number; to: number }[] = [
   { label: "★ and up", from: 1, to: Infinity },
   { label: "★★ and up", from: 2, to: Infinity },
@@ -86,7 +63,6 @@ function StarsMenuItems({ close }: { close: () => void }) {
   );
 }
 
-/** Tags present in the current collection, most used first. */
 function TagMenuItems({ close }: { close: () => void }) {
   const entries = useAppStore((s) => s.entries);
   const labels = useAppStore((s) => s.labels);
@@ -114,8 +90,7 @@ export function registerLabels(): void {
     appliesTo: () => true,
     reads: "labels",
     Menu: StarsMenuItems,
-    // Unrated is zero stars: "unrated" is the range [0, 1) and "★ and up"
-    // genuinely means rated at all.
+    // Unrated maps to 0 stars, mirroring STAR_ROWS' [0, 1) "unrated" row.
     spec: numberRangeSpec((_entry, { labels }) => labels.stars ?? 0, {
       unit: "★",
       scale: 1,
@@ -141,14 +116,11 @@ export function registerLabels(): void {
     defaultDir: "desc",
     appliesTo: () => true,
     reads: "labels",
-    // Unrated images stay visible, after the rated ones.
     missing: "last",
     param: null,
     value: (_entry, ctx) => ctx.labels.stars,
   });
 
-  // Something to label. Offering "Rate ★★★" with nothing picked put a row in
-  // the palette that quietly did nothing when chosen.
   const hasSelection = (ctx: CommandContext) => ctx.store.getState().selection.length > 0;
 
   for (let n = 0; n <= 5; n += 1) {
@@ -156,7 +128,6 @@ export function registerLabels(): void {
       id: `labels.stars.${n}`,
       title: n === 0 ? "Clear Rating" : `Rate ${"★".repeat(n)}`,
       keywords: STAR_KEYWORDS,
-      // In the menu the rating is one submenu: Rating › nothing, ★, ★★ …
       menus: [{ menu: "image", section: "labels", submenu: "Rating", label: n === 0 ? "nothing" : "★".repeat(n) }],
       when: hasSelection,
       run: () => rateSelected(n === 0 ? null : n),
@@ -176,13 +147,7 @@ export function registerLabels(): void {
     },
   });
 
-  // Load stored labels as a scope's entries land, asking only about files
-  // never asked about before; labelsLoaded merges the answers (epoch-guarded).
-  //
-  // Tracked by path rather than by a count of how far down the list we got.
-  // A streamed scan only appends, so a cursor sufficed — but a watched folder
-  // can also lose a file, and then every index after it means a different
-  // photograph and the tail is silently never fetched.
+  // Asked-set is tracked by path, not a cursor: a watched folder can lose a file, shifting every later index.
   let lastEntries: FileEntry[] | null = null;
   let lastEpoch = -1;
   let asked = new Set<string>();

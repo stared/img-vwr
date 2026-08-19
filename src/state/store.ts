@@ -76,8 +76,7 @@ export { scanBatchArrived, sortForScope } from "./collection";
 export interface Similarity {
   /** Chip value describing the anchor: a file name or a quoted phrase. */
   label: string;
-  /** What the scores measure distance to; kept for re-ranking as the
-   * background index fills in. */
+  /** What the scores measure distance to; kept for re-ranking as the background index fills in. */
   anchor: { kind: "image"; path: string } | { kind: "text"; query: string };
   scores: Record<string, number>;
 }
@@ -98,187 +97,76 @@ export interface AppState {
   epoch: number;
   /** path → absolute cache-file path, filled as thumbnail events stream in. */
   thumbs: Record<string, string>;
-  /** path → error message for thumbnails that failed to generate. */
   thumbErrors: Record<string, string>;
   /** folder path → direct image count, streamed from background counting. */
   dirCounts: Record<string, number>;
-  /** path → per-image metadata, streamed in batches for the stats panel. */
   meta: Record<string, ImageMeta>;
-  /** path → user labels (stars, tags), loaded per scope from the app-local
-   * label store; absent = unlabeled. */
+  /** path → user labels (stars, tags), loaded per scope; absent = unlabeled. */
   labels: Record<string, ImageLabels>;
-  /** path → stored develop crop, for miniatures: a cropped photograph
-   * should look cropped everywhere it appears. Absent = whole frame. */
+  /** path → stored develop crop, for miniatures; absent = whole frame. */
   crops: Record<string, Crop>;
   inspectorVisible: boolean;
   /** Sidebar sections folded away, by panel id; absent = open. Persisted. */
   panelFolds: Record<string, boolean>;
-  /** Right-column section order, panel ids; unknown ids keep registration
-   * order after these. Persisted. */
+  /** Right-column section order, panel ids; unknown ids keep registration order after these. Persisted. */
   panelOrder: string[];
   /** Sidebar widths, px — dragged at the inner edge. Persisted. */
   sidebarWidth: number;
   rightbarWidth: number;
   viewMode: ViewMode;
-  /** How the gallery renders the visible entries; map plots geolocated ones. */
   galleryLayout: GalleryLayout;
-  /** Which way the timeline's time axis runs. */
   timelineOrientation: TimelineOrientation;
   /** Thumbnail edge on the timeline, px — presentation only, never zoom. */
   timelineThumbPx: number;
   /** The mosaic's target row height, px — presentation only. */
   mosaicRowPx: number;
-  /** How the mosaic orders its rows: the sort's order (rows vary a little
-   * in scale to justify) or repacked so everything reads at one scale. */
+  /** "order" keeps the sort's order (rows vary in scale to justify); "packed" repacks so everything reads at one scale. */
   mosaicPacking: MosaicPacking;
-  /** How many thumbnails the grid fits in one row; cells size to suit. */
   gridColumns: number;
-  /**
-   * How the mounted gallery view moves the lead one visual row down (+1)
-   * or up (-1). Registered by the view itself, because only it knows its
-   * geometry — the grid its rows, the mosaic its bands. Null when the
-   * current view has no second dimension to move in.
-   */
+  /** Moves the lead one visual row (+1 down, -1 up); registered by the mounted view, which alone knows its geometry; null when it has no second dimension. */
   rowNavigator: ((direction: 1 | -1) => void) | null;
-  /**
-   * The scenes view's time constant, minutes: how quickly a pause makes
-   * the content's continuity harder to believe. A parameter of that view,
-   * not a switch — entering the scenes view is what turns grouping on.
-   */
+  /** The scenes view's time constant, minutes. */
   sceneGapMin: number;
-  /**
-   * How much the pictures outvote the clock at scene boundaries, 0..1.
-   * Zero is the plain hard gap; one lets content alone decide how a pause
-   * reads. Only matters while embedding similarities are available.
-   */
+  /** How much the pictures outvote the clock at scene boundaries, 0..1; matters only while similarities are available. */
   sceneContentWeight: number;
-  /**
-   * Embedding similarity of each visible photograph to the few before it,
-   * driving scene boundaries: `bands[i][d-1]` describes (entries[i],
-   * entries[i-d]).
-   *
-   * Held with the exact list it was computed for and matched by identity —
-   * any filter, sort or stacking change makes it stale, and stale means the
-   * clock alone decides until fresh scores land. Null per pair marks images
-   * the embedding model has not indexed yet.
-   */
+  /** `bands[i][d-1]` scores (entries[i], entries[i-d]); matched to `entries` by identity — stale means the clock alone decides; null pairs are unindexed. */
   sceneSims: { entries: FileEntry[]; bands: (number | null)[][] } | null;
-  /**
-   * Collapse a raw file and the JPEG shot beside it into one photograph.
-   *
-   * Only where one photograph is on screen at a time — see `stacksCollapse`.
-   * Presentation only: the collection still holds both files and format
-   * filters still match both. Turning it off puts everything back with no
-   * state to unwind.
-   */
+  /** Collapse raw+JPEG pairs into one photograph — only where one is on screen at a time; see `stacksCollapse`. */
   stacking: boolean;
-  /**
-   * Which member stands for a stack nobody has picked for: the camera's JPG
-   * or the raw negative. JPG by default — going through a shoot means
-   * looking at (and sending) finished pictures; the raws wait underneath
-   * for the frames worth developing.
-   */
   stackLead: StackLead;
-  /**
-   * stack key → the member the user chose to show for that stack.
-   *
-   * Absent means `stackLead` decides. Recorded per stack as well as
-   * globally because the choice is sometimes about one photograph — that
-   * this particular frame is the one worth opening as its negative.
-   */
+  /** stack key → the member the user chose to show; absent means `stackLead` decides. */
   preferredMember: Record<string, string>;
-  /**
-   * Photograph keys whose stack is spread open in the filmstrip, showing
-   * every member as its own cell.
-   *
-   * Strip-only presentation: the visible list stays collapsed — one
-   * photograph, one index — and the spread cells are extras the strip lays
-   * beside the shown member. Clicking a stacked cell that is already the
-   * lead toggles this, which is what makes the pile openable without any
-   * new control.
-   */
+  /** Photograph keys spread open in the filmstrip; strip-only — the visible list stays collapsed, one photograph one index. */
   expandedStacks: Record<string, true>;
-  /**
-   * face path → how that HDR set merges. Absent means exposure fusion,
-   * the zero-knob default that looks like the camera; "radiance" merges
-   * the light itself and hands the develop sliders the full range.
-   */
+  /** face path → how that HDR set merges; absent means exposure fusion. */
   hdrMethod: Record<string, HdrMethod>;
-  /**
-   * Index into the VISIBLE (query-applied) list of the LEAD photograph, or
-   * null when nothing is selected.
-   *
-   * Nullable on purpose: "no image selected" is a real state, not something
-   * to paper over by defaulting to the first item. A folder opens with
-   * nothing selected, and panels say so rather than describing an image the
-   * user never picked.
-   *
-   * The lead is the one a panel describes and the one the viewer opens —
-   * everything that can only be about a single photograph. `selection` is
-   * what an action applies to.
-   */
+  /** Index into the visible (query-applied) list of the lead photograph — the one panels describe; null when nothing is selected. */
   selectedIndex: number | null;
-  /**
-   * Paths of every selected photograph, in the order they are on screen.
-   *
-   * By paths, not indices: a selection has to survive filtering, sorting and
-   * a folder changing under it, and an index means a different photograph
-   * after any of those. Empty exactly when `selectedIndex` is null, and
-   * always contains the lead — the two are set together, never apart.
-   */
+  /** Selected paths in on-screen order; empty exactly when `selectedIndex` is null, and always contains the lead. */
   selection: string[];
-  /**
-   * The photograph a ⇧-click extends from: the last one clicked on its own.
-   *
-   * Kept separate from the lead so that shift-clicking twice re-extends from
-   * where the user started rather than growing whatever the first click
-   * produced — reaching past a range is how you correct one.
-   */
+  /** The photograph a ⇧-click extends from: the last one clicked on its own. */
   selectionAnchor: string | null;
   /** Filters + sort applied to the scanned folder; survives folder changes. */
   query: Query;
-  /** Find-by-name input visibility (the filter bar shows while editing). */
   findOpen: boolean;
   sidebarVisible: boolean;
-  /** Which left panel the activity bar has selected (one at a time). */
   activePanelId: string;
   paletteOpen: boolean;
   /** Command id the palette should open in argument-collect mode for. */
   palettePrompt: string | null;
-  /** The keyboard cheatsheet is up (the `?` overlay). */
   shortcutsOpen: boolean;
-  /**
-   * The export sheet is up.
-   *
-   * A flag rather than a route, because an export is about whatever is
-   * selected right now — it reads the selection when it opens and holds it,
-   * so the sheet is a decision about a set the user has already made.
-   */
+  /** The export sheet is up; it reads the selection when it opens and holds it. */
   exportOpen: boolean;
-  /**
-   * What the last export was set to, and where it went.
-   *
-   * Kept between openings, because an export is a habit rather than a
-   * decision: the same shoot goes to the same folder at the same size all
-   * afternoon, and a dialog that forgets makes you say so every time. It is
-   * session state rather than a stored preference — reopening the app is a
-   * fair moment to start from the defaults again.
-   */
+  /** Kept between openings; session state, not a stored preference. */
   exportOptions: ExportOptions;
   exportFolder: string | null;
   /** Right-click menu position over the selected image; null = closed. */
   imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
   similarity: Similarity | null;
-  /**
-   * The people the face pass found: clusters of face crops, biggest first.
-   * Null until a pass has run for this folder.
-   */
+  /** Face clusters, biggest first; null until a pass has run for this folder. */
   people: PersonCluster[] | null;
-  /**
-   * photo path → person-cluster ids it shows (detected or implied). The
-   * person filter field reads this; rebuilt whenever `people` lands.
-   */
+  /** photo path → person-cluster ids (detected or implied); rebuilt whenever `people` lands. */
   peopleByPath: Record<string, string[]>;
   /** Face-detection progress; null when idle. */
   facesProgress: { done: number; total: number } | null;
@@ -311,8 +199,7 @@ interface AppActions {
   metaBatchReady: (items: MetaEntry[], epoch: number) => void;
   /** Install the scope's stored labels (epoch-guarded, like meta). */
   labelsLoaded: (labels: Record<string, ImageLabels>, epoch: number) => void;
-  /** Labels changed (rate/tag) on one image or on a whole selection; mirror
-   * the store's response for exactly the paths it answered for. */
+  /** Mirror the label store's response for exactly the paths it answered for. */
   labelsApplied: (labels: Record<string, ImageLabels>) => void;
   /** Install stored crops for a scope's paths (epoch-guarded, like labels). */
   cropsLoaded: (crops: Record<string, Crop>, epoch: number) => void;
@@ -334,11 +221,9 @@ interface AppActions {
   setSceneContentWeight: (weight: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
   sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
-  /** The face pass's clusters for the current folder. */
   peopleLoaded: (people: PersonCluster[]) => void;
   setFacesProgress: (progress: { done: number; total: number } | null) => void;
   toggleStacking: () => void;
-  /** Swing the default stack representative between JPG and raw. */
   toggleStackLead: () => void;
   /** Show `path` in place of whatever its stack was showing. */
   preferMember: (path: string) => void;
@@ -348,13 +233,8 @@ interface AppActions {
   select: (index: number | null) => void;
   /** Click on an image with modifiers held; see `selectMode`. */
   selectAt: (index: number, mode: SelectMode) => void;
-  /** Every image the query is currently showing. */
   selectAll: () => void;
-  /**
-   * Right-click on an image: one already in the selection acts on the whole
-   * of it, one outside replaces it. Otherwise reaching for the menu would
-   * silently throw away the selection the menu was meant to act on.
-   */
+  /** Right-click: inside the selection acts on the whole of it, outside replaces it. */
   selectForMenu: (index: number) => void;
   /** Files that are gone from disk, taken out of the collection. */
   deleted: (paths: string[]) => void;
@@ -373,7 +253,7 @@ interface AppActions {
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
   toggleSidebar: () => void;
-  /** VS Code semantics: re-selecting the active icon collapses the sidebar. */
+  /** Re-selecting the active icon collapses the sidebar. */
   setActivePanel: (id: string) => void;
   setPaletteOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
@@ -413,8 +293,7 @@ export const initialState: AppState = {
   panelFolds: {},
   panelOrder: [],
   sidebarWidth: 230,
-  // Wide enough for the Shot block's one-line exposure row at worst-case
-  // values (five-digit ISO, negative EV).
+  // Wide enough for the Shot block's one-line exposure row at worst case (five-digit ISO, negative EV).
   rightbarWidth: 310,
   viewMode: "gallery",
   galleryLayout: "grid",
@@ -427,9 +306,7 @@ export const initialState: AppState = {
   sceneGapMin: 2,
   sceneContentWeight: 1,
   sceneSims: null,
-  // On by default: working through a folder shot raw+JPEG otherwise means
-  // every photograph twice, which is what the camera wrote but not what was
-  // taken.
+  // On by default: a raw+JPEG folder otherwise shows every photograph twice.
   stacking: true,
   stackLead: "jpg",
   preferredMember: {},
@@ -462,13 +339,7 @@ export const initialState: AppState = {
   viewerFitted: true,
 };
 
-/* Pure transitions — actions only apply these. */
-
-/**
- * Move the selection by `delta` within `count` items. From an empty selection
- * an arrow key enters the collection at whichever end it points from, so ←
- * lands on the last image and → the first.
- */
+/** From an empty selection an arrow enters at the end it points from: ← lands on the last image, → the first. */
 export function movedSelection(
   state: Pick<AppState, "selectedIndex">,
   count: number,
@@ -485,16 +356,7 @@ export function movedSelection(
   return { selectedIndex: index };
 }
 
-/**
- * Select one image, or nothing.
- *
- * The viewport is deliberately left alone. A frame at fit refits itself when
- * the next image loads, and one that has been zoomed in holds its
- * magnification and its place in the frame — which is the whole point of
- * zooming in while stepping through a sequence: you are checking the same
- * feature on take after take, and being thrown back to fit each time means
- * finding it again every time. See `heldView`.
- */
+/** The viewport is deliberately left alone: a zoomed view holds its place across selection changes — see `heldView`. */
 export function withSelection(state: VisibleInputs, index: number | null): Partial<AppState> {
   const entry = index === null ? undefined : visibleOf(state, state.query)[index];
   if (index === null || entry === undefined) {
@@ -503,7 +365,6 @@ export function withSelection(state: VisibleInputs, index: number | null): Parti
   return { selectedIndex: index, selection: [entry.path], selectionAnchor: entry.path };
 }
 
-/** What a click does to the selection. */
 export type SelectMode =
   /** This one instead of whatever was selected. */
   | "replace"
@@ -512,7 +373,6 @@ export type SelectMode =
   /** Everything from the anchor through to this one (⇧). */
   | "range";
 
-/** Which of those a click means, from the modifiers held with it. */
 export function selectMode(e: {
   metaKey: boolean;
   ctrlKey: boolean;
@@ -537,17 +397,14 @@ export function withSelectionAt(
 
   if (mode === "extend") {
     if (!state.selection.includes(entry.path)) {
-      // Picked up: the lead moves onto it, and so does the anchor — a range
-      // reaches from the last thing you touched.
+      // Picked up: the lead and the anchor both move onto it — a range reaches from the last thing touched.
       return {
         selectedIndex: index,
         selection: [...state.selection, entry.path],
         selectionAnchor: entry.path,
       };
     }
-    // Put back down. The lead moves to whichever of the rest comes first, so
-    // the panels keep describing something the user did pick; taking the last
-    // one out leaves nothing selected.
+    // Put back down: the lead moves to the first of the rest; taking the last one out leaves nothing selected.
     const rest = new Set(state.selection.filter((p) => p !== entry.path));
     const lead = visible.findIndex((e) => rest.has(e.path));
     const leadEntry = lead < 0 ? undefined : visible[lead];
@@ -568,8 +425,7 @@ export function withSelectionAt(
   return {
     selectedIndex: index,
     selection: visible.slice(lo, hi + 1).map((e) => e.path),
-    // The anchor stays put, so reaching back the other way corrects the range
-    // instead of adding a second one.
+    // The anchor stays put, so reaching back the other way corrects the range.
     selectionAnchor: visible[from]?.path ?? entry.path,
   };
 }
@@ -593,13 +449,7 @@ type VisibleInputs = Pick<
   | "galleryLayout"
 >;
 
-/**
- * Whether raw+JPEG pairs collapse right now.
- *
- * Stacking is about working through a sequence one photograph at a time, so
- * it applies exactly where that is what is happening. The grid, the timeline
- * and the map list every file — they are how you see what is on the card.
- */
+/** Stacking applies only where one photograph is on screen at a time; the grid, timeline and map list every file. */
 export function stacksCollapse(
   state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
 ): boolean {
@@ -607,19 +457,11 @@ export function stacksCollapse(
     state.stacking &&
     (state.viewMode === "viewer" ||
       state.galleryLayout === "darkroom" ||
-      // Scenes are moments of photographs, so a raw+JPEG pair is one
-      // member — and what leaves via ⌘C there is the shown JPG.
       state.galleryLayout === "scenes")
   );
 }
 
-/**
- * The similarity scores for exactly this visible list, or null.
- *
- * Identity, not equality: the visible list is memoized, so the array the
- * scores were fetched for is the same object for as long as the view they
- * describe is the one on screen.
- */
+/** Scores for exactly this visible list, matched by identity — the memoized list keeps its object while on screen. */
 export function sceneSimsFor(
   state: Pick<AppState, "sceneSims">,
   visible: FileEntry[],
@@ -635,16 +477,7 @@ export function chosenEntries(state: AppState): FileEntry[] {
   return visibleOf(state, state.query).filter((e) => picked.has(e.path));
 }
 
-/**
- * The files behind those photographs.
- *
- * Where a raw file and its JPEG are collapsed into one photograph, acting on
- * "it" means both — rating it, tagging it, deleting it. The user is looking
- * at a single frame, and a label that landed on only one of its files would
- * vanish the moment the stack showed the other. Where the pair is listed as
- * two files — the grid, the timeline — the file they picked is the file
- * acted on.
- */
+/** Where a pair is collapsed into one photograph, acting on "it" means both files; where listed apart, only the picked file. */
 export function filesBehind(state: AppState, entries: FileEntry[]): FileEntry[] {
   if (!stacksCollapse(state)) return entries;
   const files = new Map<string, FileEntry>();
@@ -655,19 +488,7 @@ export function filesBehind(state: AppState, entries: FileEntry[]): FileEntry[] 
   return [...files.values()];
 }
 
-/**
- * Apply a change that reorders or resizes the visible list, keeping the
- * selection on the same photograph.
- *
- * The selection is an index, so anything that changes the list underneath it
- * would otherwise silently move it to a different image. Following the path
- * instead is what makes filtering, sorting and stacking safe to change while
- * something is selected.
- *
- * `landOn` is for the case where the change is itself about which file
- * represents a photograph: picking the JPEG of a pair should leave the
- * selection on the JPEG, not on whatever used to be there.
- */
+/** Re-expresses the selection by path across a list change; `landOn` overrides where the lead lands (e.g. picking a pair's JPEG). */
 export function withSelectionHeld(
   state: VisibleInputs,
   patch: Partial<AppState>,
@@ -694,26 +515,21 @@ function reselected(
 ): Pick<AppState, "selectedIndex" | "selection" | "selectionAnchor"> {
   let index = wanted === null ? -1 : after.findIndex((e) => e.path === wanted);
   if (index < 0 && wanted !== null) {
-    // The file itself is gone from the list, but its photograph may still be
-    // there under the other of a pair — collapsing a stack is exactly that.
+    // The file may survive as the other of its pair — collapsing a stack is exactly that.
     const key = stackKeyOfPath(wanted);
     index = after.findIndex((e) => stackKeyOf(e) === key);
   }
-  // Rebuilt from the list rather than filtered in place, so the selection
-  // stays in the order it is on screen however the sort just moved it.
+  // Rebuilt from the list, so the selection stays in on-screen order however the sort just moved it.
   const want = new Set(chosen);
   const survivors = want.size === 0 ? [] : after.filter((e) => want.has(e.path));
   const first = survivors[0];
   if (index < 0 && first !== undefined) {
-    // The lead is gone but other picked photographs are not. Those are still
-    // the user's choice, so the lead moves onto the first of them rather than
-    // the whole selection being thrown away for one missing member.
+    // The lead is gone but other picked photographs survive; the lead moves onto the first of them.
     index = after.indexOf(first);
   }
   const lead = index < 0 ? undefined : after[index];
   if (lead === undefined) return { selectedIndex: null, selection: [], selectionAnchor: null };
-  // The lead is in the selection by construction — including when it got here
-  // as the other half of a stack, under a path nobody selected.
+  // The lead is in the selection by construction — even when it arrived as the other half of a stack.
   const selection = after.filter((e) => e === lead || want.has(e.path)).map((e) => e.path);
   return {
     selectedIndex: index,
@@ -723,21 +539,7 @@ function reselected(
   };
 }
 
-/**
- * Take files that are no longer on disk out of the collection.
- *
- * Applied the moment a delete comes back rather than left to the folder
- * watcher: the watcher reports in its own time (it waits for the writing to
- * settle), and a photograph that is already in the Trash must not sit on
- * screen in the meantime. The watcher's own report lands later and finds
- * nothing more to do.
- *
- * The selection is the reason this is not just a filter. Deleting what you
- * were looking at lands you on whatever takes its place — that is the culling
- * rhythm, and it is why deleting is not one of the cases where the selection
- * empties: nothing ambiguous happened to the photograph, the user removed it
- * themselves. Deleting something else entirely leaves the lead where it was.
- */
+/** Applied the moment a delete returns (the watcher reports later and finds nothing to do); deleting the lead lands on whatever takes its place. */
 export function withDeleted(
   state: VisibleInputs & Pick<AppState, "thumbs" | "thumbErrors">,
   gone: readonly string[],
@@ -759,25 +561,17 @@ export function withDeleted(
   return { ...held, selectedIndex: index, selection: [landing.path], selectionAnchor: landing.path };
 }
 
-/**
- * Change the query while keeping the same photographs selected if they
- * survive the new filters. Those that do not are dropped from the selection
- * rather than something else being picked in their place: an image that is
- * not on screen is not something an action should reach.
- */
+/** Photographs that survive the new filters stay selected; the rest are dropped, never replaced. */
 export function withQuery(state: VisibleInputs, query: Query): Partial<AppState> {
   const held = withSelectionHeld(state, { query });
-  // A filter that excludes the photograph being viewed must not strand an
-  // empty viewer on screen ("No image selected." and nothing else): with
-  // nothing left to view, the query result is the thing to look at, so
-  // the viewer yields to the gallery.
+  // A filter that hides the viewed photograph must not strand an empty viewer; it yields to the gallery.
   if (state.viewMode === "viewer" && held.selectedIndex === null) {
     return { ...held, viewMode: "gallery" };
   }
   return held;
 }
 
-export function withThumb(
+function withThumb(
   state: Pick<AppState, "thumbs" | "epoch">,
   path: string,
   cacheFile: string,
@@ -787,7 +581,7 @@ export function withThumb(
   return { thumbs: { ...state.thumbs, [path]: cacheFile } };
 }
 
-export function withThumbError(
+function withThumbError(
   state: Pick<AppState, "thumbErrors" | "epoch">,
   path: string,
   error: string,
@@ -797,7 +591,7 @@ export function withThumbError(
   return { thumbErrors: { ...state.thumbErrors, [path]: error } };
 }
 
-export function withMetaBatch(
+function withMetaBatch(
   state: Pick<AppState, "meta" | "epoch">,
   items: MetaEntry[],
   epoch: number,
@@ -812,7 +606,7 @@ export function withMetaBatch(
 
 type ViewerState = Pick<AppState, "viewerView" | "viewerImg" | "viewerWin">;
 
-export function zoomedBy(state: ViewerState, factor: number, cursor?: Point): Partial<AppState> {
+function zoomedBy(state: ViewerState, factor: number, cursor?: Point): Partial<AppState> {
   const { viewerView, viewerImg, viewerWin } = state;
   if (!viewerView || !viewerImg) return {};
   const at = cursor ?? { x: viewerWin.width / 2, y: viewerWin.height / 2 };
@@ -822,7 +616,7 @@ export function zoomedBy(state: ViewerState, factor: number, cursor?: Point): Pa
   };
 }
 
-export function pannedBy(state: ViewerState, dx: number, dy: number): Partial<AppState> {
+function pannedBy(state: ViewerState, dx: number, dy: number): Partial<AppState> {
   const { viewerView, viewerImg, viewerWin } = state;
   if (!viewerView || !viewerImg) return {};
   return {
@@ -831,17 +625,12 @@ export function pannedBy(state: ViewerState, dx: number, dy: number): Partial<Ap
   };
 }
 
-/* Scan batches can arrive faster than a huge collection re-sorts; the store
- * coalesces them so the visible list refreshes a few times per second, not
- * once per event. The first slice flushes immediately for a fast first
- * paint; the final one flushes immediately to finish the scan. */
+/* Scan batches arrive faster than a huge collection re-sorts; coalesced so the visible list refreshes a few times per second. First and final slices flush immediately. */
 const SCAN_FLUSH_MS = 250;
 let scanBuffer: { epoch: number; entries: FileEntry[]; done: boolean } | null = null;
 let scanFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-/* Metadata batches get the same treatment: the background EXIF pass over a
- * big folder emits hundreds of small batches, and consumers (stats panel)
- * recompute over the whole collection per update. */
+/* Metadata batches get the same treatment: consumers recompute over the whole collection per update. */
 const META_FLUSH_MS = 400;
 let metaBuffer: { epoch: number; items: MetaEntry[] } | null = null;
 let metaFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -862,8 +651,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     if (get().scope !== scope) return;
     set({ epoch });
     try {
-      // Entries stream in as scanBatch events; this resolves when the walk
-      // ends, so only the error branch matters here.
+      // Entries stream in as scanBatch events; only the error branch matters here.
       await scanFolder(path, recursive, epoch);
     } catch (error) {
       // Ignore a stale failure if the user already opened another scope.
@@ -896,18 +684,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     }
   },
 
-  /**
-   * The folder changed on disk and has been re-read.
-   *
-   * Held, because the list is about to grow or shrink under a selection that
-   * is an index into it: a card finishing its import while you are looking at
-   * frame 40 must not move you to a different photograph. A rescan that found
-   * nothing new returns an empty patch and never reaches here.
-   *
-   * Ignored while the first scan is still streaming — the two would fight
-   * over `entries`, and the scan is the more authoritative of them. The
-   * watcher will report again once the copying settles.
-   */
+  // Held, because the list changes under an index selection; ignored while the first scan streams — the two would fight over `entries`.
   folderChanged: (entries, epoch) => {
     if (epoch !== get().epoch || get().status === "loading") return;
     const patch = folderRescanned(get(), entries);
@@ -999,8 +776,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setRightbarWidth: (px) => set({ rightbarWidth: Math.min(480, Math.max(220, Math.round(px))) }),
 
-  // Held, because the darkroom collapses raw+JPEG pairs and the grid does
-  // not: the list is a different length on either side of this.
+  // Held: the darkroom collapses pairs and the grid does not, so the list is a different length on either side.
   setGalleryLayout: (layout) => set((s) => withSelectionHeld(s, { galleryLayout: layout })),
 
   setTimelineOrientation: (orientation) => set({ timelineOrientation: orientation }),
@@ -1034,8 +810,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   toggleStacking: () =>
     set((s) => withSelectionHeld(s, { stacking: !s.stacking })),
 
-  // Held like the stacking toggle: every unpicked stack changes which file
-  // represents it, and the selection must stay on the same photographs.
+  // Held: every unpicked stack changes which file represents it.
   toggleStackLead: () =>
     set((s) => withSelectionHeld(s, { stackLead: s.stackLead === "jpg" ? "raw" : "jpg" })),
 
@@ -1043,8 +818,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set((s) => {
       const entry = s.entries.find((e) => e.path === path);
       if (!entry) return {};
-      // Keyed by the photograph, which for a frame of an HDR set is the set
-      // — picking a member must swap what the whole bracket shows.
+      // Keyed by the photograph — for a frame of an HDR set that is the set, so picking a member swaps the whole bracket.
       const key = photographKeyOf(entry, hdrOf(s).keyByStack);
       return withSelectionHeld(
         s,
@@ -1069,8 +843,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   selectAll: () =>
     set((s) => {
       const visible = visibleOf(s, s.query);
-      // Whatever was under the lead stays under it: selecting everything is
-      // about widening what an action reaches, not about moving.
+      // The lead stays put: selecting everything widens what an action reaches, not where it is.
       const index = Math.min(s.selectedIndex ?? 0, visible.length - 1);
       const lead = index < 0 ? undefined : visible[index];
       if (lead === undefined) return {};
@@ -1090,9 +863,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   deleted: (paths) => set((s) => withDeleted(s, paths)),
 
-  // The index is into the list as it is *now*; the viewer stacks pairs and
-  // the grid does not, so it is resolved to a file before the mode changes
-  // and followed across. Opening starts fitted, whatever the last image did.
+  // Resolved to a file before the mode changes: the viewer stacks pairs and the grid does not. Opening starts fitted.
   openViewer: (index) => {
     const state = get();
     const path = visibleOf(state, state.query)[index]?.path;
@@ -1108,9 +879,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   closeViewer: () => set((s) => withSelectionHeld(s, { viewMode: "gallery" })),
 
-  // An arrow key is a plain click on the next image: it moves the lead and
-  // collapses a multi-selection onto it, so stepping through a sequence never
-  // leaves a wider selection quietly armed behind the photograph on screen.
+  // An arrow key is a plain click on the next image: it collapses a multi-selection onto the lead.
   navigate: (delta) => {
     const visible = visibleOf(get(), get().query);
     const moved = movedSelection(get(), visible.length, delta);
@@ -1189,16 +958,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setEmbedProgress: (embedProgress) => set({ embedProgress }),
 
-  /**
-   * A new set of pixels is on screen: either the next photograph, or the same
-   * one re-developed after a slider moved.
-   *
-   * Fit is a *state*, not a one-off: a view that is tracking fit refits to
-   * whatever just arrived, and a view that has been zoomed in holds where it
-   * was. That is what makes both "step to the next take and check the same
-   * eye at 100%" and "drag contrast while zoomed in" work — before this, every
-   * arriving frame snapped the image back to fit.
-   */
+  // Fit is a state, not a one-off: a fitted view refits to whatever arrives, a zoomed view holds its place.
   viewerImageLoaded: (size) => {
     const { viewerFitted, viewerView, viewerImg, viewerWin } = get();
     const holding = !viewerFitted && viewerView !== null && viewerImg !== null;
@@ -1234,11 +994,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 }));
 
-/* The query-applied view is needed by half a dozen components and several
- * actions at once; on tens of thousands of entries each application is a
- * full filter + sort, so all consumers share one memoized result. The memo
- * holds the last inputs by identity — one slot is enough, since every
- * consumer reads the same store state. */
+/* All consumers share one memoized filter+sort result, held by input identity; one slot suffices since every consumer reads the same store state. */
 let visibleCache: {
   entries: FileEntry[];
   query: Query;
@@ -1253,10 +1009,7 @@ let visibleCache: {
   result: FileEntry[];
 } | null = null;
 
-/* The folder's HDR sets, derived from entries + streamed EXIF. Memoized by
- * input identity like the visible list — and additionally by *answer*: a
- * meta batch that taught us nothing about brackets keeps the previous maps'
- * identity, so collapse and fusion registration never rework a non-change. */
+/* Memoized by input identity and additionally by answer: a meta batch that taught nothing about brackets keeps the previous maps' identity. */
 let hdrCache: {
   entries: FileEntry[];
   meta: Record<string, ImageMeta>;
@@ -1308,8 +1061,7 @@ export function visibleOf(
   >,
   query: Query,
 ): FileEntry[] {
-  // Only the channels the query reads participate — streaming meta/label
-  // batches must not re-sort thousands of entries a plain name sort ignores.
+  // Only channels the query reads participate — streaming batches must not re-sort what a plain name sort ignores.
   const meta = usesMeta(query) ? state.meta : null;
   const scores = usesScores(query) ? (state.similarity?.scores ?? null) : null;
   const labels = usesLabels(query) ? state.labels : null;
@@ -1363,8 +1115,7 @@ function applyQueryMemo(
     labels: labels ?? {},
     people: people ?? {},
   });
-  // Stacking collapses what the query already decided, so a filter that
-  // matches only one member of a pair still shows that member.
+  // Stacking collapses what the query already decided, so a filter matching one member of a pair still shows it.
   const result = stacking ? collapseStacks(filtered, preferred, lead, hdrKeys) : filtered;
   visibleCache = {
     entries,
@@ -1382,12 +1133,7 @@ function applyQueryMemo(
   return result;
 }
 
-/** The gallery/viewer's working set: folder entries with filters + sort applied. */
-/**
- * The selected image, or null when nothing is selected. Every panel that
- * describes "the current image" goes through here, so they agree on what is
- * selected and all handle the empty case the same way.
- */
+/** Every panel that describes "the current image" goes through here, so all agree on the empty case. */
 export function useSelectedEntry(): FileEntry | null {
   const entries = useVisibleEntries();
   const index = useAppStore((s) => s.selectedIndex);
@@ -1397,8 +1143,7 @@ export function useSelectedEntry(): FileEntry | null {
 export function useVisibleEntries(): FileEntry[] {
   const entries = useAppStore((s) => s.entries);
   const query = useAppStore((s) => s.query);
-  // Subscribe to a data channel only while the query reads it — otherwise
-  // every streamed meta/label batch re-renders every consumer for nothing.
+  // Subscribe to a data channel only while the query reads it — otherwise every streamed batch re-renders every consumer.
   const meta = useAppStore((s) => (usesMeta(s.query) ? s.meta : null));
   const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
   const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
@@ -1406,8 +1151,7 @@ export function useVisibleEntries(): FileEntry[] {
   const stacking = useAppStore(stacksCollapse);
   const lead = useAppStore((s) => s.stackLead);
   const preferred = useAppStore((s) => s.preferredMember);
-  // Identity-stable while detection's answer stands, so this subscription
-  // only fires when a bracket actually appears or dissolves.
+  // Identity-stable while detection's answer stands, so this fires only when a bracket appears or dissolves.
   const hdrKeys = useAppStore((s) => (stacksCollapse(s) ? hdrOf(s).keyByStack : null));
   return applyQueryMemo(
     entries,

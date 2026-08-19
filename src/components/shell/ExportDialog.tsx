@@ -23,21 +23,6 @@ import { effectiveDims } from "../../state/derived";
 import { chosenEntries, hdrOf, useAppStore } from "../../state/store";
 import { parseNumber, Slider } from "./Slider";
 
-/**
- * The export sheet: what is about to be written, said before anything is.
- *
- * Every control here is a row of the answers it can have, with the current
- * one lit — the same shape as the develop panel, and for the same reason.
- * There are four of them and they are all enumerable, so a row of buttons
- * says more than a dropdown and costs a click less.
- *
- * The line above the button is the point of the whole dialog. An export of a
- * shoot is mostly frames nobody edited, and whether those come out as the
- * camera's own JPEG or as this app's rendering of the raw is the single
- * decision that changes what lands in the folder. So the sheet counts them,
- * out loud, and re-counts as the options change.
- */
-
 type Phase =
   | { kind: "setting-up" }
   | { kind: "running"; done: number; total: number; now: string }
@@ -86,9 +71,6 @@ export function ExportDialog() {
   const setExportOpen = useAppStore((s) => s.setExportOpen);
   const entries = useAppStore((s) => s.entries);
 
-  // Held in the store rather than here, so an export is set up once and not
-  // once per photograph: the same shoot goes to the same folder at the same
-  // size all afternoon.
   const options = useAppStore((s) => s.exportOptions);
   const setOptions = useAppStore((s) => s.setExportOptions);
   const folder = useAppStore((s) => s.exportFolder);
@@ -98,10 +80,7 @@ export function ExportDialog() {
   /** Set by the Stop button; the loop reads it between files. */
   const stopped = useRef(false);
 
-  // Which of the chosen photographs have an edit — the one fact the plan
-  // needs that only the database knows. Asked once per opening, over the
-  // stack's files rather than the shown one, so an edit made on the raw
-  // counts for the JPEG standing in front of it.
+  // Edits are asked over all stack files, so an edit on the raw counts for the JPEG fronting it.
   useEffect(() => {
     if (!exportOpen) return;
     setPhase({ kind: "setting-up" });
@@ -109,8 +88,7 @@ export function ExportDialog() {
     const chosen = chosenEntries(state);
     const all = state.entries;
     let live = true;
-    // Which paths front HDR sets — those must render whatever the unedited
-    // policy says, because the file at the path is one exposure of a fusion.
+    // HDR faces must render regardless of the unedited policy: the file at the path is one exposure of the fusion.
     const hdrFaces = new Set(hdrOf(state).byFace.keys());
     void developEditedPaths(all.map((e) => e.path)).then(
       (edited) => {
@@ -130,22 +108,14 @@ export function ExportDialog() {
     [candidates, options],
   );
 
-  /**
-   * The export itself: one file at a time, in the order they are on screen.
-   *
-   * Serial on purpose. Each render holds a whole sensor's worth of floats and
-   * the pipeline is already parallel inside; four at once would compete for
-   * the same cores and the same memory, and the only thing gained would be a
-   * less honest progress line.
-   */
+  // Serial on purpose: each render holds a sensor's worth of floats and the pipeline is already parallel inside.
   const run = useCallback(async () => {
     if (folder === null || planned.length === 0) return;
     stopped.current = false;
     const written: Exported[] = [];
     const failed: { path: string; error: string }[] = [];
     for (const [at, item] of planned.entries()) {
-      // Between files, not during one: a half-written JPEG is worse than one
-      // more JPEG, and one file is a fraction of a second anyway.
+      // Stop is honored between files, never mid-write.
       if (stopped.current) break;
       setPhase({ kind: "running", done: at, total: planned.length, now: item.entry.name });
       try {
@@ -163,16 +133,7 @@ export function ExportDialog() {
     setPhase({ kind: "done", written, failed, stopped: stopped.current });
   }, [folder, planned, options]);
 
-  /*
-   * The two keys a dialog owes you: Escape to leave and Enter to do the thing.
-   * On the window and in the capture phase, because the gallery's own bare
-   * keys are global and Escape otherwise closes the viewer behind this sheet
-   * instead of the sheet in front of it.
-   *
-   * Enter only once there is somewhere to write, so it can never be a
-   * surprise; while the export is running neither key applies, because
-   * stopping half way is a decision worth clicking.
-   */
+  // Window + capture phase: the gallery's bare keys are global, and Escape would otherwise close the viewer behind this sheet.
   useEffect(() => {
     if (!exportOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -192,15 +153,7 @@ export function ExportDialog() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [exportOpen, setExportOpen, phase.kind, run]);
 
-  /*
-   * How big the photographs actually are, which is what makes "full size" an
-   * answer instead of a question — and what the size slider's track ends at,
-   * since an export never upscales and a track whose last third does nothing
-   * is a track that is lying.
-   *
-   * Measured over every file of every stack: the raw is what a rendered export
-   * comes out of, and it is usually the larger of the pair.
-   */
+  // Measured over every stack file: the raw a render comes from is usually the larger of the pair.
   const meta = useAppStore((s) => s.meta);
   const native = useMemo(
     () =>
@@ -221,8 +174,6 @@ export function ExportDialog() {
     const picked = await open({
       directory: true,
       title: "Export to",
-      // Opens where the last export went, which is where the next one
-      // usually goes too.
       defaultPath: folder ?? undefined,
     });
     if (typeof picked === "string") setFolder(picked);
@@ -261,9 +212,6 @@ export function ExportDialog() {
                 <Slider
                   label=""
                   value={quality ?? 90}
-                  /* The bar grows from the bottom of the scale, so its length
-                     reads as "how much quality", the way a volume control
-                     does — not as how much has been given up. */
                   neutral={QUALITY_MIN}
                   min={QUALITY_MIN}
                   max={QUALITY_MAX}
@@ -289,9 +237,7 @@ export function ExportDialog() {
                 max={1}
                 step={0.001}
                 display={sizeLabel(options.size, native)}
-                // Typed in pixels, which is what the readout says and what
-                // anybody asked for a size means — the track's 0..1 position
-                // is an implementation detail of the log scale.
+                // Typed values are pixels; the track's 0..1 position is an implementation detail of the log scale.
                 parse={(text) => {
                   const pixels = parseNumber(text);
                   return pixels === null
@@ -310,7 +256,6 @@ export function ExportDialog() {
               />
             </Row>
 
-            {/* The decision this dialog exists for. */}
             <Row label="unedited">
               <Choice
                 on={options.unedited === "camera-jpg"}
@@ -362,8 +307,6 @@ export function ExportDialog() {
             </div>
             <div className="export-actions">
               <span className="export-note">writing to {folder}</span>
-              {/* A long export is a thing you can change your mind about. It
-                  stops between files, so what has been written stays. */}
               <button
                 type="button"
                 className="export-folder stop"
@@ -399,15 +342,11 @@ export function ExportDialog() {
                   type="button"
                   className="export-folder"
                   title={folder ?? ""}
-                  /* The file, not the folder: the Finder opens with it
-                     selected, which is what "did that work" wants to see. */
                   onClick={() => void revealItemInDir(phase.written[0]?.path ?? "")}
                 >
                   show in the Finder
                 </button>
               )}
-              {/* Back to the settings rather than only out: the commonest
-                  thing after an export is another one, at a different size. */}
               <button
                 type="button"
                 className="export-folder"

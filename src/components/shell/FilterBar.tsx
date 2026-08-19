@@ -24,12 +24,7 @@ import { ZoomBar } from "../viewer/ZoomBar";
 import { FormatMenuItems } from "./filterMenus";
 import { parseNumber, Slider } from "./Slider";
 
-/**
- * Every sort choice the current scope offers, from the sort registry — each
- * provider contributes both directions, led by its default. A parameterized
- * sort whose parameter is unset contributes one row that collects it
- * (e.g. "closest to…" opens the phrase editor).
- */
+/** A parameterized sort whose parameter is unset contributes one "collect" row that gathers it. */
 type SortRow =
   | { kind: "sort"; sort: Sort; label: string; hint: string }
   | { kind: "collect"; providerId: string; label: string; hint: string };
@@ -59,7 +54,6 @@ function sortOptions(scope: Scope | null): SortRow[] {
 
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
 
-/** Renderings of the query result the view chip offers. */
 const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
   { layout: "grid", hint: "thumbnails" },
   { layout: "mosaic", hint: "packed rows, no gaps" },
@@ -69,8 +63,6 @@ const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
   { layout: "darkroom", hint: "one large, strip below" },
 ];
 
-/** The current view's knobs, at the bottom of the view chip's menu — the
- * one home for per-view rendering parameters. */
 function ViewKnobs({ layout }: { layout: GalleryLayout }) {
   const gridColumns = useAppStore((s) => s.gridColumns);
   const setGridColumns = useAppStore((s) => s.setGridColumns);
@@ -240,7 +232,6 @@ function ViewKnobs({ layout }: { layout: GalleryLayout }) {
   }
 }
 
-/** Right-side hint in the "+" menu, by field kind. */
 function fieldHint(field: FilterField): string {
   switch (field.kind) {
     case "action":
@@ -255,9 +246,6 @@ function fieldHint(field: FilterField): string {
   }
 }
 
-/**
- * A chip whose body opens an editor dropdown; only the × removes the clause.
- */
 function EditableChip({
   chipKey,
   value,
@@ -299,7 +287,6 @@ function EditableChip({
   );
 }
 
-/** The scope is a clause too: click to change where the images come from. */
 function ScopeChip({ scope }: { scope: Scope }) {
   const promptCommand = useAppStore((s) => s.promptCommand);
   const openFolder = useAppStore((s) => s.openFolder);
@@ -355,7 +342,6 @@ function ScopeChip({ scope }: { scope: Scope }) {
   );
 }
 
-/** The "+" menu: every registered filter field the scope offers, one level deep. */
 function AddFilterMenu({ scope }: { scope: Scope }) {
   const [open, setOpen] = useState(false);
   const [subId, setSubId] = useState<string | null>(null);
@@ -415,18 +401,9 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
   );
 }
 
-/**
- * The sort chip, right-aligned and always present. Every token is its own
- * click target: inert words (and `sort:`) open the sort menu, an `edit`
- * token becomes an inline input in place, a `menu` token drops its own
- * dropdown (the model picker), and the arrow flips direction on any sort.
- * Parameterized sorts get an × that drops the parameter.
- */
 function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
   const setSort = useAppStore((s) => s.setSort);
-  // Parameterized segments read app state via getState() (the anchor, the
-  // model lifecycle); subscribing keeps the chip text live without the
-  // registry knowing which state that is.
+  // Bare subscriptions: segments read this state via getState(), invisible to React, so subscribe to keep the chip text live.
   useAppStore((s) => s.similarity);
   useAppStore((s) => s.embedModels);
   useAppStore((s) => s.embedStatus);
@@ -505,8 +482,7 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
                     e.stopPropagation();
                   }
                 }}
-                // While collecting, the input persists so the model can be
-                // picked first; the backdrop handles clicks elsewhere.
+                // While collecting, blur must not close the input — the model may be picked first; the backdrop handles clicks.
                 onBlur={() => {
                   if (collecting === null) setEditingSeg(null);
                 }}
@@ -611,11 +587,6 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
   );
 }
 
-/**
- * Always-present query bar. Every chip is an explicit `key: value` clause of
- * the query — the scope, the filters, the view and the sort. Clicking a chip
- * edits that clause; the × removes it.
- */
 export function FilterBar() {
   const scope = useAppStore((s) => s.scope);
   const query = useAppStore((s) => s.query);
@@ -656,7 +627,6 @@ export function FilterBar() {
             onChange={(e) => setNameFilter(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== "Escape") return;
-              // Esc: clear the text first; a second Esc dismisses the field.
               if (nameText) setNameFilter("");
               else setFindOpen(false);
               e.stopPropagation();
@@ -678,7 +648,6 @@ export function FilterBar() {
       )}
 
       {query.filters.map((filter) => {
-        // Field-keyed clauses: the chip's edit menu is the field's own menu.
         if (filter.kind !== "select" && filter.kind !== "range") {
           return null; // name and format have dedicated chips above
         }
@@ -703,7 +672,6 @@ export function FilterBar() {
 
       <AddFilterMenu scope={scope} />
 
-      {/* The right cluster: how the results render and in what order. */}
       <div className="filterbar-right">
       <EditableChip
         chipKey="view"

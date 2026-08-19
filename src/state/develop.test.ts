@@ -103,8 +103,6 @@ describe("isNeutral", () => {
   });
 
   it("treats the camera's own temperature as neutral, not 6500 K", () => {
-    // The starting point is what the camera chose; an image at 5313 K with
-    // nothing touched is unedited, and must not render as "edited".
     expect(isNeutral(session())).toBe(true);
   });
 });
@@ -130,9 +128,7 @@ describe("needsDevelopedFrame", () => {
   });
 
   it("becomes true for a JPEG once it is cropped, sliders untouched", () => {
-    // The regression: a crop is the one edit outside the params, and a
-    // cropped photograph shown as its whole file is the crop silently not
-    // applying. Finishing a crop must switch to the developed frame.
+    // Guards: a crop is the one edit outside the params, and used to silently not apply.
     const cropped = session({
       settings: {
         ...neutralSettings,
@@ -224,8 +220,7 @@ describe("regionsDiffer", () => {
 });
 
 describe("presets", () => {
-  // Presets share the identity sliders now — what tells them apart is the
-  // camera look each one selects.
+  // Presets share identity sliders; what tells them apart is the look each selects.
   const flat: Preset = {
     id: "flat",
     label: "flat",
@@ -266,7 +261,6 @@ describe("presets", () => {
   });
 
   it("goes back to the basis from an edited state, not on round the cycle", () => {
-    // Having tweaked nikon, the useful click is undoing the tweaks.
     expect(nextPreset(null, nikon, catalog)?.id).toBe("nikon");
   });
 
@@ -291,9 +285,7 @@ describe("presets", () => {
 });
 
 describe("the slider list", () => {
-  // Two lists that have to agree: one drives the panel, the other drives every
-  // comparison against a preset. A slider present in one and not the other
-  // would be invisible to exactly one of them.
+  // Two lists that must agree: one drives the panel, the other every preset comparison.
   it("covers every parameter exactly once", () => {
     expect(PARAM_SPECS.map((s) => s.key)).toEqual([...PARAM_KEYS]);
   });
@@ -322,16 +314,13 @@ describe("pastedSettings", () => {
   };
 
   it("carries the look, and the basis it is a variation of", () => {
-    // "nikon plus a bit of exposure" must land as the same variation of
-    // nikon, not as a bare set of numbers sitting on top of flat.
     const pasted = pastedSettings(target, copied);
     expect(pasted.params).toEqual(copied.params);
     expect(pasted.basis).toBe("nikon");
   });
 
   it("leaves the white balance where it was", () => {
-    // The two frames were shot under different light; the copied reading
-    // describes the other one.
+    // The copied reading describes the other frame's light.
     expect(pastedSettings(target, copied).whiteBalance).toEqual(target.whiteBalance);
   });
 });
@@ -340,8 +329,7 @@ describe("isCropped", () => {
   it("is false for the whole frame and true for anything else", () => {
     expect(isCropped(FULL_CROP)).toBe(false);
     expect(isCropped({ ...FULL_CROP, width: 0.5 })).toBe(true);
-    // Straightening alone is a crop: the frame is turned even if nothing was
-    // trimmed, and the button that puts it back has to appear.
+    // Straightening alone is a crop: the frame is turned even if nothing was trimmed.
     expect(isCropped({ ...FULL_CROP, angle: 2 })).toBe(true);
   });
 });
@@ -350,8 +338,7 @@ describe("loupeRegion", () => {
   const frame = { width: 6048, height: 4032 };
 
   it("covers exactly as much of the image as fits at 1:1", () => {
-    // 440 device pixels of a 6048 px frame is a small square of it — that is
-    // what "one image pixel per device pixel" means.
+    // 1:1 means 440 device pixels cover 440/6048 of the frame.
     const region = loupeRegion({ x: 0.5, y: 0.5 }, frame, 440);
     expect(region.width).toBeCloseTo(440 / 6048, 6);
     expect(region.height).toBeCloseTo(440 / 4032, 6);
@@ -405,8 +392,7 @@ describe("the loupe's margin is what makes moving it smooth", () => {
   });
 
   it("counts a window at the frame's edge as covered", () => {
-    // Both regions clamp to the same corner, so the pixels really are there —
-    // and an off-by-a-float here would re-render on every drag in the corner.
+    // Both regions clamp to the same corner; an off-by-a-float would re-render on every drag there.
     expect(loupeCovers(developed({ x: 0, y: 0 }), wanted({ x: 0, y: 0 }))).toBe(true);
     expect(loupeCovers(developed({ x: 1, y: 1 }), wanted({ x: 1, y: 1 }))).toBe(true);
   });

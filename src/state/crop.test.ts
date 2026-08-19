@@ -19,15 +19,13 @@ import {
   withRatio,
 } from "./crop";
 
-/** Index into a fixture, insisting it is there — a missing one is a broken
- * test, not a case to handle. */
+/** Index into a fixture, insisting it is there — a missing one is a broken test. */
 function need<T>(value: T | undefined, what: string): T {
   if (value === undefined) throw new Error(`the fixture has no ${what}`);
   return value;
 }
 
-/** A 3:2 frame, which is what almost every camera writes and the shape where
- * getting the isotropy wrong is most visible. */
+/** 3:2 — the shape where getting the isotropy wrong is most visible. */
 const ASPECT = 3 / 2;
 
 /** Every corner is inside the picture — the invariant the module exists for. */
@@ -49,10 +47,7 @@ describe("rotating between the frame and the turned frame", () => {
   });
 
   it("keeps a rectangle a rectangle on a frame that is not square", () => {
-    // The bug this catches: rotating in normalised coordinates, where a 3:2
-    // frame stretches x by 1.5, shears the picture. Adjacent edges must stay
-    // perpendicular — measured in the square space, which is where
-    // "perpendicular" means anything.
+    // Guards: rotating in normalised coordinates shears a 3:2 frame; perpendicularity is measured in the square space.
     const crop: Crop = { x: 0.25, y: 0.25, width: 0.4, height: 0.4, angle: 27 };
     const corners = cornersOf(crop, ASPECT);
     const at = (i: number) => need(corners[i], `corner ${i}`);
@@ -86,15 +81,11 @@ describe("fitted", () => {
   });
 
   it("shrinks a turned crop until its corners are back in the picture", () => {
-    // The whole frame turned by 10° reaches well outside itself at every
-    // corner. Rendering that asks the pipeline for pixels the sensor never
-    // recorded, and all it can do is smear the edge ones.
     const turned = straightened(FULL_CROP, 10, ASPECT);
     expect(insideTheFrame(turned, ASPECT)).toBe(true);
     expect(turned.width).toBeLessThan(1);
     expect(turned.height).toBeLessThan(1);
-    // And it is the *largest* such crop, near enough: growing it by a percent
-    // must put it back outside.
+    // And it is the largest such crop, near enough: a percent bigger must be back outside.
     const greedy = { ...turned, width: turned.width * 1.02, height: turned.height * 1.02 };
     expect(insideTheFrame(greedy, ASPECT)).toBe(false);
   });
@@ -145,9 +136,7 @@ describe("moved", () => {
   });
 
   it("moves a turned crop along its own axes, not the sensor's", () => {
-    // Dragging right on screen must move it right on screen. With a turned
-    // frame that is not the frame's x — the whole reason the pointer is
-    // converted into the turned space first.
+    // Screen-right on a turned frame is not the frame's x, so y must change too.
     const crop: Crop = { x: 0.3, y: 0.3, width: 0.3, height: 0.3, angle: 30 };
     const out = moved(crop, 0.1, 0, ASPECT);
     expect(out.y).not.toBeCloseTo(crop.y, 3);
@@ -159,8 +148,6 @@ describe("resized", () => {
   const crop: Crop = { x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 0 };
 
   it("holds the opposite edge still", () => {
-    // Pulling the east handle in must not move the west one: a rectangle you
-    // adjust by re-centring is one you cannot adjust.
     const out = resized(crop, "e", { x: 0.1, y: 0 }, ASPECT, null);
     expect(out.x).toBeCloseTo(0.2);
     expect(out.width).toBeCloseTo(0.4);
@@ -216,8 +203,7 @@ describe("drawn", () => {
 
 describe("shapes", () => {
   it("measures a ratio the way the exported file would", () => {
-    // A crop half the width and the full height of a 3:2 frame is 3:4 —
-    // measured in output pixels, not in the normalised numbers.
+    // Half the width, full height of a 3:2 frame is 3:4 in output pixels, not the normalised numbers.
     const crop: Crop = { x: 0, y: 0, width: 0.5, height: 1, angle: 0 };
     expect(ratioIn(crop, ASPECT)).toBeCloseTo(0.75);
   });
@@ -245,8 +231,7 @@ describe("isCropped", () => {
   it("is false for the whole frame and true for anything else", () => {
     expect(isCropped(FULL_CROP)).toBe(false);
     expect(isCropped({ ...FULL_CROP, width: 0.5 })).toBe(true);
-    // Straightening alone is a crop: the frame is turned even if nothing was
-    // trimmed, and the button that puts it back has to appear.
+    // Straightening alone is a crop: the frame is turned even if nothing was trimmed.
     expect(isCropped({ ...FULL_CROP, angle: 2 })).toBe(true);
   });
 });

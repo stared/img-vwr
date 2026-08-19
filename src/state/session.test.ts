@@ -4,7 +4,7 @@ import { useDevelopStore } from "./develop";
 import { restoreSession } from "./session";
 import { initialState, useAppStore } from "./store";
 
-/** What the last launch wrote, keyed as session.ts writes it. */
+/** Must mirror the key session.ts writes. */
 const KEY = "imgvwr.session.v1";
 
 const stored = new Map<string, string>();
@@ -86,8 +86,7 @@ describe("restoreSession", () => {
         develop: { caption: "loudly" },
       }),
     );
-    // An unreadable scope means nothing to reopen — but the readable
-    // fields still land, and the broken ones keep this build's defaults.
+    // An unreadable scope means nothing to reopen, but the readable fields still land.
     expect(restoreSession()).toBe(false);
     const s = useAppStore.getState();
     expect(s.galleryLayout).toBe("grid");

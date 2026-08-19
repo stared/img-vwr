@@ -9,20 +9,6 @@ import { activeFormats, formatChoices } from "../../state/query";
 import { aspectBuckets, cameraCounts } from "../../state/stats";
 import { useAppStore } from "../../state/store";
 
-/**
- * Menu bodies shared by the "+" add-filter menu and by clicking an existing
- * chip to edit it. Value menus offer what is actually present in the current
- * collection; range fields take an operator (≤ = ≥) and a typed value.
- */
-
-/**
- * Multi-toggle format rows; stays open so several groups can be picked.
- *
- * What the folder actually holds comes first, with counts. Formats it has
- * none of stay on the list at zero — the filter outlives this folder, and a
- * menu that rearranged itself every time you opened another one would be a
- * menu nobody could learn.
- */
 export function FormatMenuItems() {
   const query = useAppStore((s) => s.query);
   const entries = useAppStore((s) => s.entries);
@@ -55,7 +41,6 @@ function useCollectionMetas(): ImageMeta[] {
   );
 }
 
-/** One row per value of a select field; picking sets that field's clause. */
 export function SelectMenuItems({
   field,
   buckets,
@@ -93,7 +78,6 @@ export function SelectMenuItems({
   );
 }
 
-/** Cameras present in the collection, most common first. */
 export function CameraMenuItems({ close }: { close: () => void }) {
   const metas = useCollectionMetas();
   const buckets = cameraCounts(metas, 12).flatMap((b) =>
@@ -104,7 +88,6 @@ export function CameraMenuItems({ close }: { close: () => void }) {
   );
 }
 
-/** Aspect ratios present in the collection, most common first. */
 export function AspectMenuItems({ close }: { close: () => void }) {
   const metas = useCollectionMetas();
   const dims = metas.map(effectiveDims).filter((d): d is Dims => d !== null);
@@ -123,7 +106,6 @@ export function AspectMenuItems({ close }: { close: () => void }) {
 
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
 
-/** What each operator means for this kind of input, in words. */
 function opHint(input: "date" | "number", op: RangeOp): string {
   if (input === "date") {
     return op === "<=" ? "on or before" : op === "=" ? "on" : "on or after";
@@ -131,11 +113,6 @@ function opHint(input: "date" | "number", op: RangeOp): string {
   return op === "<=" ? "at most" : op === "=" ? "exactly" : "at least";
 }
 
-/**
- * Range editor for one registered range field. The operators are ordinary
- * menu rows — picking one reveals the value input; only then does the
- * setting form appear.
- */
 export function RangeMenuForm({ field, close }: { field: string; close: () => void }) {
   const registered = getFilterField(field);
   const spec = registered?.kind === "range" ? registered.spec : undefined;

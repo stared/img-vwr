@@ -8,26 +8,17 @@ import { useAppStore } from "../../state/store";
 const MENU_WIDTH = 200;
 const MENU_MAX_HEIGHT = 320;
 
-/**
- * Right-click menu on an image: every applicable command that declared an
- * "image" placement, with its keyboard shortcut as the hint — the menu is
- * how the shortcuts are discovered. Placements sharing a submenu title
- * collapse under one row (Rating › nothing ★ ★★ …). Purely registry-driven:
- * plugins' image actions appear here by registration, nothing by hand.
- */
 export function ImageContextMenu() {
   const pos = useAppStore((s) => s.imageMenu);
   const setImageMenu = useAppStore((s) => s.setImageMenu);
-  // Re-render as the develop session opens, so its grayed rows update.
+  // Bare subscriptions: enablement reads this state via getState(), so subscribe to keep grayed rows live.
   useDevelopStore((s) => s.session !== null);
   useDevelopStore((s) => s.copied !== null);
   const [submenu, setSubmenu] = useState<string | null>(null);
 
-  // A fresh right-click always starts at the top level.
   useEffect(() => setSubmenu(null), [pos]);
 
-  // Escape closes the menu without reaching the global keybindings
-  // (which would e.g. also close the viewer behind it).
+  // Capture phase so Escape doesn't reach the global keybindings and close the viewer behind the menu.
   useEffect(() => {
     if (!pos) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -60,8 +51,6 @@ export function ImageContextMenu() {
     </button>
   );
 
-  // Top level: rows grouped by section (menuEntries orders them), each
-  // submenu as one row at the position of its first member.
   const seen = new Set<string>();
   const topLevel = entries.flatMap((entry) => {
     const sub = entry.placement.submenu;

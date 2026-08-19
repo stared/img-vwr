@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
 
-/// The vector cache's identity salt — pinned like the face sidecars', so a
-/// display-thumbnail resolution bump does not re-embed every corpus.
+/// Pinned like the face sidecars' key edge, so a display-thumbnail resolution bump does not re-embed every corpus.
 const VECTOR_KEY_EDGE: u32 = 256;
 use imgvwr_embed::{dot, is_downloaded, model_spec, EmbedModelInfo, Embedder, MODELS};
 use tauri::AppHandle;
@@ -15,22 +14,10 @@ use tauri_specta::Event as _;
 use crate::events::{EmbeddingProgress, EmbeddingStatus};
 use crate::services::thumbnails::ThumbnailService;
 
-/// A cache of normalized vectors, keyed by model id and by whatever the
-/// vector describes — an image path, or a query phrase.
-///
-/// The model id is part of the key rather than of the map, so two models'
-/// vectors can sit side by side: switching back is then instant, and an
-/// older indexing pass can never contaminate the space the active model
-/// measures in.
+/// Keyed by (model id, image path or query phrase) so two models' vectors sit side by side.
 type VectorCache = Mutex<HashMap<(String, String), Arc<Vec<f32>>>>;
 
-/// Marks an indexing pass as running for as long as it lives.
-///
-/// A guard rather than a flag set and cleared by hand, so every way out of
-/// the pass — the early return when no model is loaded, the epoch check, a
-/// panic — clears it. A flag left true would mean nothing is ever indexed
-/// again for the rest of the session, and the symptom (a permanently empty
-/// ranked view) would look nothing like the cause.
+/// A drop guard, not a hand-cleared flag: every way out of the pass — early return, panic — clears it.
 struct IndexingPass<'a>(&'a AtomicBool);
 
 impl Drop for IndexingPass<'_> {
@@ -39,41 +26,20 @@ impl Drop for IndexingPass<'_> {
     }
 }
 
-/// Owns the loaded embedding model and the per-image vectors. The model is
-/// picked by the user in the Similarity panel; vectors are cached on disk
-/// keyed by the thumbnail cache key + model id, so re-indexing a folder is
-/// instant after the first pass.
 pub struct EmbeddingService {
-    /// The active model; long-running work locks per image, not per run.
+    /// Long-running work locks per image, not per run.
     embedder: Mutex<Option<Arc<Embedder>>>,
-    /// (model id, path) → vector, for everything indexed this session.
     vectors: VectorCache,
-    /// (model id, phrase) → the phrase's vector.
-    ///
-    /// A phrase's embedding is a pure function of the model and the words, so
-    /// computing it twice is waste — and it was being computed on *every*
-    /// progress batch, because a folder re-ranks as its vectors land. Forty
-    /// forward passes for one unchanged phrase, each now queued behind the
-    /// indexing that triggered it. Cached, a re-rank is dot products only and
-    /// touches the GPU not at all.
+    /// Cached: a folder re-ranks on every progress batch, and that must not be a forward pass per batch.
     queries: VectorCache,
-    /// Monotonic model-selection request id. Model loading cannot be cancelled,
-    /// but only the latest request is allowed to become active or emit status.
+    /// Loading cannot be cancelled; only the latest request may become active or emit status.
     selection_generation: AtomicU64,
-    /// Whether an indexing pass is already running.
-    ///
-    /// Every "closest to" sets the anchor *and* asks for indexing, so editing
-    /// the phrase over a folder that is still indexing used to start a second
-    /// pass over the same files. Both would miss the cache on the same image
-    /// at the same moment and compute it twice — double the slowest work in
-    /// the app, for one identical answer.
     indexing: AtomicBool,
     /// Hugging Face download cache (app-owned, no global installs).
     models_dir: PathBuf,
     /// Per-image vector files: {thumb_key}-{model_id}.vec (f32 LE).
     vectors_dir: PathBuf,
-    /// Same directory the thumbnail service writes; embeddings read the
-    /// cached 256 px thumbs instead of re-decoding originals.
+    /// The same directory the thumbnail service writes; embeddings read its cached thumbs.
     thumbs_dir: PathBuf,
     registry: CodecRegistry,
 }
@@ -129,8 +95,6 @@ impl EmbeddingService {
         self.selection_generation.load(Ordering::SeqCst) == generation
     }
 
-    /// Download (if needed) and load a model on a background thread,
-    /// reporting phases as events. Replaces the active model on success.
     pub fn select(self: &Arc<Self>, app: &AppHandle, model_id: String) {
         let Some(spec) = model_spec(&model_id) else {
             emit_status(app, &model_id, "error", Some("unknown model".into()));
@@ -165,9 +129,6 @@ impl EmbeddingService {
         });
     }
 
-    /// Index a collection: one vector per image, disk-cached, progress
-    /// events streamed. Epoch-guarded by the scope generation so switching
-    /// folders stops the pass.
     pub fn index(
         self: &Arc<Self>,
         app: &AppHandle,
@@ -175,8 +136,7 @@ impl EmbeddingService {
         paths: Vec<String>,
         epoch: u64,
     ) {
-        // One pass at a time. A second request while one is running is asking
-        // for work that is already being done.
+        // One pass at a time: a second request is asking for work already being done.
         if self.indexing.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -184,9 +144,6 @@ impl EmbeddingService {
         let thumbs = Arc::clone(thumbs);
         let app = app.clone();
         std::thread::spawn(move || {
-            // Released however this pass ends — early return, or a panic in
-            // one image taking the thread down. A flag stuck at true would
-            // mean no folder is ever indexed again this session.
             let _pass = IndexingPass(&service.indexing);
             let Some(embedder) = service.embedder.lock().unwrap().clone() else {
                 return;
@@ -198,8 +155,7 @@ impl EmbeddingService {
                     return;
                 }
                 if let Err(e) = service.vector_for(&embedder, &path) {
-                    // Unindexable images (no codec, unreadable) sort last;
-                    // the log keeps the reason visible without failing the pass.
+                    // Unindexable images just sort last; the pass must not fail.
                     eprintln!("embedding failed for {path}: {e}");
                 }
                 done += 1;
@@ -210,8 +166,7 @@ impl EmbeddingService {
         });
     }
 
-    /// Rank `paths` by similarity to an anchor image. Unindexed images are
-    /// omitted (the sort puts them last).
+    /// Unindexed paths are omitted from the result.
     pub fn rank_image(&self, anchor: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
         let anchor_vec = self
@@ -226,12 +181,7 @@ impl EmbeddingService {
         self.known_vector(&embedder, path)
     }
 
-    /// Similarity of each image to the few before it: `scores[i][d - 1]`
-    /// describes (`paths[i]`, `paths[i - d]`) for d = 1..=band, or None
-    /// where either vector is not yet known. Scene detection reads whole
-    /// collections through this, so it only ever *reads* vectors — memory
-    /// or disk cache — and never computes one: a miss must cost a stat, not
-    /// a model forward pass hiding behind an innocuous-looking call.
+    /// scores[i][d-1] compares paths[i] with paths[i-d]; reads cached vectors only, never computes one.
     pub fn banded_scores(
         &self,
         paths: &[String],
@@ -254,7 +204,6 @@ impl EmbeddingService {
             .collect())
     }
 
-    /// Rank `paths` by similarity to a text phrase.
     pub fn rank_text(&self, query: &str, paths: &[String]) -> Result<Vec<(String, f32)>, String> {
         let embedder = self.active()?;
         let key = (embedder.model_id.to_string(), query.to_string());
@@ -289,10 +238,6 @@ impl EmbeddingService {
             .collect()
     }
 
-    /// The vector cache file for one image, from the file's identity on disk.
-    /// Salted with the pinned edge, like the face sidecars: a vector encodes
-    /// the photograph, and a display-thumbnail bump must not re-embed a
-    /// whole corpus.
     fn vector_file(&self, embedder: &Embedder, path: &str) -> Result<PathBuf, String> {
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
         let mtime_ms = meta
@@ -307,8 +252,7 @@ impl EmbeddingService {
             .join(format!("{key}-{}.vec", embedder.model_id)))
     }
 
-    /// The vector for one image if it is already known — session memory or
-    /// the disk cache — never computing one.
+    /// Session memory or the disk cache — never computes.
     fn known_vector(&self, embedder: &Embedder, path: &str) -> Option<Arc<Vec<f32>>> {
         let memory_key = (embedder.model_id.to_string(), path.to_string());
         if let Some(v) = self.vectors.lock().unwrap().get(&memory_key) {
@@ -323,8 +267,6 @@ impl EmbeddingService {
         Some(vector)
     }
 
-    /// The vector for one image: session memory → disk cache → compute from
-    /// the cached thumbnail (generating that thumbnail if it doesn't exist).
     fn vector_for(&self, embedder: &Embedder, path: &str) -> Result<Arc<Vec<f32>>, String> {
         if let Some(v) = self.known_vector(embedder, path) {
             return Ok(v);
@@ -337,8 +279,7 @@ impl EmbeddingService {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         let vec_file = self.vector_file(embedder, path)?;
-        // The pixels come from the live display-thumbnail cache, whichever
-        // size that is today; the vector's identity does not care.
+        // Pixels come from the live display-thumbnail cache at today's size; the vector's identity key does not care.
         let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
         let thumb = self.thumb_file(path, &key)?;
         let vector = embedder
@@ -356,9 +297,7 @@ impl EmbeddingService {
         Ok(vector)
     }
 
-    /// The cached 256 px thumbnail for an image, generating it on the spot
-    /// when the gallery hasn't needed it yet. AVIF (no Rust codec) fails
-    /// here and the image simply stays unindexed.
+    /// Formats with no Rust codec (AVIF) fail here and the image simply stays unindexed.
     fn thumb_file(&self, path: &str, key: &str) -> Result<PathBuf, String> {
         let cache_file = self.thumbs_dir.join(format!("{key}.webp"));
         if cache_file.exists() {
@@ -394,8 +333,7 @@ fn read_vector(file: &Path, dim: usize) -> Option<Vec<f32>> {
 }
 
 fn write_vector(file: &Path, v: &[f32]) -> std::io::Result<()> {
-    // The cache dir is created at startup, but macOS may purge ~/Library/
-    // Caches while the app runs — recreate it rather than fail every write.
+    // macOS may purge ~/Library/Caches while the app runs — recreate rather than fail every write.
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -447,9 +385,6 @@ mod tests {
 
     #[test]
     fn a_second_indexing_request_does_not_start_a_second_pass() {
-        // Editing the phrase while a folder is still indexing asks for
-        // indexing again. Doing it twice means computing the same vectors
-        // twice — the slowest work in the app, for one identical answer.
         let tmp = tempfile::tempdir().unwrap();
         let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
 
@@ -466,9 +401,6 @@ mod tests {
 
     #[test]
     fn the_indexing_flag_clears_however_the_pass_ends() {
-        // Including by panic: a flag stuck at true would mean nothing is ever
-        // indexed again this session, and an empty ranked view looks nothing
-        // like its cause.
         let tmp = tempfile::tempdir().unwrap();
         let service = Arc::new(EmbeddingService::new(tmp.path().to_path_buf()).unwrap());
         service.indexing.store(true, Ordering::SeqCst);
@@ -486,8 +418,6 @@ mod tests {
 
     #[test]
     fn a_phrase_is_embedded_once_per_model() {
-        // A folder re-ranks on every batch of new vectors, so this cache is
-        // what keeps forty re-ranks from being forty forward passes.
         let tmp = tempfile::tempdir().unwrap();
         let service = EmbeddingService::new(tmp.path().to_path_buf()).unwrap();
         let key = ("siglip2-base".to_string(), "people dancing".to_string());
@@ -498,8 +428,7 @@ mod tests {
             .insert(key.clone(), Arc::new(vec![1.0, 0.0]));
 
         assert!(service.queries.lock().unwrap().contains_key(&key));
-        // Same words, different model: a different space, so a different
-        // vector — the cache must not answer for the wrong one.
+        // Same words, different model: the cache must not answer for the wrong one.
         assert!(!service
             .queries
             .lock()

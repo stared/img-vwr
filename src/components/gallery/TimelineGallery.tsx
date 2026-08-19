@@ -7,20 +7,7 @@ import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
-/**
- * The gallery as a timeline: every visible entry sits on a time axis at its
- * date taken (EXIF; falls back to modified). Photos never overlap — one
- * landing on an occupied stretch shifts a lane further from the axis. The
- * axis runs vertically or horizontally (labeled toggle); wheel (or drag)
- * pans along time, ⌘/ctrl+wheel zooms around the cursor. The size slider
- * changes only how large the photos draw — the time window stays put; the
- * photos re-pack into lanes at their new size. Time is a pan/zoom window,
- * not a scrollable canvas — a deeply zoomed year is more pixels than an
- * element can be.
- */
-
 const LANE_GAP = 6;
-/** Room for the axis line and its date labels. */
 const GUTTER = 76;
 /** Edge of the cached thumbnails (Rust THUMB_MAX_EDGE). */
 const THUMB_SOURCE_EDGE = 256;
@@ -63,7 +50,6 @@ export function TimelineGallery() {
   const tMin = timed[0]?.t ?? 0;
   const tMax = timed[timed.length - 1]?.t ?? 0;
 
-  // A new scope, or a rotated axis, starts back at the full range.
   useEffect(() => setWin(null), [epoch, vertical]);
 
   useEffect(() => {
@@ -83,21 +69,17 @@ export function TimelineGallery() {
   const fit = fitWindow(tMin, tMax, viewSize.main);
   const view = win ?? fit;
 
-  // Photos may grow to about half the viewport across the lanes.
   const thumbMax = Math.max(120, Math.round(viewSize.cross / 2));
   const thumb = Math.min(thumbPref, thumbMax);
   const lane = thumb + LANE_GAP;
 
   const ts = useMemo(() => timed.map((i) => i.t), [timed]);
 
-  // Lane packing spans the whole collection, so lanes are stable while
-  // panning. The span is snapped to a log grid: a continuous pinch re-packs
-  // only on crossing a grid step, not on every wheel event.
+  // Packing spans the whole collection so lanes stay stable while panning.
   const spanMs = packSpan(lane * view.msPerPx);
   const packed = useMemo(() => packLanes(ts, spanMs), [ts, spanMs]);
 
-  // Wheel: plain = pan along time, ⌘/ctrl (and trackpad pinch) = zoom at
-  // the cursor. Native listener — React's is passive, preventDefault needs this.
+  // Native wheel listener: React's is passive, and preventDefault needs an active one.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -107,8 +89,7 @@ export function TimelineGallery() {
       const alongMain = vertical ? e.clientY - rect.top : e.clientX - rect.left;
       const viewPx = vertical ? el.clientHeight : el.clientWidth;
       if (e.ctrlKey || e.metaKey) {
-        // Clamp one event's zoom: a mouse-wheel notch reports ±120, which
-        // raw would jump 3.3x — cap it near the trackpad's smooth range.
+        // A mouse-wheel notch reports ±120, which raw would zoom 3.3x; clamp near the trackpad's smooth range.
         const factor = Math.exp(Math.max(-40, Math.min(40, e.deltaY)) * 0.01);
         setWin((w) =>
           replaceWin(w, zoomedWindow(w ?? fitWindow(tMin, tMax, viewPx), factor, alongMain, tMin, tMax, viewPx)),
@@ -129,7 +110,6 @@ export function TimelineGallery() {
     return () => el.removeEventListener("wheel", onWheel);
   }, [vertical, tMin, tMax]);
 
-  // Drag anywhere on the background pans time (and the lanes, natively).
   const drag = useRef<{ main: number; cross: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest(".tl-item")) return;
@@ -153,8 +133,6 @@ export function TimelineGallery() {
 
   const mainPx = (t: number) => (t - view.t0) / view.msPerPx;
 
-  // Only the window (± overscan) renders; `timed` is time-sorted, so the
-  // main-axis slice is a binary search.
   const tA = view.t0 - (OVERSCAN_PX + lane) * view.msPerPx;
   const tB = view.t0 + (viewSize.main + OVERSCAN_PX) * view.msPerPx;
   const visible = useMemo(() => {
@@ -172,7 +150,6 @@ export function TimelineGallery() {
     return out;
   }, [timed, packed, tA, tB, crossScroll, viewSize.cross, lane, thumb]);
 
-  // Ask Rust for thumbnails of what's on screen (debounced while panning).
   useEffect(() => {
     const timer = setTimeout(() => {
       const { thumbs, thumbErrors } = useAppStore.getState();
@@ -268,9 +245,7 @@ function TimelineThumb({
   const openViewer = useAppStore((s) => s.openViewer);
   const pos = vertical ? { top: main, left: cross } : { left: main, top: cross };
   const when = new Date(item.t).toLocaleString();
-  // Beyond what the 256px cached thumb can fill (device pixels), the items
-  // on view lazily load the original on top of the thumb — the photo
-  // upgrades from soft to sharp in place, never to a blank.
+  // Past what the cached thumb can fill in device pixels, the original loads on top so the photo sharpens in place.
   const wantsFull = size * window.devicePixelRatio > THUMB_SOURCE_EDGE;
   return (
     <figure
@@ -309,13 +284,11 @@ function TimelineThumb({
   );
 }
 
-/** The previous window when nothing moved (a clamped edge), else the next —
- * so holding a pinch against a bound doesn't re-render per event. */
+/** Returns `prev` when nothing moved (a clamped edge), so a pinch held against a bound doesn't re-render per event. */
 function replaceWin(prev: TimeWindow | null, next: TimeWindow): TimeWindow | null {
   return prev !== null && prev.t0 === next.t0 && prev.msPerPx === next.msPerPx ? prev : next;
 }
 
-/** First index in time-sorted `items` with t >= target. */
 function lowerBound(items: TimedItem[], target: number): number {
   let lo = 0;
   let hi = items.length;

@@ -4,8 +4,7 @@ import { zoomLabel } from "../viewer/viewport";
 
 describe("zoomLabel", () => {
   it("names the two magnifications a photographer asks for", () => {
-    // "fit" is a name, not a number: which percentage happens to fit this
-    // window is not information.
+    // "fit" is a name, not a number.
     expect(zoomLabel({ scale: 0.14 }, true)).toBe("fit");
     expect(zoomLabel({ scale: 1 }, false)).toBe("100%");
   });

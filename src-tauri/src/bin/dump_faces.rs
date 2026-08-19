@@ -1,12 +1,4 @@
-//! Dumps Vision face boxes for every JPEG given, one JSON line per file —
-//! offline input for fitting subject-aware camera-look features.
-//!
-//! ```sh
-//! cargo run --release --bin dump_faces -- <out.jsonl> <jpeg>...
-//! ```
-//!
-//! Boxes are normalized to the ORIENTED image, origin top-left — the same
-//! frame the pair dumps use.
+//! Boxes are normalized to the ORIENTED image, origin top-left — the same frame the pair dumps use.
 
 use std::io::Write;
 
@@ -64,8 +56,7 @@ fn faces_of(path: &str) -> Result<Vec<(f32, f32, f32, f32)>, String> {
         )
         .map_err(|e| e.to_string())?;
 
-    // SAFETY: plain Objective-C message sends on objects we own; the request
-    // handler runs synchronously on this thread. Mirrors services::faces.
+    // SAFETY: message sends on objects we own; the handler runs synchronously on this thread.
     unsafe {
         let data = NSData::with_bytes(&jpeg);
         let handler = VNImageRequestHandler::initWithData_options(

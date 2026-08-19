@@ -35,8 +35,7 @@ registerBuiltinCommands();
 registerBuiltinSorts();
 registerBuiltinFilterFields();
 registerBuiltinFacts();
-// Sources bring their own scope-specific sorts, so they register first;
-// the sort commands then cover built-ins and source sorts alike.
+// Sources must register before registerSortCommands below, so their sorts get commands too.
 registerSource(redditSource);
 registerSource(commonsSource);
 registerSourceCommands();
@@ -46,9 +45,7 @@ registerThumbCrops();
 registerPeople();
 registerDevelopCommands();
 registerSceneCommands();
-// Last, so the one destructive action sits at the bottom of the image menu.
-// Copy before Trash: the menu lists them in registration order, and the
-// destructive one belongs at the end.
+// Menu rows follow registration order; Trash registers last to sit at the bottom.
 registerCopyCommands();
 registerTrashCommands();
 registerSortCommands();
@@ -68,9 +65,7 @@ registerPanel({
   icon: <SimilarityIcon />,
 });
 registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
-// The right column: flat sections, each collapsible and reorderable —
-// registration order is the default order. Develop shows only where
-// developing happens (darkroom, viewer).
+// Right-panel registration order is the default section order.
 const selected = () => useAppStore.getState().selectedIndex !== null;
 const inSession = () => useDevelopStore.getState().session !== null;
 registerPanel({ id: "shot", title: "Shot", component: ShotPanel, side: "right", when: selected });
@@ -95,7 +90,6 @@ registerPanel({
 registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
 registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
 registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
-// Every left panel is reachable from the palette, like VS Code's view commands.
 for (const panel of allPanels()) {
   registerCommand({
     id: `view.${panel.id}`,

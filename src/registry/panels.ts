@@ -1,10 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
 
-/**
- * Sidebar panel registry — v1 registers only the folder tree, but the
- * sidebar renders whatever is here, which is the future plugin UI seam.
- */
-
 export type PanelSide = "left" | "right";
 
 export interface Panel {

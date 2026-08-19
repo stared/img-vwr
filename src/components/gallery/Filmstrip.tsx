@@ -7,29 +7,11 @@ import { pairedName, photographKeyOf, siblingsOf, stackCaption } from "../../sta
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
-/**
- * The darkroom's strip of the whole collection, running under the main image.
- *
- * Not virtualized: a filmstrip's job is to let you see where you are in a
- * sequence, and its cells are small enough that even a few thousand cost
- * little. Thumbnails are still requested lazily, for the part on screen.
- */
-
 const REQUEST_DEBOUNCE_MS = 50;
 
-/** Cells fetched beyond each edge, so a flick of the strip is already filled. */
 const OVERSCAN = 6;
 
-/**
- * Which cells are on screen, given where the strip is scrolled to.
- *
- * `pitch` and `origin` are measured off the laid-out cells rather than
- * recomputed from the height. They used to be recomputed, wrongly — the
- * assumed pitch was 12 px larger than the CSS produces, which by frame 100
- * pointed nine cells away from what was on screen. The strip you had just
- * scrolled to stayed blank while thumbnails were fetched for images nobody
- * could see, and the further in you were the worse it got.
- */
+/** `pitch` and `origin` must be measured off the laid-out cells; recomputing them from height drifts from the CSS. */
 export function stripRange(
   view: { scrollLeft: number; clientWidth: number },
   layout: { origin: number; pitch: number },
@@ -44,26 +26,14 @@ export function stripRange(
   };
 }
 
-/** One cell of the strip: a visible photograph, or — when its stack is
- * spread open — one member of it. */
-export interface StripCell {
+interface StripCell {
   entry: FileEntry;
-  /** Index into the visible list, or null for a member that is on screen
-   * only because its stack is spread. */
+  /** Index into the visible list; null for a member shown only because its stack is spread. */
   index: number | null;
-  /** The photograph the cell belongs to. */
   key: string;
 }
 
-/**
- * The strip's cells: the visible list, with each spread stack replaced by
- * all of its members in file order.
- *
- * The visible list itself stays collapsed — selection stays an index into
- * it — and the members are extras only the strip knows about. Clicking one
- * routes through `preferMember`, so "show this member" is the same move it
- * is everywhere else in the app.
- */
+/** The visible list stays collapsed (selection indexes into it); spread-stack members are extras only the strip knows. */
 export function stripCells(
   visible: FileEntry[],
   all: FileEntry[],
@@ -74,8 +44,7 @@ export function stripCells(
   const cells: StripCell[] = [];
   visible.forEach((entry, index) => {
     const key = photographKeyOf(entry, hdrKeys);
-    // By name, not by scan order: `all` is the folder as the disk listed it,
-    // and a spread bracket should read as the sequence it was shot in.
+    // `all` is in disk-scan order, so members need the explicit sort to read as the shot sequence.
     const members =
       stacking && expanded[key] !== undefined
         ? all
@@ -103,12 +72,8 @@ export function Filmstrip({ height }: { height: number }) {
   const labels = useAppStore((s) => s.labels);
   const crops = useAppStore((s) => s.crops);
   const meta = useAppStore((s) => s.meta);
-  // Every file in the collection, so a collapsed cell can say what else is
-  // in its stack — the strip itself is showing one member of each.
   const allEntries = useAppStore((s) => s.entries);
   const stacking = useAppStore((s) => s.stacking);
-  // Which cells front an HDR set, and how the whole photograph groups —
-  // a stacked cell should *look* stacked, not merely say so in a tooltip.
   const hdr = useAppStore((s) => hdrOf(s));
   const expandedStacks = useAppStore((s) => s.expandedStacks);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -118,16 +83,13 @@ export function Filmstrip({ height }: { height: number }) {
     [entries, allEntries, expandedStacks, hdr, stacking],
   );
 
-  // Keep the current frame in view as the selection moves by keyboard. Found
-  // by its class rather than its position: a spread stack puts extra cells
-  // in the strip, so the visible index no longer counts children.
+  // Found by class, not child position: a spread stack adds cells, so the visible index no longer counts children.
   useEffect(() => {
     if (selectedIndex === null) return;
     const cell = stripRef.current?.querySelector(".lead");
     cell?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
   }, [selectedIndex]);
 
-  // Ask for thumbnails of what is actually on screen, as it scrolls past.
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
@@ -162,7 +124,6 @@ export function Filmstrip({ height }: { height: number }) {
       className="filmstrip"
       ref={stripRef}
       style={{ height }}
-      // Clicking the strip's background clears the selection, like the grid.
       onClick={(e) => {
         if (e.target === e.currentTarget) select(null);
       }}
@@ -175,8 +136,7 @@ export function Filmstrip({ height }: { height: number }) {
         const member = index === null;
         const siblings =
           stacking && !member ? siblingsOf(allEntries, entry, hdr.keyByStack) : [];
-        // A collapsed pair is one photograph, so a crop stored on either of
-        // its files crops the cell; a spread member shows only its own.
+        // A collapsed pair is one photograph: a crop stored on either file crops the cell.
         const crop =
           crops[entry.path] ??
           (siblings.length > 0 && !spread
@@ -195,10 +155,6 @@ export function Filmstrip({ height }: { height: number }) {
               "filmstrip-cell",
               selection.includes(entry.path) ? "selected" : "",
               index !== null && index === selectedIndex ? "lead" : "",
-              // A collapsed stack wears the pile it is: edges of the cards
-              // behind it peek out, and an HDR set says what it is. Spread,
-              // the pile lies flat: its members run side by side under one
-              // thread, and the cards' edges go with it.
               siblings.length > 0 && !spread ? "stacked" : "",
               spread ? "unstacked" : "",
               member ? "member" : "",
@@ -222,15 +178,9 @@ export function Filmstrip({ height }: { height: number }) {
             onClick={(e) => {
               const mode = selectMode(e);
               if (index === null) {
-                // A spread member: showing it *is* the click's meaning, and
-                // preferMember swaps it in front with the selection held.
                 useAppStore.getState().preferMember(entry.path);
                 return;
               }
-              // One plain click does the whole move: the pile you click is
-              // the pile you meant to look inside, so it selects and spreads
-              // at once — select-then-click-again made every look cost two.
-              // On a spread lead the same click folds it back.
               if (mode === "replace" && (siblings.length > 0 || spread)) {
                 useAppStore.getState().selectAt(index, mode);
                 useAppStore.getState().toggleStackExpanded(key);
@@ -238,8 +188,6 @@ export function Filmstrip({ height }: { height: number }) {
               }
               useAppStore.getState().selectAt(index, mode);
             }}
-            // The same menu the grid has: culling happens here too, and the
-            // strip is the only list the darkroom shows.
             onContextMenu={(e) => {
               e.preventDefault();
               if (index === null) return;
@@ -248,16 +196,9 @@ export function Filmstrip({ height }: { height: number }) {
             }}
           >
             {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
-            {/* The rating rides on the photograph, at its top — the bottom
-                edge belongs to the name. Same mark as the grid's. */}
             {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
             <span className="filmstrip-photo">
               {cropped !== null && <CropBadge />}
-              {/* The pile is the photograph itself, repeated: one print
-                  behind for a pair, two for anything deeper. No painted
-                  card — the deck is made of the picture, and its depth is
-                  honest. A cropped photograph's pile is cropped prints:
-                  the whole deck is the same picture. */}
               {thumb !== undefined && siblings.length > 0 && !spread && (
                 <>
                   {siblings.length >= 2 &&
@@ -281,9 +222,6 @@ export function Filmstrip({ height }: { height: number }) {
                 <img src={fileUrl(thumb)} alt={entry.name} draggable={false} />
               )}
             </span>
-            {/* Which file this is, on its own line under the picture — the
-                strip is the darkroom's only list. A collapsed pair is one
-                name carrying both formats: "DSC_1234.JPG+NEF". */}
             <span className="filmstrip-name">
               {siblings.length > 0 && !spread ? pairedName(entry, siblings) : entry.name}
             </span>

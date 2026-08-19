@@ -65,7 +65,6 @@ export type {
   WhiteBalance,
 };
 
-/** Unwrap a specta Result, throwing on the error branch. */
 function unwrap<T>(result: Result<T, string>): T {
   if (result.status === "error") {
     throw new Error(result.error);
@@ -82,19 +81,12 @@ export async function listSubdirs(path: string): Promise<DirEntry[]> {
   return unwrap(await commands.listSubdirs(path));
 }
 
-/**
- * Move files to the platform Trash, reporting per file.
- *
- * The caller has already asked the user — this only carries the answer. What
- * comes back says which paths actually went; only those may be dropped from
- * the collection.
- */
+/** Move files to the platform Trash; only paths reported gone may be dropped from the collection. */
 export async function deleteFiles(paths: string[]): Promise<TrashOutcome> {
   return unwrap(await commands.deleteFiles(paths));
 }
 
-/** Put files on the system clipboard as file references — what a paste in
- * the Finder or a chat receives as the files themselves. */
+/** Puts file references (not pixel data) on the system clipboard. */
 export async function copyFiles(paths: string[]): Promise<number> {
   return unwrap(await commands.copyFiles(paths));
 }
@@ -141,9 +133,7 @@ export async function embeddingRankText(
   return unwrap(await commands.embeddingRankText(query, paths));
 }
 
-/** Similarity of each path to the few before it (scores[i][d-1] describes
- * paths[i] vs paths[i-d]), from vectors already indexed; null where an
- * image has no vector yet. Never computes. */
+/** scores[i][d-1] is paths[i] vs paths[i-d]; null where unindexed — never computes vectors. */
 export async function embeddingBandedScores(
   paths: string[],
   band: number,
@@ -151,14 +141,12 @@ export async function embeddingBandedScores(
   return unwrap(await commands.embeddingBandedScores(paths, band));
 }
 
-/** Detect faces over the collection in the background; progress arrives as
- * `facesProgress` events, per-photo results are cached. */
+/** Returns immediately; progress arrives as `facesProgress` events. */
 export async function facesIndex(paths: string[], epoch: number): Promise<void> {
   return commands.facesIndex(paths, epoch);
 }
 
-/** Cluster detected faces into people; identity propagates onto faceless
- * photos near-identical to a member. Needs the embedding model loaded. */
+/** Needs the embedding model loaded; identity also propagates onto faceless near-identical photos. */
 export async function facesPeople(
   paths: string[],
   threshold: number,
@@ -168,9 +156,7 @@ export async function facesPeople(
   return unwrap(await commands.facesPeople(paths, threshold, merge, propagate));
 }
 
-/** Name (or, with an empty name, un-name) a cluster of the last people run.
- * Names anchor to identity vectors: two clusters named alike merge on the
- * next clustering, and the name follows the person into other folders. */
+/** An empty name un-names; clusters named alike merge on the next clustering. */
 export async function facesRename(
   clusterId: string,
   name: string,
@@ -179,24 +165,22 @@ export async function facesRename(
   unwrap(await commands.facesRename(clusterId, name, merge));
 }
 
-/** Every name ever given to a person, for the rename input's suggestions. */
+/** Every name ever given, not only names in the current clustering. */
 export async function facesNames(): Promise<string[]> {
   return unwrap(await commands.facesNames());
 }
 
-/** Pixel statistics (histograms, color triangle) from the cached thumb. */
+/** Computed from the cached thumbnail, not the full image. */
 export async function imageStats(path: string): Promise<ImageStats> {
   return unwrap(await commands.imageStats(path));
 }
 
-/** Stored labels for the given paths; unlabeled paths are absent. */
+/** Unlabeled paths are absent from the result. */
 export async function labelsForPaths(paths: string[]): Promise<Record<string, ImageLabels>> {
   return defined(unwrap(await commands.labelsForPaths(paths)));
 }
 
-/* Writes take a list because rating and tagging apply to the selection, and
- * answer for every path given — including ones left with no labels at all,
- * which is how the caller tells "cleared" from "unchanged". */
+/* Label writes answer for every path given, empty labels included — that is how "cleared" differs from "unchanged". */
 
 export async function labelsSetStars(
   paths: string[],
@@ -221,20 +205,17 @@ function defined<T>(map: Partial<Record<string, T>>): Record<string, T> {
   return out;
 }
 
-/* Develop — opening an image for editing, rendering it, and getting pixels
- * back out. Rendering is the interactive path; everything else is rare. */
-
-/** Open an image for editing. Slow on a raw file's first call. */
+/** Slow on a raw file's first call. */
 export async function developState(path: string): Promise<DevelopState> {
   return unwrap(await commands.developState(path));
 }
 
-/** The named starting points an edit can be set to. Fixed for a session. */
+/** Fixed for a session. */
 export async function developPresets(): Promise<Preset[]> {
   return unwrap(await commands.developPresets());
 }
 
-/** The exposure this image wants, in stops, from the light it recorded. */
+/** Suggested exposure, in stops. */
 export async function developAutoExposure(
   path: string,
   settings: DevelopSettings,
@@ -242,7 +223,7 @@ export async function developAutoExposure(
   return unwrap(await commands.developAutoExposure(path, settings));
 }
 
-/** Where this frame is sharpest, in the cropped image's coordinates. */
+/** Sharpest point, in the cropped image's coordinates. */
 export async function developFocusPoint(
   path: string,
   settings: DevelopSettings,
@@ -250,7 +231,7 @@ export async function developFocusPoint(
   return unwrap(await commands.developFocusPoint(path, settings));
 }
 
-/** Render a preview; the pixels are then loaded from `developFrameUrl`. */
+/** Pixels are not returned; load them from `developFrameUrl`. */
 export async function developRender(
   path: string,
   settings: DevelopSettings,
@@ -261,10 +242,9 @@ export async function developRender(
   return unwrap(await commands.developRender(path, settings, maxEdge, overlay, region));
 }
 
-/** The whole frame. */
 export const FULL_REGION: RegionArg = { x: 0, y: 0, width: 1, height: 1 };
 
-/** White balance that renders the point at normalised (x, y) neutral. */
+/** (x, y) are normalised; the returned WB renders that point neutral. */
 export async function developPickWhiteBalance(
   path: string,
   x: number,
@@ -278,7 +258,6 @@ export async function developSave(path: string, settings: DevelopSettings): Prom
   unwrap(await commands.developSave(path, settings));
 }
 
-/** Discard an image's edit; returns its freshly neutral state. */
 export async function developReset(path: string): Promise<DevelopState> {
   return unwrap(await commands.developReset(path));
 }
@@ -287,36 +266,27 @@ export async function developEditedPaths(paths: string[]): Promise<string[]> {
   return unwrap(await commands.developEditedPaths(paths));
 }
 
-/** The stored crops among these paths, for drawing miniatures cropped. */
 export async function developCrops(paths: string[]): Promise<Record<string, Crop>> {
   return defined(unwrap(await commands.developCrops(paths)));
 }
 
-/** Carry out one photograph's export; the caller drives the batch. */
+/** Exports one photograph; the caller drives the batch. */
 export async function developExport(job: ExportJob, plan: ExportPlan): Promise<Exported> {
   return unwrap(await commands.developExport(job, plan));
 }
 
-/** Tell the develop service which paths open as fused HDR sets — the face
- * frame's path mapped to every frame of its set, the whole folder at once. */
+/** Replaces the whole map: pass every fusion in the folder, keyed by the face frame's path. */
 export async function developSetFusions(
   fusions: Record<string, FusionRecipe>,
 ): Promise<void> {
   return commands.developSetFusions(fusions);
 }
 
-/**
- * URL for a rendered frame. The token changes on every render, which is what
- * stops the webview's image cache from serving the previous edit.
- */
+/** The per-render token stops the webview's image cache from serving the previous edit. */
 export function developFrameUrl(token: number): string {
   return `develop://localhost/frame/${token}`;
 }
 
-/**
- * URL the webview can load an image from: remote-source entries already
- * carry https URLs; local paths go through the asset protocol.
- */
 export function fileUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return convertFileSrc(path);

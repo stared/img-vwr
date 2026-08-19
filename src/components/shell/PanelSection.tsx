@@ -3,11 +3,6 @@ import type { ReactNode } from "react";
 import type { Panel } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
 
-/**
- * VS Code-style sidebar section: a collapsible header per panel. A `fill`
- * panel takes the remaining height and scrolls its own body, so small
- * panels below it (sources) stay visible under a long folder list.
- */
 export function PanelSection({
   panel,
   action,

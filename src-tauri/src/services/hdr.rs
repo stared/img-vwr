@@ -1,45 +1,25 @@
-//! Opening an exposure bracket as one photograph.
-//!
-//! The compute lives in `imgvwr-hdr`; this module turns a list of frame
-//! files into a [`SceneImage`] the develop pipeline can treat like any
-//! other. Nothing here writes anywhere: the fused photograph is *virtual* —
-//! it exists behind its face frame's path, edits on it live in `develop.db`
-//! under that path like every other edit, and its pixels only reach disk
-//! through Export, like every other photograph's.
+//! Nothing here writes anywhere: the fused photograph is virtual, its pixels reach disk only through Export.
 
 use imgvwr_core::{SceneError, SceneImage};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// How a bracket becomes one photograph. An enum, because the choices are
-/// few and each is a different *kind* of result — not a parameter sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum HdrMethod {
-    /// Mertens exposure fusion: a blend of the best-exposed pixels. Looks
-    /// like the camera's pictures; deliberately has no knobs.
+    /// Mertens exposure fusion — deliberately no knobs.
     Fusion,
-    /// Scene-linear radiance: the light itself, with the darker exposures'
-    /// headroom kept above 1.0. The develop pipeline's tone controls are
-    /// the knobs — this is the "professional HDR" path.
+    /// Scene-linear radiance, headroom kept above 1.0; the develop tone controls are the knobs.
     Radiance,
 }
 
-/// What a fusion produced: the scene, and how much of the bracket is in it.
 pub struct Fusion {
     pub scene: Box<dyn SceneImage>,
-    /// The frames that could not be aligned to the pixel and were left out
-    /// rather than ghosted in. Alignment is per frame, and the panel names
-    /// the casualties instead of rounding the set up to "fused".
+    /// Frames that would not align to the pixel, left out rather than ghosted in.
     pub left_out: Vec<String>,
 }
 
-/// Decode these frames — one bracket, the caller decided — align them,
-/// merge them by `method`, and hand back the result as a scene.
-///
-/// Each frame is turned upright before the merge: orientation is a property
-/// of the files, and the fused photograph is not a file — it has no EXIF of
-/// its own to carry the tag, so its pixels must already be the right way up.
+/// Frames are turned upright before the merge: the fused photograph has no EXIF of its own to carry the tag.
 pub fn fused_scene(paths: &[String], method: HdrMethod) -> Result<Fusion, SceneError> {
     let frames: Vec<image::RgbImage> = paths
         .par_iter()
@@ -82,11 +62,9 @@ pub fn fused_scene(paths: &[String], method: HdrMethod) -> Result<Fusion, SceneE
 mod tests {
     use super::*;
 
-    /// One frame of a synthetic bracket: a red block on textured ground, at
-    /// `gain` per mille of the base exposure.
+    /// One synthetic bracket frame at `gain` per mille of the base exposure.
     fn frame_jpeg(gain: u32) -> Vec<u8> {
-        // Multi-scale blobs, not per-pixel noise: verified alignment
-        // rightly refuses a "scene" that is pure static.
+        // Multi-scale blobs, not per-pixel noise: alignment (rightly) refuses pure static.
         let noise = |gx: u32, gy: u32, salt: u32| -> i32 {
             (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97)) as i32
                 % 61
@@ -121,12 +99,9 @@ mod tests {
         }
 
         let fusion = fused_scene(&paths, HdrMethod::Fusion).unwrap();
-        // Every frame made it in, and the caller is told so.
         assert_eq!(fusion.left_out, Vec::<String>::new());
         let scene = fusion.scene;
 
-        // The same bracket as radiance: a scene-referred image the develop
-        // pipeline will choose a look for — the sliders become HDR knobs.
         let radiant = fused_scene(&paths, HdrMethod::Radiance).unwrap();
         assert_eq!(radiant.scene.native_size(), (96, 64));
         assert_eq!(

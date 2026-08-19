@@ -4,34 +4,17 @@ import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
 import type { RangeOp } from "../state/query";
 import type { Scope } from "../state/store";
 
-/**
- * Filter-field registry — every field the query can filter on. Like sorts,
- * filter options are deliberately not hardcoded: built-ins (format, camera,
- * aspect, taken, …) register here at startup, and sources or plugins add
- * fields the same way, scoped via `appliesTo`. The "+" menu, the chips'
- * edit menus, and the predicate evaluation all resolve through this table.
- *
- * The contract is TOTAL: a field is exactly one of four kinds, each with
- * every behavior it needs — no optional hooks, no fallback rendering.
- * The clause STATE in the query stays plain data keyed by field id.
- */
-
 interface FieldBase {
   id: string;
   /** "+"-menu row label, lowercase like the query language. */
   label: string;
-  /** Scopes where this field makes sense. */
   appliesTo: (scope: Scope | null) => boolean;
 }
 
-/** What a field's predicate reads beyond the entry itself; drives which
- * streaming store slices invalidate the visible list. */
+/** Drives which streaming store slices invalidate the visible list. */
 export type FieldReads = "entry" | "meta" | "labels" | "people";
 
-/** Per-entry data a predicate can read. Meta is undefined until the
- * background read delivers it; labels are TOTAL — an unlabeled image is
- * the empty label set, not an unknown. People are the person-cluster ids
- * the face pass put this photo in — empty until faces are found. */
+/** meta is undefined until the background read lands; labels and people are total — empty, never unknown. */
 export interface FieldCtx {
   meta: ImageMeta | undefined;
   labels: ImageLabels;
@@ -62,8 +45,7 @@ export type SelectField = FieldBase & {
   value: (entry: FileEntry, ctx: FieldCtx) => string | null;
 };
 
-/** Multi-valued select (tags): each image has a set of values and the
- * clause matches when its value is one of them. */
+/** Multi-valued select; the clause matches when its value is among the image's. */
 export type FlagsField = FieldBase & {
   kind: "flags";
   reads: FieldReads;
@@ -80,7 +62,6 @@ export type RangeField = FieldBase & {
 };
 
 export interface RangeSpec {
-  /** Operators that make sense ("=" is useless for file size). */
   ops: RangeOp[];
   input: "date" | "number";
   /** Unit shown next to the value input ("MB", "px"); null for dates. */
@@ -113,7 +94,6 @@ export function filterFieldsFor(scope: Scope | null): FilterField[] {
   return [...registry.values()].filter((f) => f.appliesTo(scope));
 }
 
-/** Test-only: reset global registry state between test cases. */
 export function clearFilterFieldsForTest(): void {
   registry.clear();
 }

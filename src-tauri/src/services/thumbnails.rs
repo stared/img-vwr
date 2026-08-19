@@ -12,18 +12,14 @@ use tauri_specta::Event as _;
 use crate::events::{ThumbnailFailed, ThumbnailReady};
 use crate::services::develop::thumbnail_via_develop;
 
-/// Owns all mutable thumbnailing state: the folder epoch, the decode pool and
-/// the in-flight set. Everything it calls in `imgvwr-core` is pure.
 pub struct ThumbnailService {
     epoch: AtomicU64,
     pool: rayon::ThreadPool,
     registry: Arc<CodecRegistry>,
-    /// Fallback for formats no codec can decode — RAW files go through the
-    /// develop pipeline instead, so a folder of NEFs looks like any other.
+    /// Fallback for formats no codec decodes: RAW goes through the develop pipeline.
     scenes: Arc<SceneRegistry>,
     cache_dir: PathBuf,
-    /// Work is deduplicated within one collection epoch. The same file may be
-    /// requested again by a newer epoch while stale work is winding down.
+    /// Deduped per epoch: a newer epoch may re-request the same file while stale work winds down.
     in_flight: Mutex<HashSet<(String, u64)>>,
 }
 
@@ -88,7 +84,6 @@ impl ThumbnailService {
             return;
         }
 
-        // Dedupe: skip if an identical job is already queued or running.
         let flight_key = (key.clone(), epoch);
         if !self.in_flight.lock().unwrap().insert(flight_key.clone()) {
             return;
@@ -104,9 +99,7 @@ impl ThumbnailService {
         });
     }
 
-    /// Cached-thumbnail path for one image, generating it on the spot when
-    /// the gallery has not needed it yet. Errors when no Rust codec supports
-    /// the format (AVIF) — callers needing pixels can't use the fallback.
+    /// Errors for formats with no Rust codec (AVIF): callers needing pixels cannot use the serve-the-original fallback.
     pub fn cached_thumb(&self, path: &str) -> Result<PathBuf, String> {
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
         let mtime_ms = meta
@@ -132,22 +125,13 @@ impl ThumbnailService {
         Ok(cache_file)
     }
 
-    /// Encoded thumbnail bytes for one file, or `None` when no Rust pipeline
-    /// can decode it at all and the caller should fall back to serving the
-    /// original for the webview to handle (AVIF).
-    ///
-    /// Two pipelines, tried in cost order: the codec registry, then — for RAW,
-    /// which no codec handles — the develop pipeline. RAW thumbnails render at
-    /// the camera's own white balance with no edit applied, so the thumbnail
-    /// cache stays valid while the user works on the image.
+    /// None = no Rust pipeline at all (AVIF): the caller serves the original for the webview to decode.
     fn thumbnail_bytes(&self, path: &str, ext: &str) -> Result<Option<Vec<u8>>, String> {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
         match imgvwr_core::make_thumbnail(ext, &bytes, &self.registry, THUMB_MAX_EDGE) {
             Ok(webp) => Ok(Some(webp)),
             Err(ThumbError::Codec(CodecError::Unsupported)) => {
                 if self.scenes.supports(ext) {
-                    // First open of a 24 MP raw file costs a couple of
-                    // seconds; it happens once and is cached from then on.
                     thumbnail_via_develop(&self.scenes, Path::new(path), THUMB_MAX_EDGE).map(Some)
                 } else {
                     Ok(None)
@@ -157,7 +141,6 @@ impl ThumbnailService {
         }
     }
 
-    /// Pixel statistics for the info panel, from the cached 256 px thumb.
     pub fn image_stats(&self, path: &str) -> Result<imgvwr_core::ImageStats, String> {
         let thumb = self.cached_thumb(path)?;
         let bytes = std::fs::read(&thumb).map_err(|e| e.to_string())?;
@@ -168,7 +151,6 @@ impl ThumbnailService {
         Ok(imgvwr_core::image_stats(&img))
     }
 
-    /// Runs on the rayon pool: decode → thumbnail → atomic write → emit.
     fn generate(&self, app: &AppHandle, path: &str, cache_file: &Path, epoch: u64) {
         let ext = Path::new(path)
             .extension()
@@ -180,8 +162,7 @@ impl ThumbnailService {
             Some(webp) => write_atomically(cache_file, &webp)
                 .map(|()| cache_file.to_path_buf())
                 .map_err(|e| e.to_string()),
-            // No Rust pipeline at all (e.g. AVIF): serve the original file and
-            // let the webview decode and downscale it natively.
+            // No Rust pipeline (AVIF): serve the original for the webview to decode natively.
             None => Ok(PathBuf::from(path)),
         });
 
@@ -197,8 +178,7 @@ impl ThumbnailService {
 
 /// Write via temp file + rename so a concurrent reader never sees a half-written thumb.
 fn write_atomically(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // macOS may purge ~/Library/Caches while the app runs; recreate the
-    // cache dir rather than fail every write until restart.
+    // macOS may purge ~/Library/Caches while the app runs — recreate rather than fail every write.
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }

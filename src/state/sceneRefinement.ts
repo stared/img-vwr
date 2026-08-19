@@ -4,18 +4,7 @@ import { embeddingBandedScores, embeddingIndex } from "../ipc";
 import { SCENE_BAND } from "./scenes";
 import { useAppStore, useVisibleEntries } from "./store";
 
-/**
- * Feeds scene grouping its embedding similarities, when there are any to
- * have.
- *
- * The clock alone draws good scene boundaries; this makes them better where
- * an embedding model is already loaded — the same model the Similarity
- * panel uses. When scenes are on and the model is ready, the collection is
- * indexed (a cached pass is instant) and the consecutive-pair scores land
- * in the store, where grouping picks them up. No model, or none loaded:
- * nothing happens, and scenes stay time-only. The refinement is an upgrade
- * that arrives, never a dependency that blocks.
- */
+/** Feeds scene grouping embedding similarities when a model is already loaded; without one, scenes stay time-only. */
 export function useSceneRefinement(): void {
   const inScenes = useAppStore((s) => s.galleryLayout === "scenes");
   const localScope = useAppStore((s) => s.scope?.kind === "folder");
@@ -29,10 +18,7 @@ export function useSceneRefinement(): void {
   const visible = useVisibleEntries();
   const wanted = inScenes && localScope && modelId !== null;
 
-  // Ask for indexing once per (folder, model) — remembered in a ref, NOT
-  // derived from progress. The pass itself reports progress, so an effect
-  // that both watches progress and requests indexing chases its own tail:
-  // every completed (fully cached, instant) pass re-fires it, forever.
+  // Tracked in a ref, not derived from progress: indexing reports progress, so deriving re-fires a cached pass forever.
   const indexedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!wanted) return;
@@ -45,10 +31,7 @@ export function useSceneRefinement(): void {
     );
   }, [wanted, epoch, modelId]);
 
-  // Read whatever scores exist whenever indexing is quiet. A pass that ran
-  // flips `indexing` on its way through, so completion lands here once and
-  // the scores converge to full coverage without polling. Reading never
-  // causes progress, so this cannot loop.
+  // Reading never causes progress, so this cannot loop.
   useEffect(() => {
     if (!wanted || indexing || visible.length < 2) return;
     let stale = false;

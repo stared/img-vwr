@@ -1,21 +1,15 @@
 import type { ImageMeta } from "../ipc";
 
-/**
- * Pure facts derived from per-image metadata, shared by the query model
- * (filtering on them) and the stats panel (summarizing them).
- */
-
 export interface Dims {
   width: number;
   height: number;
 }
 
-export interface GeoPoint {
+interface GeoPoint {
   lat: number;
   lon: number;
 }
 
-/** GPS position of an image, when its EXIF (or source API) provides one. */
 export function gpsOf(meta: ImageMeta | undefined): GeoPoint | null {
   const lat = meta?.exif?.gpsLat;
   const lon = meta?.exif?.gpsLon;
@@ -50,7 +44,6 @@ export function effectiveDims(meta: ImageMeta): Dims | null {
     : { width: meta.width, height: meta.height };
 }
 
-/** When the photo was taken, from EXIF — null when untagged or unparsable. */
 export function takenMs(meta: ImageMeta): number | null {
   return meta.exif?.dateTime ? parseExifDate(meta.exif.dateTime) : null;
 }
@@ -65,7 +58,6 @@ const NAMED_RATIOS = [
   { label: "2:1", value: 2 },
 ] as const;
 
-/** Relative tolerance for snapping a measured ratio to a named one. */
 const RATIO_TOLERANCE = 0.04;
 
 /** Nearest named ratio of long/short edge, or the "wider"/"other" catch-alls. */
@@ -81,9 +73,3 @@ export function aspectLabelOf({ width, height }: Dims): string | null {
   }
   return best?.label ?? (ratio > 2 ? "wider" : "other");
 }
-
-export const ASPECT_ORDER: readonly string[] = [
-  ...NAMED_RATIOS.map((r) => r.label),
-  "wider",
-  "other",
-];

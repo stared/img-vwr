@@ -1,10 +1,4 @@
-//! Host for the develop pipeline: keeps images open between renders, stores
-//! edits, and hands encoded previews to the custom URI protocol.
-//!
-//! The expensive part of developing a RAW file is opening it (~2 s for a
-//! 24 MP NEF — parse plus demosaic setup); re-rendering it under new settings
-//! is ~20 ms. So the service is built around holding a small number of scenes
-//! open, which is what makes slider dragging feel live.
+//! Opening a RAW is ~2 s, re-rendering ~20 ms — so the service holds a few scenes open.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -18,87 +12,48 @@ use serde::Serialize;
 
 use super::export::{self, ExportFormat, ExportJob, ExportPlan, Exported};
 
-/// How many opened images to hold. The viewer shows one at a time; a couple
-/// more keeps arrow-key navigation between neighbours instant without pinning
-/// hundreds of megabytes of decoded sensor data.
 const OPEN_SCENES: usize = 3;
 
-/// How much encoded preview to keep addressable by token.
-///
-/// Budgeted in bytes rather than in slots, because the frames differ in size
-/// by two orders of magnitude and a slot count silently means different things
-/// to each. Dragging the loupe produces a stream of twenty-kilobyte squares;
-/// under a sixteen-slot rule that stream evicted the multi-hundred-kilobyte
-/// preview the canvas was *currently showing*, and the photograph went black
-/// behind a working loupe. Memory is the thing actually being rationed, so it
-/// is the thing to count: a burst of small frames now costs small frames'
-/// worth of room.
+/// Bytes, not slots: a slot count let a loupe drag evict the full preview still on screen.
 const FRAME_BUDGET: usize = 32 * 1024 * 1024;
 
-/// Kept regardless of the budget, so one enormous frame cannot leave the ring
-/// empty and every neighbour needing to be developed again.
+/// Kept regardless of the budget, so one enormous frame cannot empty the ring.
 const FRAMES_KEPT: usize = 4;
 
-/// Preview JPEG quality. High enough that the user is judging their photo
-/// rather than the codec, low enough to encode in a few milliseconds.
 const PREVIEW_QUALITY: u8 = 92;
 
-/// Everything the develop UI needs to show an image before any edit is made.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopState {
     pub width: u32,
     pub height: u32,
-    /// The white balance the camera chose — the neutral the sliders start at.
     pub as_shot: WhiteBalance,
-    /// Stored edit, or the neutral one if this image has never been touched.
     pub settings: DevelopSettings,
-    /// True when the settings came from the database rather than being neutral.
     pub edited: bool,
-    /// True when the webview cannot display this file itself, so the viewer
-    /// must go through the develop pipeline to show anything at all.
+    /// True when the webview cannot display this file itself.
     pub needs_render: bool,
-    /// What this path is showing, HDR-wise. The refusal used to be an
-    /// eprintln, which meant a set that would not align was indistinguishable
-    /// on screen from one that fused — the panel has to be able to say which.
     pub hdr: HdrOutcome,
 }
 
-/// Whether the scene behind a path is a fused bracket, and if not, why not.
-///
-/// A total answer rather than an optional field: every open scene is exactly
-/// one of these, and the panel renders whichever it is told.
 #[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum HdrOutcome {
-    /// An ordinary file — no bracket registered at this path.
     Plain,
-    /// The fused photograph. Alignment is per frame, so `left_out` names
-    /// any frames that were misaligned and left out rather than ghosted
-    /// in — facts the panel must state per file, not round up.
+    /// `left_out` names frames that were misaligned and left out rather than ghosted in.
     #[serde(rename_all = "camelCase")]
     Fused { frames: u32, left_out: Vec<String> },
-    /// A bracket was registered but its frames would not align to the pixel,
-    /// so the path shows the face file alone. `reason` is the measurement
-    /// that said no.
+    /// The path shows the face file alone; `reason` is the measurement that said no.
     Refused { frames: u32, reason: String },
 }
 
-/// What produced a rendered frame's pixels. Reported per frame so the panel
-/// states it rather than the user inferring it — the `camera` look shows the
-/// camera's own JPEG only while nothing is edited, and the switch to the
-/// developed raw must be visible, not silent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FrameSource {
-    /// The JPEG the camera itself wrote, served as-is.
     CameraJpeg,
-    /// Pixels developed from the sensor data by this app.
     RawDevelop,
 }
 
-/// A rendered preview: the pixels live in the service under `token` and are
-/// fetched by the `develop:` protocol; the histogram comes back inline.
+/// Pixels live under `token`, fetched via the `develop:` protocol; the histogram comes inline.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopFrame {
@@ -107,9 +62,7 @@ pub struct DevelopFrame {
     pub height: u32,
     pub source: FrameSource,
     pub histogram: Histogram,
-    /// The part of the frame these pixels cover, normalised. A full-frame
-    /// preview reports the unit rect; a 1:1 detail render reports the crop it
-    /// developed, so the viewer knows where to place it.
+    /// The covered part of the frame, normalised: unit rect for a full-frame preview, the developed crop for a 1:1 detail.
     pub region_x: f32,
     pub region_y: f32,
     pub region_width: f32,
@@ -119,38 +72,22 @@ pub struct DevelopFrame {
 struct OpenScene {
     path: String,
     scene: Box<dyn SceneImage>,
-    /// Decided when the scene opens — the one moment the fusion runs — and
-    /// reported by `state` for as long as the scene lives.
+    /// Decided once, when the scene opens.
     hdr: HdrOutcome,
-    /// The camera look's per-image half, measured once from a small render
-    /// when a scene-referred image opens. Measured here rather than per
-    /// render call so a preview, the loupe and the export all agree on what
-    /// the camera would have decided for this frame.
+    /// Measured once at open so preview, loupe and export agree.
     tuning: Option<imgvwr_develop::LookTuning>,
-    /// The camera's own full-size JPEG out of the raw file, decoded lazily
-    /// the first time a render finds the settings at the camera default.
-    /// In exactly that state the fitted look is a stand-in for this picture,
-    /// so this is what gets shown — exact rather than fitted-close.
+    /// The camera's own JPEG, decoded lazily on the first render at camera-default settings.
     camera: OnceLock<Option<Box<dyn SceneImage>>>,
 }
 
 impl OpenScene {
-    /// The camera's own JPEG for this file as a scene, if it has one.
     fn camera_scene(&self) -> Option<&dyn SceneImage> {
         self.camera
             .get_or_init(|| camera_jpeg_scene(&self.path))
             .as_deref()
     }
 
-    /// What actually renders under these settings, and which source it is.
-    ///
-    /// Under the `camera` look with every knob untouched, the picture the
-    /// panel promises already exists — the JPEG the camera wrote — so that
-    /// is what renders, under its own neutral settings, since its pixels
-    /// are finished. The first touched knob falls off this branch onto the
-    /// fitted pipeline, and the returned [`FrameSource`] is how the panel
-    /// says so. A fused bracket never swaps: the file's JPEG is one
-    /// exposure, not the photograph.
+    /// At untouched camera-default settings the camera's own JPEG renders instead; a fused bracket never swaps.
     fn resolved(
         &self,
         settings: &DevelopSettings,
@@ -187,16 +124,10 @@ pub struct DevelopService {
     frames: Mutex<VecDeque<(u64, Vec<u8>)>>,
     next_token: AtomicU64,
     conn: Mutex<Connection>,
-    /// Paths that open as a fused exposure bracket rather than as the file:
-    /// the face frame's path → its recipe. The frontend detects the
-    /// brackets (it has the EXIF) and registers them here; from then on the
-    /// fused photograph is what this path *is* — viewing, editing and
-    /// export all pass through `scene_for` and never know.
+    /// Face frame's path → recipe; a registered path opens as the fused photograph via `scene_for`.
     fusions: Mutex<HashMap<String, FusionRecipe>>,
 }
 
-/// Everything a path needs to open as a merge: which frames, and how they
-/// become one photograph.
 #[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FusionRecipe {
@@ -207,8 +138,7 @@ pub struct FusionRecipe {
 impl DevelopService {
     pub fn new(registry: Arc<SceneRegistry>, db_file: &Path) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open(db_file)?;
-        // Same rule as labels: edits are app-local and never written next to
-        // the user's photos. Export is the explicit way pixels leave.
+        // Edits are app-local, never written next to the user's photos.
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS develop (
                  path        TEXT PRIMARY KEY,
@@ -224,35 +154,25 @@ impl DevelopService {
                  saturation  REAL NOT NULL
              ) STRICT;",
         )?;
-        // Columns added after the first release, so existing databases need
-        // them. Each default is the value that leaves an old row rendering and
-        // reading exactly as its author left it: no shoulder, and no preset
-        // underneath it.
+        // Migration columns: each default leaves an old row rendering exactly as its author left it.
         for column in [
             "rolloff REAL NOT NULL DEFAULT 0",
             "basis TEXT NOT NULL DEFAULT 'flat'",
-            // The whole frame, unturned: what every row written before crop
-            // existed was in fact showing.
             "crop_x REAL NOT NULL DEFAULT 0",
             "crop_y REAL NOT NULL DEFAULT 0",
             "crop_w REAL NOT NULL DEFAULT 1",
             "crop_h REAL NOT NULL DEFAULT 1",
             "crop_angle REAL NOT NULL DEFAULT 0",
-            // No look: rows from before the camera look existed carry slider
-            // positions that emulated it, and applying both would double it.
+            // 'flat', not the camera look: old rows emulated the look with sliders, and applying both would double it.
             "look TEXT NOT NULL DEFAULT 'flat'",
         ] {
             if let Err(e) = conn.execute(&format!("ALTER TABLE develop ADD COLUMN {column}"), []) {
-                // Already there on every run but the first.
                 if !e.to_string().contains("duplicate column name") {
                     return Err(e);
                 }
             }
         }
-        // The camera look's measured per-image tuning, cached so a reopened
-        // file skips its 384px measuring render. Keyed by modification time;
-        // model_tag ties rows to the fitted constants that produced them, so
-        // a refit invalidates every cached tuning at once.
+        // Tuning cache keyed by mtime; model_tag ties rows to the fitted constants, so a refit invalidates them all.
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS look_tunings (
                  path       TEXT PRIMARY KEY,
@@ -268,8 +188,6 @@ impl DevelopService {
                  sharpen    REAL NOT NULL
              ) STRICT;",
         )?;
-        // Whether the decode came out flat (unusable) — added after the
-        // table first shipped, so existing databases need the column.
         if let Err(e) = conn.execute(
             "ALTER TABLE look_tunings ADD COLUMN flat INTEGER NOT NULL DEFAULT 0",
             [],
@@ -288,13 +206,7 @@ impl DevelopService {
         })
     }
 
-    /// Install which paths open as fused brackets — the whole folder's worth
-    /// at once, replacing whatever was there: detection answers for the
-    /// folder, so its answer is installed the same way.
-    ///
-    /// Any open scene whose recipe changed is dropped, so a path that
-    /// stopped (or started, or changed) being a bracket can never serve
-    /// stale pixels.
+    /// Replaces the whole map; any open scene whose recipe changed is dropped so it cannot serve stale pixels.
     pub fn set_fusions(&self, fusions: HashMap<String, FusionRecipe>) {
         let old = {
             let mut lock = self.fusions.lock().unwrap();
@@ -308,26 +220,17 @@ impl DevelopService {
         self.fusions.lock().unwrap().contains_key(path)
     }
 
-    /// Open `path`, reusing an already-open scene when we have it.
     fn scene_for(&self, path: &str) -> Result<Arc<OpenScene>, SceneError> {
         {
             let mut open = self.open.lock().unwrap();
             if let Some(pos) = open.iter().position(|s| s.path == path) {
-                // Refresh recency so the image being worked on is never the
-                // one evicted.
                 let hit = open.remove(pos).expect("position just found");
                 open.push_back(Arc::clone(&hit));
                 return Ok(hit);
             }
         }
 
-        // Opening is slow, so it happens outside the lock: two viewers landing
-        // on the same new image would otherwise serialise behind each other.
-        // A registered bracket opens as its fused photograph; everything else
-        // opens as the file it is. A fusion that *refuses* — frames that do
-        // not align to the pixel — falls back to the face file: the honest
-        // renderings are the merge or the frame, never a ghost and never an
-        // error where a photograph should be.
+        // Opening is slow, so it happens outside the lock.
         let fused = self.fusions.lock().unwrap().get(path).cloned();
         let (scene, hdr) = match fused {
             Some(recipe) => match crate::services::hdr::fused_scene(&recipe.frames, recipe.method) {
@@ -349,9 +252,7 @@ impl DevelopService {
             None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
         };
         let (tuning, flat) = self.tuning_for(path, scene.as_ref());
-        // A flat scene-referred decode is the system decoder failing while
-        // pretending it didn't (pixel-shift exposure brackets do this). The
-        // camera's embedded JPEG is the honest picture, so it opens instead.
+        // A flat decode is the system decoder failing silently (pixel-shift brackets); the embedded JPEG opens instead.
         let (scene, tuning) = if flat {
             match embedded_fallback(path) {
                 Some(fallback) => (fallback, None),
@@ -385,11 +286,6 @@ impl DevelopService {
         let (width, height) = entry.scene.native_size();
         let as_shot = entry.scene.as_shot();
         let stored = self.stored_settings(path)?;
-        // An image nobody has edited still has to start somewhere, and for
-        // sensor data that is not "flat": the camera would have applied a
-        // curve before showing it to anyone, so the pipeline does too. The
-        // plugin says which kind of pixels these are; nothing here asks about
-        // file formats.
         let opening = imgvwr_develop::opening_settings(as_shot, entry.scene.rendering());
         Ok(DevelopState {
             width,
@@ -397,21 +293,12 @@ impl DevelopService {
             as_shot,
             edited: stored.is_some(),
             settings: stored.unwrap_or(opening),
-            // A RAW file has no decoder in the webview; anything the codec
-            // registry handles can be shown directly and only needs the
-            // develop path once it has actually been edited. A fused bracket
-            // is the other exception: the file at this path is one exposure,
-            // not the photograph, so only a render shows the truth.
+            // A fused path's file is one exposure, not the photograph — only a render shows it.
             needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)) || self.is_fused(path),
             hdr: entry.hdr.clone(),
         })
     }
 
-    /// The exposure this frame wants, measured from the light it recorded.
-    ///
-    /// Rendered small on purpose: brightness is a statistic of the whole
-    /// frame, and a few hundred pixels give the same percentiles as twenty
-    /// million for a fraction of the time.
     pub fn auto_exposure(&self, path: &str, settings: &DevelopSettings) -> Result<f32, String> {
         const MEASURE_EDGE: u32 = 400;
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
@@ -426,27 +313,10 @@ impl DevelopService {
         Ok(imgvwr_develop::auto_exposure(&linear))
     }
 
-    /// Where this frame is sharpest, in the coordinates of the cropped image.
-    ///
-    /// In two passes, because one cannot work. A downscaled frame is where the
-    /// candidates are (which parts have detail, light, and a plausible claim
-    /// to being the subject) and it is emphatically not where the answer is:
-    /// at 500 pixels across, a cable thirty pixels out of focus looks exactly
-    /// as resolved as an eyelash, because a downscale softens everything by
-    /// about that much anyway. So each candidate is then rendered at its true
-    /// size — a small patch, the size of the loupe itself — and the pixels are
-    /// asked directly. Defocus at 1:1 is unmistakable.
-    ///
-    /// The second pass costs a handful of small region renders on an image
-    /// that is already open and decoded, against the alternative of pointing
-    /// the loupe confidently at blurred foreground.
+    /// Two passes: a downscale hides defocus, so coarse candidates are re-measured at 1:1.
     pub fn focus_point(&self, path: &str, settings: &DevelopSettings) -> Result<[f32; 2], String> {
-        /// Wide enough to nominate regions; see above for why not to trust it.
         const MEASURE_EDGE: u32 = 500;
-        /// Native pixels across each probe — the loupe's own order of size, so
-        /// what is measured is what the user will be shown.
         const PROBE_EDGE: u32 = 224;
-        /// How many places are worth the second look.
         const CANDIDATES: usize = 5;
 
         let entry = self.scene_for(path).map_err(|e| e.to_string())?;
@@ -463,8 +333,7 @@ impl DevelopService {
             return Ok([0.5, 0.5]);
         };
 
-        // Nothing to look closer at: the coarse pass already saw this image at
-        // very nearly its own size, so a probe would render the same pixels.
+        // The coarse pass already saw near-native pixels; a probe would render the same.
         let displayed = settings.crop.output_size(entry.scene.native_size(), u32::MAX);
         let longest = displayed.0.max(displayed.1);
         if longest <= MEASURE_EDGE * 2 || candidates.len() == 1 {
@@ -489,8 +358,7 @@ impl DevelopService {
                     region,
                 )
                 .map(|patch| imgvwr_develop::resolved_detail(&patch))
-                // A probe that would not render says nothing rather than
-                // disqualifying a candidate the coarse pass liked.
+                // A failed probe ranks last rather than erroring the whole search.
                 .unwrap_or(f32::NEG_INFINITY);
                 ((x, y), detail)
             })
@@ -500,7 +368,6 @@ impl DevelopService {
         Ok([best.0, best.1])
     }
 
-    /// Render one preview frame and keep its encoded bytes addressable.
     pub fn render(
         &self,
         path: &str,
@@ -537,14 +404,7 @@ impl DevelopService {
         })
     }
 
-    /// White balance that renders the point at normalised (x, y) neutral.
-    /// Sample a point the user clicked on the picture they can see.
-    ///
-    /// Takes the whole settings rather than just the balance, because the
-    /// point arrives in the cropped image's coordinates and only the crop
-    /// knows where that is on the sensor. Passing it straight through would
-    /// sample the middle of the frame when the user clicked the middle of a
-    /// corner crop.
+    /// Takes the whole settings: the point arrives in cropped-image coordinates and only the crop can map it to the sensor.
     pub fn pick_white_balance(
         &self,
         path: &str,
@@ -567,8 +427,7 @@ impl DevelopService {
             .map_err(|e| e.to_string())
     }
 
-    /// Encoded bytes for a token, for the `develop:` protocol handler. Frames
-    /// are cloned rather than removed: the webview may re-request a URL.
+    /// Cloned rather than removed: the webview may re-request a URL.
     pub fn frame(&self, token: u64) -> Option<Vec<u8>> {
         let frames = self.frames.lock().unwrap();
         frames
@@ -577,12 +436,7 @@ impl DevelopService {
             .map(|(_, bytes)| bytes.clone())
     }
 
-    /// Carry out one photograph's export. The only place this app writes
-    /// pixels anywhere, and always into a folder the user picked.
-    ///
-    /// A `Copy` job never touches the pipeline at all — that is the whole
-    /// point of it — so an export of a shoot nobody has edited is a folder of
-    /// file copies and takes no longer than the disk does.
+    /// The only place this app writes pixels, always into a folder the user picked.
     pub fn export(&self, job: &ExportJob, plan: &ExportPlan) -> Result<Exported, String> {
         let folder = Path::new(&plan.folder);
         if !folder.is_dir() {
@@ -593,8 +447,6 @@ impl DevelopService {
         match job {
             ExportJob::Copy { path } => {
                 let from = Path::new(path);
-                // A copy keeps the JPEG it is copying, so the extension comes
-                // from the source rather than from the plan's format.
                 let ext = match plan.format {
                     ExportFormat::Png => "png",
                     ExportFormat::Jpeg { .. } => "jpg",
@@ -610,13 +462,10 @@ impl DevelopService {
             ExportJob::Render { path, exif } => {
                 let entry = self.scene_for(path).map_err(|e| e.to_string())?;
                 let (w, h) = entry.scene.native_size();
-                // Whatever the darkroom would be showing: the stored edit, or
-                // what this kind of pixels opens with when nobody has edited it.
                 let settings = self.stored_settings(path)?.unwrap_or_else(|| {
                     imgvwr_develop::opening_settings(entry.scene.as_shot(), entry.scene.rendering())
                 });
-                // The same resolution the preview makes: an untouched raw
-                // exports the camera's own pixels, not an imitation of them.
+                // Through `resolved`: an untouched raw exports the camera's own pixels, not an imitation.
                 let (scene, settings, tuning, _source) = entry.resolved(&settings);
                 let developed = imgvwr_develop::render_looked(
                     scene,
@@ -635,9 +484,7 @@ impl DevelopService {
                 )
                 .ok_or_else(|| "developed buffer size mismatch".to_string())?;
 
-                // A fused bracket says so in its name: the export folder ends
-                // up beside the frames' own exports, and "DSC_1156-HDR" is
-                // the honest answer to which file is the merge.
+                // "DSC_1156-HDR" marks the merge beside the frames' own exports.
                 let named = if self.is_fused(path) {
                     let stem = Path::new(path)
                         .file_stem()
@@ -699,8 +546,7 @@ impl DevelopService {
             })
             .map_err(|e| e.to_string())?;
         match rows.next() {
-            // Clamped on the way out: the row may have been written by an
-            // older version with different ranges.
+            // Clamped on the way out: the row may predate the current ranges.
             Some(row) => Ok(Some(row.map_err(|e| e.to_string())?.clamped())),
             None => Ok(None),
         }
@@ -753,8 +599,6 @@ impl DevelopService {
         Ok(())
     }
 
-    /// Forget an image's edit entirely, so it goes back to being untouched
-    /// rather than being stored as a neutral edit.
     pub fn clear_settings(&self, path: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM develop WHERE path = ?1", [path])
@@ -762,7 +606,6 @@ impl DevelopService {
         Ok(())
     }
 
-    /// Paths with a stored edit, for badging the gallery.
     pub fn edited_paths(&self, paths: &[String]) -> Result<Vec<String>, String> {
         let conn = self.conn.lock().unwrap();
         let mut out = Vec::new();
@@ -783,10 +626,6 @@ impl DevelopService {
         Ok(out)
     }
 
-    /// The stored crop of every path among `paths` that has one, for the
-    /// gallery's miniatures: a cropped photograph should look cropped
-    /// everywhere it appears, not only where the develop pipeline renders
-    /// it. A straight DB read — nothing here opens an image.
     pub fn crops(&self, paths: &[String]) -> Result<HashMap<String, Crop>, String> {
         let conn = self.conn.lock().unwrap();
         let mut out = HashMap::new();
@@ -814,8 +653,7 @@ impl DevelopService {
                 .map_err(|e| e.to_string())?;
             for row in rows {
                 let (path, crop) = row.map_err(|e| e.to_string())?;
-                // A stored edit whose crop is the whole frame is not a crop;
-                // the miniature has nothing to say about it.
+                // A whole-frame crop is not a crop.
                 if !crop.is_full() {
                     out.insert(path, crop);
                 }
@@ -826,11 +664,7 @@ impl DevelopService {
 }
 
 impl DevelopService {
-    /// The look tuning for a path, measured once and cached in the DB.
-    ///
-    /// The 384px measuring render costs more than the whole open otherwise
-    /// does; the answer only changes when the file or the fitted model
-    /// does, and both are in the key.
+    /// Cached in the DB: the measuring render costs more than the whole open; file mtime and model tag key it.
     fn tuning_for(
         &self,
         path: &str,
@@ -863,9 +697,7 @@ impl DevelopService {
                                 wb_r: row.get::<_, f64>(2)? as f32,
                                 wb_b: row.get::<_, f64>(3)? as f32,
                                 saturation: row.get::<_, f64>(4)? as f32,
-                                // Zero in every shipped 5-axis row; a
-                                // 7-axis refit changes model_tag and
-                                // invalidates this cache wholesale.
+                                // Zero in every shipped 5-axis row; a 7-axis refit changes model_tag and invalidates the cache.
                                 shadow_lift: 0.0,
                                 highlight_shift: 0.0,
                                 chroma_nr: row.get::<_, f64>(5)? as f32,
@@ -911,22 +743,7 @@ impl DevelopService {
     }
 }
 
-/// The camera look's per-image half for a freshly opened scene, or None for
-/// pixels the look does not apply to.
-///
-/// Measured from a small full-frame render at the camera's own balance —
-/// the frame the camera itself metered — plus the ISO it recorded. A scene
-/// that fails to render small would fail everywhere else too, so a failure
-/// here just means the look falls back to its per-image neutral.
-fn measure_tuning(path: &str, scene: &dyn SceneImage) -> Option<imgvwr_develop::LookTuning> {
-    measure_tuning_checked(path, scene).map(|(t, _)| t)
-}
-
-/// The same, also reporting whether the decode came out FLAT — every pixel
-/// the same value, which is what the system decoder produces for the rare
-/// file it cannot actually read (pixel-shift exposure brackets). A flat
-/// scene-referred decode means the raw pixels are unusable and the caller
-/// should fall back to the camera's embedded JPEG.
+/// `flat` = every pixel equal: what the system decoder produces for a file it cannot actually read (pixel-shift brackets).
 fn measure_tuning_checked(
     path: &str,
     scene: &dyn SceneImage,
@@ -959,18 +776,11 @@ fn measure_tuning_checked(
     ))
 }
 
-/// The camera's own rendering of a raw frame, as a scene: the paired .JPG
-/// the camera wrote beside it when shooting RAW+JPEG — those very bytes
-/// are what Nikon makes of this frame — or, failing that, the full-size
-/// JPEG embedded in the raw file itself, which is the same rendering at a
-/// lower codec quality.
 fn camera_jpeg_scene(path: &str) -> Option<Box<dyn SceneImage>> {
     sibling_camera_jpeg(path).or_else(|| embedded_fallback(path))
 }
 
-/// The camera-written .JPG beside a raw file. Same stem is not enough — a
-/// stranger's JPG that merely shares the name is not this photograph — so
-/// the EXIF capture time has to agree too.
+/// Same stem is not enough — the EXIF capture time must agree too.
 fn sibling_camera_jpeg(path: &str) -> Option<Box<dyn SceneImage>> {
     let raw = Path::new(path);
     if !imgvwr_raw::is_raw_extension(&extension_of(path)) {
@@ -995,9 +805,6 @@ fn sibling_camera_jpeg(path: &str) -> Option<Box<dyn SceneImage>> {
     None
 }
 
-/// The camera's own JPEG out of a raw file whose decode came back flat,
-/// as a scene — oriented, already rendered, honest pixels instead of a
-/// black rectangle.
 fn embedded_fallback(path: &str) -> Option<Box<dyn SceneImage>> {
     let bytes = imgvwr_raw::embedded_jpeg(Path::new(path))?;
     let img = image::load_from_memory(&bytes).ok()?;
@@ -1012,7 +819,6 @@ fn embedded_fallback(path: &str) -> Option<Box<dyn SceneImage>> {
     )))
 }
 
-/// A decoded image turned the way its EXIF says it was shot.
 fn oriented(rgba: image::RgbaImage, orientation: u32) -> image::RgbaImage {
     match orientation {
         6 => image::imageops::rotate90(&rgba),
@@ -1022,25 +828,14 @@ fn oriented(rgba: image::RgbaImage, orientation: u32) -> image::RgbaImage {
     }
 }
 
-/// Render one image straight to WebP thumbnail bytes, for formats the codec
-/// registry cannot decode. Used by the thumbnail service so RAW files appear
-/// in the gallery like anything else.
-///
-/// Deliberately neutral: thumbnails show the photograph, not the edit, so the
-/// thumbnail cache stays valid while the user works.
+/// Deliberately neutral: thumbnails show the photograph, not the edit, so the cache stays valid while the user works.
 pub fn thumbnail_via_develop(
     registry: &SceneRegistry,
     path: &Path,
     max_edge: u32,
 ) -> Result<Vec<u8>, String> {
     let scene = registry.open(path).map_err(|e| e.to_string())?;
-    // The same look the viewer will open it with, so the grid does not
-    // disagree with the picture it leads to. Stored edits are deliberately not
-    // consulted: a thumbnail is a cheap index entry, and reading the database
-    // once per cell would make scrolling a folder a database scan.
     let measured = measure_tuning_checked(&path.to_string_lossy(), scene.as_ref());
-    // A flat decode gets the same embedded-JPEG fallback the viewer uses,
-    // so the grid never shows a black rectangle for a readable photograph.
     let (scene, tuning) = match measured {
         Some((_, true)) => match embedded_fallback(&path.to_string_lossy()) {
             Some(fallback) => (fallback, None),
@@ -1066,12 +861,6 @@ pub fn thumbnail_via_develop(
         .map_err(|e| format!("webp encode failed: {e:?}"))
 }
 
-/// Drop the oldest frames until what is held fits `budget`, never going below
-/// [`FRAMES_KEPT`].
-///
-/// Oldest-first because a token's usefulness really is its age: the webview
-/// fetches a frame once, right after being handed the token, and everything
-/// still on screen was handed out recently.
 fn evict_past(frames: &mut VecDeque<(u64, Vec<u8>)>, budget: usize) {
     let mut held: usize = frames.iter().map(|(_, bytes)| bytes.len()).sum();
     while held > budget && frames.len() > FRAMES_KEPT {
@@ -1101,11 +890,6 @@ fn extension_of(path: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Parse a `develop:` preview URL into its frame token.
-///
-/// The path carries a monotonic token rather than the settings themselves:
-/// every render gets a fresh URL, so the webview's own image cache can never
-/// hand back the previous edit, and no settings are re-parsed or re-applied.
 pub fn parse_frame_token(uri_path: &str) -> Option<u64> {
     uri_path
         .rsplit('/')
@@ -1128,9 +912,7 @@ mod tests {
         (dir, svc)
     }
 
-    /// A stand-in for a raw plugin: sensor-like pixels that still want a look
-    /// chosen. Lets the "what does an untouched image open as" rule be tested
-    /// without a raw file, a platform decoder, or two seconds of demosaicing.
+    /// A raw-plugin stand-in: scene-referred pixels without a raw file, platform decoder, or demosaic.
     struct SensorFormat;
 
     struct SensorScene;
@@ -1208,9 +990,7 @@ mod tests {
         path
     }
 
-    /// A tiny bracket on disk: the same textured scene at three exposures.
-    /// Blobby texture, not per-pixel noise — verified alignment refuses
-    /// static, and rightly.
+    /// Blobby texture, not per-pixel noise: alignment (rightly) refuses static.
     fn bracket(dir: &Path) -> Vec<String> {
         let noise = |gx: u32, gy: u32, salt: u32| -> i32 {
             (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97)) as i32
@@ -1237,7 +1017,6 @@ mod tests {
         let paths = bracket(dir.path());
         let face = paths[1].clone();
 
-        // Before registration the face is an ordinary JPEG: shown directly.
         let before = svc.state(&face).unwrap();
         assert!(!before.needs_render);
         assert_eq!(before.hdr, HdrOutcome::Plain);
@@ -1248,9 +1027,6 @@ mod tests {
         };
         svc.set_fusions(HashMap::from([(face.clone(), recipe(&paths))]));
 
-        // After: the file at this path is one exposure, not the photograph,
-        // so the webview must ask for a render — of the fusion. And the state
-        // says so, which is what the panel shows the user.
         let state = svc.state(&face).unwrap();
         assert!(state.needs_render);
         assert_eq!((state.width, state.height), (60, 40), "same framing, fused");
@@ -1262,8 +1038,6 @@ mod tests {
             }
         );
 
-        // The export of that path renders the fusion and says so in the name;
-        // the folder of originals gains nothing.
         let out = tempfile::tempdir().unwrap();
         let job = ExportJob::Render {
             path: face.clone(),
@@ -1282,7 +1056,6 @@ mod tests {
         assert!(exported.path.ends_with("DSC_0001-HDR.jpg"), "{}", exported.path);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3 + 1, "3 frames + develop.db");
 
-        // Un-registering drops the fused scene: the path is the file again.
         svc.set_fusions(HashMap::new());
         let plain = svc.state(&face).unwrap();
         assert!(!plain.needs_render);
@@ -1293,7 +1066,7 @@ mod tests {
     #[test]
     fn a_bracket_that_cannot_be_aligned_shows_its_face_rather_than_an_error() {
         let (dir, svc) = service();
-        // Two frames that share nothing: alignment must refuse them.
+        // Two frames that share nothing, so alignment must refuse them.
         let face = dir.path().join("DSC_0100.JPG");
         image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(60, 40, |x, y| {
             image::Rgb([((x * 4) % 251) as u8, ((y * 7) % 251) as u8, 40])
@@ -1316,9 +1089,6 @@ mod tests {
             },
         )]));
 
-        // The photograph still opens — as the face frame, whole — and the
-        // state carries the refusal, so the panel can say why instead of the
-        // user wondering where the HDR went.
         let state = svc.state(&face_path).unwrap();
         assert_eq!((state.width, state.height), (60, 40));
         match state.hdr {
@@ -1348,7 +1118,6 @@ mod tests {
     fn sensor_pixels_open_with_a_look_and_a_rendered_file_opens_untouched() {
         let (dir, svc) = service_with_sensor();
 
-        // Nothing is stored for either, so both report their opening state.
         let raw_like = dir.path().join("frame.sensor");
         std::fs::write(&raw_like, b"pretend sensor data").unwrap();
         let opened = svc.state(raw_like.to_str().unwrap()).unwrap();
@@ -1406,8 +1175,7 @@ mod tests {
             .unwrap();
         assert_eq!((whole.width, whole.height), (60, 40));
 
-        // Half the width, a quarter of the height: the rendered frame is the
-        // crop, not the frame with the crop drawn on it.
+        // The rendered frame is the crop itself, not the frame with the crop drawn on it.
         let cropped_settings = DevelopSettings {
             crop: imgvwr_develop::Crop { x: 0.25, y: 0.25, width: 0.5, height: 0.25, angle: 0.0 },
             ..DevelopSettings::neutral(WhiteBalance::D65)
@@ -1424,10 +1192,7 @@ mod tests {
 
     #[test]
     fn a_straightened_crop_still_renders_at_the_size_asked_for() {
-        // The failure this guards: a rotated crop needs a patch bigger than
-        // itself, and asking the plugin for that patch at max_edge would
-        // leave the crop short of it — resolution quietly lost the further
-        // the picture is straightened.
+        // Guards: a rotated crop needs a patch bigger than itself, or resolution is quietly lost as it straightens.
         let (dir, svc) = service();
         let path = sample(dir.path(), "s.png");
         let path = path.to_str().unwrap();
@@ -1575,8 +1340,7 @@ mod tests {
         let path = sample(dir.path(), "f.png");
         let path = path.to_str().unwrap();
 
-        // Small frames, of which a great many fit in the budget: a drag must
-        // not cost the caller the frame it is showing.
+        // Many small frames fit the budget: a drag must not cost the frame being shown.
         let mut tokens = Vec::new();
         for i in 0..200 {
             tokens.push(render_at(&svc, path, i, 30).token);
@@ -1587,10 +1351,7 @@ mod tests {
 
     #[test]
     fn a_stream_of_small_frames_does_not_evict_the_one_on_screen() {
-        // The loupe, dragged. It renders a small square per movement, and the
-        // photograph behind it is one large frame that must survive all of
-        // them — counting slots rather than bytes is what broke this, and the
-        // canvas went black under a working loupe.
+        // Guards: counting slots instead of bytes let a loupe drag evict the on-screen frame.
         let (dir, svc) = service();
         let path = sample(dir.path(), "f.png");
         let path = path.to_str().unwrap();
@@ -1611,8 +1372,7 @@ mod tests {
         assert!(held <= 550, "held {held}");
         assert_eq!(frames.back().map(|(t, _)| *t), Some(19), "newest kept");
 
-        // One frame larger than the whole budget must not empty the ring: an
-        // empty ring means every warmed neighbour developed again from scratch.
+        // One frame larger than the whole budget must not empty the ring.
         let mut huge: VecDeque<(u64, Vec<u8>)> =
             (0..6).map(|i| (i, vec![0u8; 10_000])).collect();
         evict_past(&mut huge, 1);
@@ -1698,9 +1458,6 @@ mod tests {
     #[test]
     fn a_copy_job_never_opens_the_pipeline() {
         use crate::services::export::ExportSize;
-        // The point of copying: an untouched frame exports as the camera's
-        // own file, so a format the develop pipeline cannot even open still
-        // exports fine.
         let (dir, svc) = service();
         let img = image::RgbImage::from_pixel(24, 16, image::Rgb([10, 20, 30]));
         let source = dir.path().join("DSC_1234.JPG");
@@ -1749,9 +1506,7 @@ mod tests {
 
     #[test]
     fn a_raw_file_is_not_claimed_by_the_plain_image_plugin() {
-        // The registry in these tests holds only the image-crate plugin, so a
-        // TIFF-container raw file must fall through rather than being claimed
-        // and then failing to decode — the bug that made NEF thumbnails fail.
+        // A TIFF-container raw must fall through, not be claimed by the image plugin — the bug that broke NEF thumbnails.
         let (dir, svc) = service();
         let path = dir.path().join("DSC_0008.NEF");
         std::fs::write(&path, [0x49u8, 0x49, 0x2a, 0x00, 0x08, 0, 0, 0]).unwrap();

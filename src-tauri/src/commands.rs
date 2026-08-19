@@ -19,12 +19,7 @@ use crate::services::watcher::WatchService;
 use imgvwr_core::Region;
 use imgvwr_develop::{DevelopSettings, Overlay, Preset};
 
-/// Run a streamed folder scan: entries arrive as `ScanBatch` events, the
-/// last one marked `done`. Walking a big (or cloud-backed) tree can take
-/// seconds, so nothing here may touch the main thread — the command is
-/// async and the walk runs on the blocking pool, epoch-guarded so opening
-/// another scope cancels it. The first batch is small for a fast first
-/// paint. Resolves when the walk ends; an unreadable root rejects.
+/// Entries arrive as `ScanBatch` events (last marked `done`), epoch-guarded so a newer scope cancels the walk.
 #[tauri::command]
 #[specta::specta]
 pub async fn scan_folder(
@@ -35,12 +30,10 @@ pub async fn scan_folder(
     recursive: bool,
     epoch: u64,
 ) -> Result<(), String> {
-    // Let the webview load originals from this folder via the asset protocol.
     app.asset_protocol_scope()
         .allow_directory(&path, recursive)
         .map_err(|e| format!("failed to extend asset scope: {e}"))?;
-    // Watch from the start of the walk, not the end: a card still copying is
-    // exactly when a folder changes under you, and the scan can take seconds.
+    // Watch before the walk, not after: changes during a seconds-long scan must not be missed.
     watcher.watch(&app, path.clone(), recursive, epoch);
     let service = Arc::clone(&service);
     tauri::async_runtime::spawn_blocking(move || {
@@ -75,8 +68,6 @@ pub async fn scan_folder(
     .map_err(|e| e.to_string())?
 }
 
-/// Async: listing a cloud-backed directory can block for seconds, and this
-/// runs on every folder-tree navigation.
 #[tauri::command]
 #[specta::specta]
 pub async fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
@@ -88,9 +79,7 @@ pub async fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Count images per folder off the main thread, emitting one event per
-/// result — cloud-backed folders (Dropbox, iCloud) can take seconds each,
-/// so this must never block the tree display.
+/// Results arrive as `DirCountReady` events, one per folder.
 #[tauri::command]
 #[specta::specta]
 pub fn request_dir_counts(app: AppHandle, paths: Vec<String>) {
@@ -103,9 +92,7 @@ pub fn request_dir_counts(app: AppHandle, paths: Vec<String>) {
     });
 }
 
-/// Read per-image metadata (dimensions, EXIF) for the stats panel off the
-/// main thread, emitting batched events. Sequential on one thread — gentle
-/// on cloud-backed folders — and epoch-guarded so a folder change stops it.
+/// Results arrive as `MetaBatchReady` events, epoch-guarded.
 #[tauri::command]
 #[specta::specta]
 pub fn request_meta(
@@ -137,11 +124,7 @@ pub fn request_meta(
     });
 }
 
-/// Metadata for one file, with raw dimensions filled in by the raw plugin.
-///
-/// No Rust decoder can measure a raw file, and `imgvwr-core` must not depend
-/// on a platform plugin to find out — so the two are composed here, at the
-/// layer that already knows about both.
+/// Raw dimensions come from the raw plugin: no Rust decoder can measure a raw file.
 fn read_meta_composed(path: &std::path::Path) -> std::io::Result<ImageMeta> {
     let mut meta = imgvwr_core::read_meta(path)?;
     if meta.width.is_none() {
@@ -160,12 +143,7 @@ pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
         .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
 }
 
-/// Move photographs to the platform Trash, reporting on each one.
-///
-/// The frontend has already asked the user, and asks every time — this end
-/// never prompts, never guesses which paths were meant, and never reports
-/// more as gone than actually went. Async + `spawn_blocking` like every other
-/// filesystem command: a slow volume must not freeze the window.
+/// Never prompts (confirmation is the frontend's job) and never reports more as trashed than actually went.
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_files(paths: Vec<String>) -> Result<TrashOutcome, String> {
@@ -174,8 +152,7 @@ pub async fn delete_files(paths: Vec<String>) -> Result<TrashOutcome, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Put the selected photographs on the system clipboard as file references,
-/// so a paste elsewhere — the Finder, a chat — receives the files themselves.
+/// Copies file references, not pixel data — a paste receives the files themselves.
 #[tauri::command]
 #[specta::specta]
 pub async fn copy_files(paths: Vec<String>) -> Result<u32, String> {
@@ -184,12 +161,7 @@ pub async fn copy_files(paths: Vec<String>) -> Result<u32, String> {
         .map_err(|e| e.to_string())?
 }
 
-/// Begin a new collection, invalidating everything in flight for the old one.
-///
-/// Also stops watching: every scope change goes through here, and a folder
-/// nobody is looking at should not be reported on. A folder scope re-watches
-/// a moment later in `scan_folder`; a remote source has no folder to watch,
-/// which is exactly the case that would otherwise have leaked a watcher.
+/// Also stops the watcher: a remote scope never re-watches and would otherwise leak one.
 #[tauri::command]
 #[specta::specta]
 pub fn new_epoch(
@@ -211,17 +183,13 @@ pub fn request_thumbnails(
     service.request(&app, paths, epoch);
 }
 
-/* Embedding commands — thin adapters over the embedding service, which is
- * itself a thin host around the imgvwr-embed plugin crate. */
-
 #[tauri::command]
 #[specta::specta]
 pub fn embedding_models(service: State<'_, Arc<EmbeddingService>>) -> Vec<EmbedModelInfo> {
     service.models()
 }
 
-/// Download (first time) and activate a model; progress arrives as
-/// `embedding-status` events.
+/// Downloads on first use; progress arrives as `embedding-status` events.
 #[tauri::command]
 #[specta::specta]
 pub fn embedding_select(
@@ -232,8 +200,7 @@ pub fn embedding_select(
     service.select(&app, model_id);
 }
 
-/// Compute (or load from cache) one vector per image in the background;
-/// progress arrives as `embedding-progress` events.
+/// Progress arrives as `embedding-progress` events.
 #[tauri::command]
 #[specta::specta]
 pub fn embedding_index(
@@ -252,9 +219,6 @@ pub struct SimilarityScore {
     pub path: String,
     pub score: f32,
 }
-
-/* Ranking runs a model forward pass; async + spawn_blocking keeps it off
- * the main thread so the window never freezes while it computes. */
 
 #[tauri::command]
 #[specta::specta]
@@ -275,10 +239,7 @@ pub async fn embedding_rank_image(
     .map_err(|e| e.to_string())?
 }
 
-/// Similarity of each of `paths` to the few before it (scores[i][d-1]
-/// describes paths[i] and paths[i-d]), from vectors already indexed; null
-/// where a vector is not yet known. Scene detection calls this over whole
-/// collections, which is exactly why it never computes vectors itself.
+/// scores[i][d-1] compares paths[i] with paths[i-d]; null until indexed — never computes vectors itself.
 #[tauri::command]
 #[specta::specta]
 pub async fn embedding_banded_scores(
@@ -292,9 +253,7 @@ pub async fn embedding_banded_scores(
         .map_err(|e| e.to_string())?
 }
 
-/// Detect faces over the collection in the background; progress arrives as
-/// `faces-progress` events. Per-photo results are cached as sidecars, so a
-/// repeat pass over an unchanged folder is a cache read.
+/// Progress arrives as `faces-progress` events.
 #[tauri::command]
 #[specta::specta]
 pub fn faces_index(
@@ -312,9 +271,7 @@ pub fn faces_index(
     });
 }
 
-/// Cluster every detected face of `paths` into people, propagating identity
-/// onto near-identical faceless photos. Cheap to re-run: vectors and
-/// detections are cached, so this is dot products and bookkeeping.
+/// Also propagates identity onto near-identical faceless photos.
 #[tauri::command]
 #[specta::specta]
 pub async fn faces_people(
@@ -334,9 +291,7 @@ pub async fn faces_people(
     .map_err(|e| e.to_string())?
 }
 
-/// Name (or, with an empty name, un-name) a person cluster of the most
-/// recent clustering. Names anchor to the cluster's identity vectors, so
-/// naming two fragments alike merges them on the next clustering.
+/// An empty name un-names; naming two fragments alike merges them on the next clustering.
 #[tauri::command]
 #[specta::specta]
 pub fn faces_rename(
@@ -348,15 +303,13 @@ pub fn faces_rename(
     faces.rename(&cluster_id, &name, merge)
 }
 
-/// Every name ever given to a person, for the rename input's suggestions.
 #[tauri::command]
 #[specta::specta]
 pub fn faces_names(faces: State<'_, Arc<FaceService>>) -> Result<Vec<String>, String> {
     faces.known_names()
 }
 
-/// Per-image pixel statistics (histograms, color triangle) for the info
-/// panel — computed from the cached thumbnail, off the main thread.
+/// Computed from the cached thumbnail, not the original.
 #[tauri::command]
 #[specta::specta]
 pub async fn image_stats(
@@ -368,9 +321,6 @@ pub async fn image_stats(
         .await
         .map_err(|e| e.to_string())?
 }
-
-/* Label commands — the app-local star/tag store. Reads can span thousands
- * of paths, so everything runs off the main thread like ranking does. */
 
 #[tauri::command]
 #[specta::specta]
@@ -384,9 +334,7 @@ pub async fn labels_for_paths(
         .map_err(|e| e.to_string())?
 }
 
-/* Writes take a list of paths because rating and tagging apply to the
- * selection, which can be the whole folder. Both answer for every path they
- * were given, so the frontend can install the result as it stands. */
+// Label writes answer for every path given, so the frontend can install the result as-is.
 
 #[tauri::command]
 #[specta::specta]
@@ -433,13 +381,6 @@ pub async fn embedding_rank_text(
     .map_err(|e| e.to_string())?
 }
 
-/* Develop commands — thin adapters over DevelopService. Opening a raw file
- * and rendering it are both real compute, so every one of these is async +
- * spawn_blocking: a forward pass on the main thread freezes the window. */
-
-/// Open an image for editing and report its size, camera white balance and
-/// any stored edit. Slow on first call for a raw file (the decoder parses and
-/// sets up demosaicing); every later render of the same image is cheap.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_state(
@@ -452,20 +393,14 @@ pub async fn develop_state(
         .map_err(|e| e.to_string())?
 }
 
-/// The named starting points an edit can be set to.
-///
-/// Synchronous work, but async like its neighbours so the frontend calls every
-/// develop command the same way. Fetched rather than duplicated in TypeScript:
-/// the numbers are measured against real files by the `match_camera` example
-/// and there should be exactly one place they live.
+/// Fetched rather than duplicated in TypeScript: the preset numbers live only in `imgvwr_develop`.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_presets() -> Result<Vec<Preset>, String> {
     Ok(imgvwr_develop::presets())
 }
 
-/// The exposure this image wants, in stops, measured from the light it
-/// recorded rather than from the preview it currently produces.
+/// Returns stops, measured from the recorded light rather than the current preview.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_auto_exposure(
@@ -479,8 +414,6 @@ pub async fn develop_auto_exposure(
         .map_err(|e| e.to_string())?
 }
 
-/// Where this frame is sharpest — what the loupe points at before the user
-/// has pointed it anywhere themselves.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_focus_point(
@@ -494,9 +427,7 @@ pub async fn develop_focus_point(
         .map_err(|e| e.to_string())?
 }
 
-/// Render a preview at `max_edge` under `settings`. The pixels are fetched
-/// separately over the `develop:` protocol using the returned token; the
-/// histogram of those same pixels comes back here.
+/// Pixels are fetched separately over the `develop:` protocol using the returned token.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_render(
@@ -521,8 +452,6 @@ pub async fn develop_render(
     .map_err(|e| e.to_string())?
 }
 
-/// Sample a point and report the white balance that renders it neutral —
-/// the eyedropper. Runs off the main thread like every other develop call.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_pick_white_balance(
@@ -538,8 +467,7 @@ pub async fn develop_pick_white_balance(
         .map_err(|e| e.to_string())?
 }
 
-/// The wire form of a render region. Mirrors `imgvwr_core::Region`, which is
-/// a pure-core type and deliberately carries no serialisation attributes.
+/// Mirrors `imgvwr_core::Region`, which deliberately carries no serde attributes.
 #[derive(Debug, Clone, Copy, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RegionArg {
@@ -562,7 +490,6 @@ pub async fn develop_save(
         .map_err(|e| e.to_string())?
 }
 
-/// Drop an image's edit so it counts as untouched again.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_reset(
@@ -578,7 +505,6 @@ pub async fn develop_reset(
     .map_err(|e| e.to_string())?
 }
 
-/// Which of these paths have a stored edit — for badging the gallery.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_edited_paths(
@@ -591,9 +517,7 @@ pub async fn develop_edited_paths(
         .map_err(|e| e.to_string())?
 }
 
-/// The stored crops among these paths, so the gallery can draw a cropped
-/// photograph's miniature already cropped. Whole-frame edits are left out:
-/// only paths whose crop actually takes something are returned.
+/// Whole-frame crops are omitted: only crops that actually take something are returned.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_crops(
@@ -606,13 +530,7 @@ pub async fn develop_crops(
         .map_err(|e| e.to_string())?
 }
 
-/// Install which paths open as fused exposure brackets — the face frame's
-/// path mapped to every frame of its bracket, the whole folder at once.
-///
-/// Detection lives on the UI side, where the EXIF is; from this call on the
-/// registered paths simply *are* the fused photographs: the viewer shows
-/// the fusion, edits store against the face path, and export renders it.
-/// Nothing is written anywhere by this — the merge is virtual until Export.
+/// Writes nothing: the merge stays virtual until Export.
 #[tauri::command]
 #[specta::specta]
 pub fn develop_set_fusions(
@@ -622,11 +540,7 @@ pub fn develop_set_fusions(
     service.set_fusions(fusions);
 }
 
-/// Export one photograph into the folder the plan names.
-///
-/// One file per call rather than a whole batch, so the UI owns the progress,
-/// the cancellation and the order — and so a single failure is one line in a
-/// report rather than the end of the export.
+/// One file per call, not a batch: the UI owns progress, cancellation and order.
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_export(

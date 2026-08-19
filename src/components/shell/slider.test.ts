@@ -4,9 +4,6 @@ import { onStep, parseNumber, positionOf } from "./Slider";
 
 describe("parseNumber", () => {
   it("reads back what the control wrote", () => {
-    // Every readout in the app, edited in place and typed over. Somebody who
-    // clicks "2048 px" and types "1600" has left the unit behind, and
-    // refusing that would be pedantry about a value that was never unclear.
     expect(parseNumber("2048 px")).toBe(2048);
     expect(parseNumber("+0.50 EV")).toBe(0.5);
     expect(parseNumber("-1.25")).toBe(-1.25);
@@ -22,7 +19,6 @@ describe("parseNumber", () => {
   });
 
   it("says no rather than guessing", () => {
-    // A readout put back unchanged is better than an edit nobody asked for.
     expect(parseNumber("")).toBeNull();
     expect(parseNumber("full size")).toBeNull();
     expect(parseNumber("  ")).toBeNull();
@@ -37,8 +33,7 @@ describe("onStep", () => {
   });
 
   it("keeps a decimal step reading as a decimal", () => {
-    // The bug this catches: stepping in binary floats makes a tenth of a
-    // degree read as 8.100000000000001 in a panel that says "+8.1°".
+    // Guards: binary-float stepping made a tenth of a degree read as 8.100000000000001.
     expect(onStep(8.1, -45, 45, 0.1)).toBe(8.1);
     expect(onStep(0.30000000000000004, 0, 1, 0.05)).toBe(0.3);
     for (let i = -45; i <= 45; i += 1) {

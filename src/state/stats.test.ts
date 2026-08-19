@@ -37,8 +37,7 @@ function meta(overrides: Partial<ImageMeta>): ImageMeta {
   };
 }
 
-/* Every field, because ExifSubset is a total contract — a photograph either
- * carries a fact or explicitly does not, and there is no third state. */
+// ExifSubset is a total contract: the fixture must state what the photograph does not carry.
 const NO_EXIF = {
   orientation: 1,
   dateTime: null,

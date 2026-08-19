@@ -3,10 +3,6 @@ import { allPanels } from "../../registry/panels";
 import { useAppStore } from "../../state/store";
 import { SidebarResizer } from "./SidebarResizer";
 
-/**
- * Left sidebar: an icon row picks ONE panel; clicking the active icon
- * collapses to a slim rail, the right bar's grammar mirrored.
- */
 export function Sidebar() {
   const visible = useAppStore((s) => s.sidebarVisible);
   const activeId = useAppStore((s) => s.activePanelId);

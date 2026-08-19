@@ -80,8 +80,6 @@ describe("factLines", () => {
   });
 
   it("drops a group the photograph has nothing to say about", () => {
-    // A JPEG with no EXIF still has a name; an empty camera line would be a
-    // blank stripe over the picture saying nothing.
     const lines = factLines(DEFAULT_OVERLAY_FACTS, { entry, meta: undefined, asShot: null });
     expect(lines.map((l) => l.group)).toEqual(["identity"]);
   });
@@ -94,10 +92,7 @@ describe("factLines", () => {
   });
 
   it("says what the camera decided per shot, when the file recorded it", () => {
-    // The answer to "why do these two neighbouring frames look different":
-    // EV joins the exposure line, and the auto white balance solve plus the
-    // Auto Picture Control grade get a line of their own. Zeroes stay
-    // silent — an unmoved dial is not worth covering the photograph for.
+    // Zeroes stay silent: clarity 0 must not appear in the grade line.
     const graded = {
       ...shot,
       exif: { ...EXIF, exposureBias: -1 },
@@ -114,8 +109,7 @@ describe("factLines", () => {
   });
 
   it("ignores an id nobody registered, rather than throwing", () => {
-    // A plugin that is no longer installed leaves its id behind in settings;
-    // that must degrade to silence, as an unknown sort degrades to name order.
+    // An uninstalled plugin's id lingers in settings; it must degrade to silence.
     expect(factLines(["nope", "name"], { entry, meta: shot, asShot: null })[0]?.parts).toEqual([
       "DSC_0178.NEF",
     ]);

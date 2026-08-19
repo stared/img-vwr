@@ -51,8 +51,7 @@ function metaOf(exposures: Record<string, Exposure>): (path: string) => ImageMet
   };
 }
 
-/** The shape of the real eclipse brackets: five frames inside two seconds,
- * shutter and ISO sweeping stops apart. */
+/** The shape of the real eclipse brackets: five frames inside two seconds, exposures sweeping stops apart. */
 const ECLIPSE: Record<string, Exposure> = {
   "DSC_1115.JPG": { at: "2026-08-12 17:36:34", t: 1 / 160 },
   "DSC_1116.JPG": { at: "2026-08-12 17:36:34", t: 1 / 2000 },
@@ -104,9 +103,7 @@ describe("hdrSetsOf", () => {
   });
 
   it("never mistakes an exported merge for a frame of the bracket", () => {
-    // An exported merge carries a source frame's EXIF verbatim — same
-    // moment, same exposure. Counted as a frame, it would join the very
-    // burst it was made from.
+    // An exported merge carries a source frame's EXIF verbatim and would otherwise join the burst it was made from.
     const withMerged: Record<string, Exposure> = {
       ...ECLIPSE,
       "DSC_1115-HDR.jpg": ECLIPSE["DSC_1115.JPG"] as Exposure,
@@ -196,8 +193,7 @@ describe("an HDR set is one photograph to the rest of the app", () => {
 
 describe("exposureValue", () => {
   it("measures the sweep of a real bracket in stops", () => {
-    // 1/8000 against 1/125 at the same aperture is six stops; ISO 100
-    // against 500 is another two and a third.
+    // 1/8000 vs 1/125 is six stops; ISO 100 vs 500 another log2(5).
     const short = exposureValue({ exposureTime: 1 / 8000, fNumber: 1.8, iso: 100 });
     const long = exposureValue({ exposureTime: 1 / 125, fNumber: 1.8, iso: 500 });
     expect(short).not.toBeNull();

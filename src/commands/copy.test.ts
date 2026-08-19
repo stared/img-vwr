@@ -30,8 +30,6 @@ describe("what a copy actually hands over", () => {
   });
 
   it("counts an edit made on the raw for the JPEG standing in front of it", () => {
-    // The raw and the JPEG are one photograph; the crop was made on
-    // whichever file was on screen, and the copy must not shrug it off.
     const plan = copyPlan(candidatesOf([JPEG], [RAW, JPEG], new Set([RAW.path])));
     expect(plan[0]?.kind).toBe("render");
   });
@@ -44,8 +42,6 @@ describe("what a copy actually hands over", () => {
   });
 
   it("renders an HDR face even with no stored edit", () => {
-    // The file at the face's path is one exposure; only the fusion the
-    // develop service renders behind it is the photograph.
     const plan = copyPlan(candidatesOf([PLAIN], [PLAIN], new Set(), new Set([PLAIN.path])));
     expect(plan[0]?.kind).toBe("render");
   });

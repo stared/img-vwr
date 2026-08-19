@@ -4,16 +4,7 @@ import type { FieldCtx, RangeSpec } from "../registry/filters";
 import { getSort } from "../registry/sorts";
 import type { SortDir } from "../registry/sorts";
 
-/**
- * The gallery is a query over the scanned folder — Linear-style: the folder
- * is the scope (an implicit first filter), explicit filters compose on top,
- * and one sort applies. All fields are already client-side; applying a query
- * is pure and instant.
- *
- * The query STATE is plain serializable data; the BEHAVIOR behind a sort key
- * lives in the sort registry, so sources and plugins can contribute options
- * without touching this module.
- */
+/* Query state is plain serializable data; the behavior behind sort keys and filter fields lives in the registries. */
 
 export type { SortDir } from "../registry/sorts";
 
@@ -26,8 +17,7 @@ export interface Sort {
 export type Filter =
   | { kind: "format"; formats: string[] } // any-of, by format group id
   | { kind: "name"; substring: string }
-  // Select and range clauses are keyed by a registered filter field's id
-  // ("camera", "aspect", "taken", …) — their predicates live in the registry.
+  // Keyed by a registered filter field's id; the predicates live in the registry.
   | { kind: "select"; field: string; value: string }
   | { kind: "range"; field: string; from: number; to: number; label: string };
 
@@ -38,12 +28,7 @@ export interface Query {
 
 export const defaultQuery: Query = { filters: [], sort: { key: "name", dir: "asc" } };
 
-/**
- * Everything a query can read besides the entries themselves, keyed by
- * path. Total by construction: callers always pass all three maps (empty
- * maps mean "nothing known/labeled"), so predicates never meet undefined
- * data channels.
- */
+/** Keyed by path; total by construction — callers pass every map, so predicates never meet undefined channels. */
 export interface QueryData {
   meta: Record<string, ImageMeta>;
   scores: Record<string, number>;
@@ -51,20 +36,11 @@ export interface QueryData {
   people: Record<string, string[]>;
 }
 
-export const EMPTY_QUERY_DATA: QueryData = { meta: {}, scores: {}, labels: {}, people: {} };
 
 /** An image nobody labeled: genuinely zero stars-null tags-none, not unknown. */
-export const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
+const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
 
-/**
- * Display groups: jpg/jpeg are one thing to a human.
- *
- * Deliberately not the list of formats the app can open. Anything else is
- * its own group under its own extension — see `formatGroupOf` — so a folder
- * of NEFs is filterable the day the raw plugin learns to read them, with
- * nothing to add here. This list only says which extensions a *human* would
- * be surprised to see listed apart.
- */
+/** Display grouping only, not the openable-format list — an unlisted extension is its own group (see `formatGroupOf`). */
 export const FORMAT_GROUPS = [
   { id: "png", label: "PNG", exts: ["png"] },
   { id: "jpeg", label: "JPEG", exts: ["jpg", "jpeg"] },
@@ -73,34 +49,18 @@ export const FORMAT_GROUPS = [
   { id: "avif", label: "AVIF", exts: ["avif"] },
 ] as const;
 
-export type FormatGroupId = (typeof FORMAT_GROUPS)[number]["id"];
 
-/**
- * The group an extension filters under — its own name when no display group
- * claims it.
- *
- * This used to answer "undefined" for anything unlisted, which meant a raw
- * file belonged to no group and so matched no format filter: the statistics
- * panel listed NEF, clicking it filtered, and the result was empty. An
- * extension is a perfectly good group of one.
- */
-export function formatGroupOf(ext: string): string {
+/** The group an extension filters under — its own extension when no display group claims it. */
+function formatGroupOf(ext: string): string {
   const lower = ext.toLowerCase();
   return FORMAT_GROUPS.find((g) => (g.exts as readonly string[]).includes(lower))?.id ?? lower;
 }
 
-/** How a group names itself: the display label, or the extension in capitals. */
 export function formatGroupLabel(id: string): string {
   return FORMAT_GROUPS.find((g) => g.id === id)?.label ?? id.toUpperCase();
 }
 
-/**
- * Metadata-based filters (camera, aspect, taken, edge) match only images
- * whose metadata is already known — results refine as the background read
- * streams in, rather than waiting on it. Select and range predicates resolve
- * through the filter-field registry; a clause whose field is gone (e.g. an
- * uninstalled plugin's) matches nothing rather than everything.
- */
+/** Metadata filters match only images whose metadata has arrived; a clause whose field is gone matches nothing, not everything. */
 function matches(entry: FileEntry, filter: Filter, ctx: FieldCtx): boolean {
   switch (filter.kind) {
     case "format":
@@ -108,8 +68,6 @@ function matches(entry: FileEntry, filter: Filter, ctx: FieldCtx): boolean {
     case "name":
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
-      // A select clause matches a single-valued field on equality and a
-      // multi-valued (flags) field on membership — same chip, same state.
       const field = getFilterField(filter.field);
       if (field?.kind === "select") return field.value(entry, ctx) === filter.value;
       if (field?.kind === "flags") return field.values(entry, ctx).includes(filter.value);
@@ -150,9 +108,7 @@ export function applyQuery(entries: FileEntry[], query: Query, data: QueryData):
   const sign = query.sort.dir === "asc" ? 1 : -1;
   // The pre-filter position IS the source's own order (scan / API rank).
   const sourceIndex = new Map(entries.map((e, i) => [e.path, i]));
-  // Decorate-sort-undecorate: the value is computed once per entry, and the
-  // comparator touches plain fields only — on tens of thousands of entries,
-  // per-comparison map lookups would dominate the sort.
+  // Decorate-sort-undecorate: per-comparison map lookups would dominate on tens of thousands of entries.
   const valued = filtered.map((e) => ({
     e,
     v: provider.value(e, {
@@ -181,7 +137,6 @@ export function usesScores(query: Query): boolean {
   return getSort(query.sort.key)?.reads === "scores";
 }
 
-/** True when any active field-keyed clause's field reads the given channel. */
 function filtersRead(query: Query, channel: "meta" | "labels" | "people"): boolean {
   return query.filters.some((f) => {
     if (f.kind !== "select" && f.kind !== "range") return false;
@@ -190,22 +145,17 @@ function filtersRead(query: Query, channel: "meta" | "labels" | "people"): boole
   });
 }
 
-/** True when applying the query needs per-image metadata. */
 export function usesMeta(query: Query): boolean {
   return getSort(query.sort.key)?.reads === "meta" || filtersRead(query, "meta");
 }
 
-/** True when applying the query needs user labels (stars, tags). */
 export function usesLabels(query: Query): boolean {
   return getSort(query.sort.key)?.reads === "labels" || filtersRead(query, "labels");
 }
 
-/** True when applying the query needs the person clusters. */
 export function usesPeople(query: Query): boolean {
   return filtersRead(query, "people");
 }
-
-/* Pure query editing helpers — the store actions apply these. */
 
 export function withSort(query: Query, key: string): Query {
   const dir: SortDir =
@@ -238,10 +188,7 @@ export function withNameFilter(query: Query, substring: string): Query {
   };
 }
 
-/**
- * One clause per field: clicking a value sets it, clicking the active value
- * clears it, clicking another value switches to it.
- */
+/** One clause per field: clicking the active value clears it, another value switches to it. */
 export function withSelectToggled(query: Query, field: string, value: string): Query {
   const active = query.filters.some(
     (f) => f.kind === "select" && f.field === field && f.value === value,
@@ -299,8 +246,7 @@ export function dateInputValue(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/* Range-spec factories — the parsing/prefill halves of a RangeSpec, so
- * field definitions (built-in or plugin) only supply the value function. */
+/* Range-spec factories: the parsing/prefill halves of a RangeSpec, so field definitions only supply the value function. */
 
 /** Day-granular date range: "≤" and "=" include the named day. */
 export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
@@ -326,10 +272,7 @@ export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
   };
 }
 
-/**
- * Numeric range in a display unit `scale` times the stored one (MB → bytes);
- * "=" means within one unit. `integer` rounds input to whole units (pixels).
- */
+/** Display unit is `scale` times the stored one (MB → bytes); "=" means within one unit; `integer` rounds to whole units. */
 export function numberRangeSpec(
   value: RangeSpec["value"],
   opts: { unit: string; scale: number; integer: boolean; ops: RangeOp[] },
@@ -392,29 +335,13 @@ export function activeFormats(query: Query): string[] {
   return f?.kind === "format" ? f.formats : [];
 }
 
-/** A format the collection could be filtered by, and how much of it there is. */
-export interface FormatChoice {
+interface FormatChoice {
   id: string;
   label: string;
   count: number;
 }
 
-/**
- * The formats worth offering, present ones first.
- *
- * A menu of five fixed formats told you nothing about the folder in front of
- * you — it offered GIF in a folder of raw files and omitted NEF, which was
- * the only thing actually there. So the collection decides the order and
- * says how many of each it holds.
- *
- * The absent ones stay, at zero. A filter is not only a question about this
- * folder: it survives opening the next one, and a menu whose rows appeared
- * and vanished as you moved between folders would be one you could not learn.
- * Zero is also an answer — "no PNGs here" is worth being told.
- *
- * Sorted by count and then by name, so the order is stable while a scan
- * streams in rather than shuffling with every batch.
- */
+/** Present formats first; absent groups stay at zero, and count-then-name keeps the order stable while a scan streams. */
 export function formatChoices(entries: readonly FileEntry[]): FormatChoice[] {
   const counts = new Map<string, number>();
   for (const group of FORMAT_GROUPS) counts.set(group.id, 0);

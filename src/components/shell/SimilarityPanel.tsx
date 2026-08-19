@@ -2,12 +2,6 @@ import { embeddingSelect } from "../../ipc";
 import { downloadLabel } from "../../similarity/ModelMenu";
 import { useAppStore } from "../../state/store";
 
-/**
- * Model picker for "closest to" sorting. Each row carries its quality and
- * speed notes; picking one downloads it once into the app cache and loads
- * it. Everything runs locally. The query itself lives in the filter bar:
- * `+ → closest to…`, or "Closest to This Image" on a selected image.
- */
 export function SimilarityPanel() {
   const models = useAppStore((s) => s.embedModels);
   const status = useAppStore((s) => s.embedStatus);

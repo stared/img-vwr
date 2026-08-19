@@ -28,8 +28,6 @@ describe("what a delete actually takes", () => {
   });
 
   it("takes only the file that was picked where both are listed", () => {
-    // In the grid the pair is two cells; clicking the raw one means the raw
-    // one. Deleting its JPEG too would be deleting something unasked.
     expect(filesBehind(grid, [RAW])).toEqual([RAW]);
   });
 
@@ -51,8 +49,6 @@ describe("what the confirmation says", () => {
   });
 
   it("says how many files a stacked photograph really is", () => {
-    // The count on screen is 1 and the count on disk is 2; saying only the
-    // first would be under-reporting what is about to happen.
     const prompt = trashPrompt([RAW], [RAW, JPEG]);
     expect(prompt).toContain(
       "Move this photograph — 2 files, raw and JPEG together — to the Trash?",

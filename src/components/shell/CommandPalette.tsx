@@ -43,7 +43,6 @@ export function CommandPalette() {
 
   const run = (command: Command) => {
     if (command.input) {
-      // Two-step command: keep the palette open and collect the argument.
       setPending(command);
       setQuery("");
       inputRef.current?.focus();
@@ -61,7 +60,6 @@ export function CommandPalette() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
-      // In arg mode, Esc backs out to the command list first.
       if (pending) {
         setPending(null);
         setQuery("");
