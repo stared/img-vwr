@@ -59,7 +59,7 @@ export function registerBuiltinCommands(): void {
     title: "Toggle Inspector",
     keywords: ["statistics", "histogram", "exif", "develop", "info", "right panel"],
     menus: [],
-    run: ({ store }) => store.getState().toggleStats(),
+    run: ({ store }) => store.getState().toggleInspector(),
   });
 
   // One command per layout; from the viewer the key first steps back.

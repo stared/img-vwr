@@ -110,7 +110,7 @@ export interface AppState {
   /** path → stored develop crop, for miniatures: a cropped photograph
    * should look cropped everywhere it appears. Absent = whole frame. */
   crops: Record<string, Crop>;
-  statsVisible: boolean;
+  inspectorVisible: boolean;
   /** Sidebar sections folded away, by panel id; absent = open. Persisted. */
   panelFolds: Record<string, boolean>;
   /** Right-column section order, panel ids; unknown ids keep registration
@@ -318,7 +318,7 @@ interface AppActions {
   cropsLoaded: (crops: Record<string, Crop>, epoch: number) => void;
   /** One photograph's crop changed in the darkroom; null = back to whole. */
   cropApplied: (path: string, crop: Crop | null) => void;
-  toggleStats: () => void;
+  toggleInspector: () => void;
   togglePanelFold: (id: string) => void;
   setPanelOrder: (order: string[]) => void;
   setSidebarWidth: (px: number) => void;
@@ -409,7 +409,7 @@ export const initialState: AppState = {
   meta: {},
   labels: {},
   crops: {},
-  statsVisible: true,
+  inspectorVisible: true,
   panelFolds: {},
   panelOrder: [],
   sidebarWidth: 230,
@@ -988,7 +988,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set({ crops });
   },
 
-  toggleStats: () => set({ statsVisible: !get().statsVisible }),
+  toggleInspector: () => set({ inspectorVisible: !get().inspectorVisible }),
 
   togglePanelFold: (id) =>
     set((s) => ({ panelFolds: { ...s.panelFolds, [id]: !(s.panelFolds[id] ?? false) } })),

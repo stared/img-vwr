@@ -140,7 +140,7 @@ export function registerDevelopCommands(): void {
     keywords: ["exposure", "white balance", "edit"],
     menus: [],
     run: ({ store }: CommandContext) => {
-      if (!store.getState().statsVisible) store.getState().toggleStats();
+      if (!store.getState().inspectorVisible) store.getState().toggleInspector();
     },
   });
 }

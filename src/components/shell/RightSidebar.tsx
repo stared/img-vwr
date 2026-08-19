@@ -16,8 +16,8 @@ function ordered(panels: Panel[], order: string[]): Panel[] {
 /** Right-edge counterpart of the sidebar; hosts panels registered with side
  * "right" — flat sections the user folds and reorders to their own habits. */
 export function RightSidebar() {
-  const visible = useAppStore((s) => s.statsVisible);
-  const toggleStats = useAppStore((s) => s.toggleStats);
+  const visible = useAppStore((s) => s.inspectorVisible);
+  const toggleInspector = useAppStore((s) => s.toggleInspector);
   const order = useAppStore((s) => s.panelOrder);
   const setPanelOrder = useAppStore((s) => s.setPanelOrder);
   const width = useAppStore((s) => s.rightbarWidth);
@@ -38,7 +38,7 @@ export function RightSidebar() {
         <button
           className="sidebar-toggle"
           title={titleWithChord("show the inspector", "inspector.toggle")}
-          onClick={toggleStats}
+          onClick={toggleInspector}
         >
           «
         </button>
@@ -74,7 +74,7 @@ export function RightSidebar() {
               <button
                 className="sidebar-toggle"
                 title={titleWithChord("hide the inspector", "inspector.toggle")}
-                onClick={toggleStats}
+                onClick={toggleInspector}
               >
                 »
               </button>

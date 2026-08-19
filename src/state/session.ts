@@ -34,7 +34,7 @@ interface SavedSession {
   timelineThumbPx: number;
   mosaicRowPx: number;
   mosaicPacking: MosaicPacking;
-  statsVisible: boolean;
+  inspectorVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
   panelFolds: Record<string, boolean>;
@@ -67,7 +67,7 @@ function snapshot(): SavedSession {
     timelineThumbPx: s.timelineThumbPx,
     mosaicRowPx: s.mosaicRowPx,
     mosaicPacking: s.mosaicPacking,
-    statsVisible: s.statsVisible,
+    inspectorVisible: s.inspectorVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
     panelFolds: s.panelFolds,
@@ -196,7 +196,7 @@ export function restoreSession(): boolean {
     mosaicPacking: oneOf(o.mosaicPacking, ["order", "packed"] as const)
       ? o.mosaicPacking
       : app.mosaicPacking,
-    statsVisible: isBool(o.statsVisible) ? o.statsVisible : app.statsVisible,
+    inspectorVisible: isBool(o.inspectorVisible) ? o.inspectorVisible : app.inspectorVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,
     panelFolds:
