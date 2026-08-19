@@ -194,13 +194,6 @@ fn levels_for(width: usize, height: usize) -> usize {
     levels
 }
 
-/// How far `frame` slid relative to `reference`: its pixel (x + dx, y + dy)
-/// shows what the reference shows at (x, y). Undoing the slide means reading
-/// `frame` at (x + dx, y + dy).
-pub fn translation(reference: &Gray, frame: &Gray) -> (i32, i32) {
-    translation_scored(reference, frame).0
-}
-
 /// The slide, and how well it actually fits: the disagreeing fraction and
 /// the number of pixels that voted, both measured at full resolution at the
 /// answer. The caller judges — a shift that "won" with a third of its
@@ -714,7 +707,7 @@ mod tests {
         let reference = scene(640, 480);
         for (dx, dy, gain) in [(14, -9, 2500), (-21, 6, 400), (0, 0, 1000)] {
             let frame = shifted(&reference, dx, dy, gain);
-            let (found_x, found_y) = translation(&reference, &frame);
+            let (found_x, found_y) = translation_scored(&reference, &frame).0;
             // The finest level sits out the search, so ±2 px is exact enough.
             assert!(
                 (found_x - dx).abs() <= 2 && (found_y - dy).abs() <= 2,
@@ -742,7 +735,7 @@ mod tests {
         }
         let dark = Gray { width, height, data: sky };
         let long_exposure = shifted(&dark, -17, 11, 8000);
-        let (dx, dy) = translation(&dark, &long_exposure);
+        let (dx, dy) = translation_scored(&dark, &long_exposure).0;
         assert!(
             (dx + 17).abs() <= 2 && (dy - 11).abs() <= 2,
             "asked (-17, 11), found ({dx}, {dy})"
@@ -754,7 +747,7 @@ mod tests {
         // Flat grey thresholds to noise on both sides of the median; every
         // comparison abstains and the walk keeps (0, 0) rather than drifting.
         let flat = Gray { width: 320, height: 240, data: vec![128; 320 * 240] };
-        assert_eq!(translation(&flat, &flat), (0, 0));
+        assert_eq!(translation_scored(&flat, &flat).0, (0, 0));
     }
 
     #[test]
