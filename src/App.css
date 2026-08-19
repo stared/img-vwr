@@ -37,12 +37,16 @@ button {
 }
 
 kbd {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
   font-family: inherit;
   font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border);
+  line-height: 17px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
 }
 
 /* ---- Shell layout ---- */
@@ -65,31 +69,6 @@ kbd {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  color: var(--text-dim);
-}
-
-.empty-state button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--accent);
-  color: white;
-  border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 13px;
-}
-
-.empty-state button:hover {
-  filter: brightness(1.1);
 }
 
 .hint,
@@ -269,11 +248,11 @@ kbd {
   align-items: center;
   gap: 5px;
   padding: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .panel-toggle:hover {
@@ -505,20 +484,15 @@ kbd {
   width: 100%;
   padding: 8px 0 6px;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   text-align: left;
-  color: var(--text-dim);
+  color: var(--text-faint);
 }
 
 .stats-section-header:hover {
   color: var(--text);
-}
-
-.stats-disclosure {
-  width: 10px;
-  font-size: 9px;
 }
 
 .stats-row {
@@ -720,16 +694,10 @@ button.stats-row:hover .stats-label {
   color: var(--text-dim);
 }
 
-/* View + sort form the right-aligned "how it renders" group. */
-.chip-view {
-  margin-left: auto;
-}
-
 .sort-control {
   position: relative;
 }
 
-.chip-view:hover,
 .chip-sort:hover {
   border-color: var(--accent);
 }
@@ -1101,20 +1069,36 @@ button.stats-row:hover .stats-label {
   user-select: none;
 }
 
-/* The filmstrip's selection language: 1px frame selected, 2px the lead. */
+/* One selection language in every view: 1px frame selected, 2px the lead,
+   drawn above the picture so nothing in the cell can paint over it. */
 .thumb-cell.selected::before,
-.thumb-cell.lead::before {
+.thumb-cell.lead::before,
+.filmstrip-cell.selected::before,
+.filmstrip-cell.lead::before,
+.mosaic-cell.selected::before,
+.mosaic-cell.lead::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   border: 1px solid var(--accent);
-  border-radius: 10px;
   pointer-events: none;
 }
 
-.thumb-cell.lead::before {
+.thumb-cell.lead::before,
+.filmstrip-cell.lead::before,
+.mosaic-cell.lead::before {
   border-width: 2px;
+}
+
+.thumb-cell.selected::before,
+.thumb-cell.lead::before {
+  border-radius: 10px;
+}
+
+.filmstrip-cell.selected::before,
+.filmstrip-cell.lead::before {
+  border-radius: 4px;
 }
 
 .thumb-frame {
@@ -1204,27 +1188,6 @@ button.stats-row:hover .stats-label {
   text-align: center;
 }
 
-/* ---- Image info panel ---- */
-
-.info-fact {
-  display: flex;
-  gap: 8px;
-  padding: 2px 8px;
-  font-size: 11px;
-}
-
-.info-fact-label {
-  flex-shrink: 0;
-  width: 72px;
-  color: var(--text-dim);
-}
-
-.info-fact-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .info-canvas {
   display: block;
   margin: 4px 8px 6px;
@@ -1247,6 +1210,11 @@ button.stats-row:hover .stats-label {
   transform-origin: 0 0;
   image-orientation: from-image;
   user-select: none;
+}
+
+.viewer-canvas.picking,
+.viewer-canvas.picking img {
+  cursor: crosshair;
 }
 
 /* ---- Status bar ---- */
@@ -1448,19 +1416,6 @@ button.stats-row:hover .stats-label {
   gap: 4px;
 }
 
-.shortcuts kbd {
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: 11px;
-  line-height: 17px;
-  color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.03);
-  white-space: nowrap;
-}
-
 .shortcuts-empty {
   padding: 8px 0;
   color: var(--text-dim);
@@ -1631,15 +1586,23 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-histogram {
-  padding-top: 4px;
+  padding: 6px 10px 0;
+}
+
+.develop-histogram .info-canvas {
+  width: 100%;
+  margin: 0;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .develop-clipping {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
-  padding: 0 8px 4px;
-  color: var(--text-dim);
+  padding: 3px 0 6px;
+  color: var(--text-faint);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1649,7 +1612,7 @@ button.stats-row:hover .stats-label {
   justify-content: space-between;
   padding: 2px 8px 6px;
   color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .develop-error {
@@ -1695,17 +1658,21 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-group {
-  padding: 6px 0 2px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.develop-group:last-child {
+  border-bottom: none;
 }
 
 .develop-group h4 {
   margin: 0 0 2px;
   padding: 0 8px;
-  color: var(--text-dim);
+  color: var(--text-faint);
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -1728,21 +1695,9 @@ button.stats-row:hover .stats-label {
 .develop-note {
   margin: 2px 0 4px;
   padding: 0 8px;
-  color: var(--text-dim);
-  line-height: 1.4;
-}
-
-/* The shot, at the head of the panel: each value with its name in front,
-   wrapping to the column. Labels dim, readings full-strength — the numbers
-   are the facts, the words only say which is which. */
-.develop-shot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin: 2px 0 4px;
-  padding: 0 8px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 /* One vertical gap everywhere — between grid rows, gear, and footer. */
@@ -1832,22 +1787,6 @@ button.stats-row:hover .stats-label {
   display: flex;
   justify-content: space-between;
   padding: 0 12px;
-}
-
-.develop-shot-fact {
-  white-space: nowrap;
-}
-
-.develop-shot-icon {
-  width: 12px;
-  height: 12px;
-  margin-right: 3px;
-  vertical-align: -1.5px;
-  stroke: var(--text-dim);
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 /* ---- Sliders ----
@@ -1996,6 +1935,28 @@ button.stats-row:hover .stats-label {
   min-width: 96px;
 }
 
+/* Right-sidebar sliders: the value stays faint until it is changed. */
+.sidebar.right .slider {
+  padding: 3px 10px 5px;
+}
+
+.sidebar.right .slider-head {
+  padding-bottom: 2px;
+}
+
+.sidebar.right .slider-label {
+  color: var(--text-faint);
+}
+
+.sidebar.right .slider-value {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.sidebar.right .slider-value.changed {
+  color: var(--text);
+}
+
 /* A value worth landing on — the quality people use, the size a site wants.
    Drawn ON the track, because that is where the value it names is; big enough
    to aim at; hoverable, so it can say what it is for.
@@ -2046,15 +2007,21 @@ button.stats-row:hover .stats-label {
   background: var(--accent-text);
 }
 
+/* One button for every enumerable option: each choice is its own button,
+   the active one is marked, colour is spent only on on/armed states. */
 .develop-reset,
-.develop-toggle {
-  color: var(--text);
+.develop-toggle,
+.develop-choice,
+.export-choice {
+  height: 22px;
+  padding: 0 8px;
+  color: var(--text-dim);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 8px;
+  border: 1px solid var(--border-faint);
+  border-radius: 5px;
   font-size: 11px;
   cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
 }
 
 .develop-toggle {
@@ -2062,21 +2029,11 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-reset:hover:not(:disabled),
-.develop-toggle:hover {
-  border-color: var(--accent);
-}
-
-/* An enumerable choice shows its options: each one is its own button and
-   the active one is marked. A click means the word on it, never "whatever
-   comes next" — cycling buttons are a surprise with no menu. */
-.develop-switch {
-  display: flex;
-  align-items: center;
-  /* Rows with many options (presets) fold onto the next line rather than
-     clipping — every option stays visible, which is the point of the row. */
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 2px 8px 4px;
+.develop-toggle:hover,
+.develop-choice:hover,
+.export-choice:hover {
+  color: var(--text);
+  border-color: var(--border);
 }
 
 .develop-switch .develop-toggle {
@@ -2088,13 +2045,20 @@ button.stats-row:hover .stats-label {
   font-size: 11px;
 }
 
-.develop-toggle.on {
+.develop-toggle.on,
+.develop-choice.on,
+.export-choice.on {
   border-color: var(--accent);
   color: var(--accent);
 }
 
+.develop-toggle.armed {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
 .develop-reset:disabled {
-  color: var(--text-dim);
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -2251,24 +2215,6 @@ button.stats-row:hover .stats-label {
   opacity: 1;
 }
 
-/* The selection frame is an overlay, not the cell's border: a stacked
-   cell's prints spill past the edge and were painting over the frame —
-   what marks the selection must sit above the picture, always. */
-.filmstrip-cell.selected::before,
-.filmstrip-cell.lead::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  pointer-events: none;
-}
-
-.filmstrip-cell.lead::before {
-  border-width: 2px;
-}
-
 .filmstrip-cell img {
   width: 100%;
   height: 100%;
@@ -2314,21 +2260,6 @@ button.stats-row:hover .stats-label {
      nor stretches — it only absorbs the row's rounding pixel. */
   object-fit: cover;
   display: block;
-}
-
-/* The selection rides above the picture, as in the filmstrip. */
-.mosaic-cell.selected::before,
-.mosaic-cell.lead::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border: 1px solid var(--accent);
-  pointer-events: none;
-}
-
-.mosaic-cell.lead::before {
-  border-width: 2px;
 }
 
 .mosaic-cell .thumb-pending,
@@ -2503,38 +2434,15 @@ button.stats-row:hover .stats-label {
   cursor: crosshair;
 }
 
-/* A row of the answers a control can have, with the current one lit. The
-   develop panel's shape for anything enumerable — see the aspect shapes and
-   the export sheet. */
+/* A row of the answers an enumerable control can have, the current one lit. */
+.develop-switch,
 .develop-choices,
 .export-row-choices {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 4px;
   margin: 2px 8px 4px;
-}
-
-.develop-choice,
-.export-choice {
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 7px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.develop-choice:hover,
-.export-choice:hover {
-  border-color: var(--accent);
-}
-
-.develop-choice.on,
-.export-choice.on {
-  color: var(--text);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 /* ---- Export sheet ---- */
@@ -2580,6 +2488,11 @@ button.stats-row:hover .stats-label {
 .export-row-choices {
   flex: 1;
   margin: 0 12px 0 0;
+}
+
+/* The overlay ground swallows the faint hairline; unlit options still need edges. */
+.export-choice {
+  border-color: var(--border);
 }
 
 /* A slider in a row takes the whole width the row has left, so the two of
@@ -2830,124 +2743,6 @@ button.stats-row:hover .stats-label {
   height: 1px;
 }
 
-/* ---- Right-panel refinements ---- */
-
-/* Linear's restraint: one quiet type size, hairline rules, colour reserved
-   for the one thing that changed. Section headings recede to near-invisible
-   and the values carry the meaning. */
-.sidebar.right .stats-section-header,
-.sidebar.right .panel-toggle,
-.develop-group h4 {
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-
-.develop-group {
-  padding: 8px 0 4px;
-  border-bottom: 1px solid var(--border-faint);
-}
-
-.develop-group:last-child {
-  border-bottom: none;
-}
-
-.develop-status {
-  border-bottom: 1px solid var(--border-faint);
-}
-
-.sidebar.right .slider {
-  padding: 3px 10px 5px;
-}
-
-.sidebar.right .slider-head {
-  padding-bottom: 2px;
-}
-
-.sidebar.right .slider-label,
-.develop-note,
-.develop-clipping {
-  color: var(--text-faint);
-}
-
-/* A slider at its neutral position should look inert; the moment it is not,
-   the number brightens. That contrast is the whole readout. */
-.sidebar.right .slider-value {
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
-.sidebar.right .slider-value.changed {
-  color: var(--text);
-}
-
-.develop-reset,
-.develop-toggle {
-  height: 22px;
-  padding: 0 8px;
-  color: var(--text-dim);
-  border-color: var(--border-faint);
-  border-radius: 5px;
-  font-size: 11px;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.develop-reset:hover:not(:disabled),
-.develop-toggle:hover {
-  color: var(--text);
-  border-color: var(--border);
-}
-
-/* Armed states are the one place colour is spent. */
-.develop-toggle.armed {
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
-
-.viewer-canvas.picking,
-.viewer-canvas.picking img {
-  cursor: crosshair;
-}
-
-.develop-note {
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.develop-histogram {
-  padding: 6px 10px 0;
-}
-
-.develop-histogram .info-canvas {
-  width: 100%;
-  margin: 0;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.35);
-}
-
-.develop-clipping {
-  padding: 3px 0 6px;
-  font-size: 10px;
-}
-
-/* ---- Sliders ---- */
-
-/*
- * A slider should be a line and a mark on it, not a widget. The native
- * control is a fat track and a big round knob that reads as a piece of
- * machinery sitting on the panel; what is wanted is the value, stated
- * quietly, with the least ink that still supports a drag.
- *
- * So: a hairline track, and a short upright mark for the thumb. The mark is
- * two pixels wide because it points at a value — a circle implies a thing you
- * grab, a bar implies a position you read. The whole 14px height stays
- * draggable, so the small mark costs no precision.
- *
- * WebKit only, deliberately: this is a macOS-first app in a WKWebView, and
- * carrying a parallel set of -moz- rules nothing renders would be dead weight.
- */
-
 /* People panel: one chip per person the face pass found. */
 .people-panel {
   display: flex;
@@ -3034,11 +2829,4 @@ button.stats-row:hover .stats-label {
 /* Background-only appearances: counted, but quietly — they matter least. */
 .person-bg {
   color: var(--text-faint);
-}
-
-.menu-hint-row {
-  margin: 0;
-  padding: 6px 10px;
-  color: var(--text-dim);
-  font-size: 12px;
 }

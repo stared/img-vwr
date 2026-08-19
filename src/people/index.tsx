@@ -300,7 +300,7 @@ function PersonMenuItems({ close }: { close: () => void }) {
   const setSelectFilter = useAppStore((s) => s.setSelectFilter);
   const active = query.filters.find((f) => f.kind === "select" && f.field === "person");
   if (people === null || people.length === 0) {
-    return <p className="menu-hint-row">no people found yet; see the People panel</p>;
+    return <span className="menu-empty">no people found yet; see the People panel</span>;
   }
   return (
     <>

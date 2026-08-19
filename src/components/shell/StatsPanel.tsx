@@ -31,7 +31,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="stats-section">
       <button className="stats-section-header" onClick={() => setOpen(!open)}>
-        <span className="stats-disclosure">{open ? "▾" : "▸"}</span>
+        <span className="panel-disclosure">{open ? "▾" : "▸"}</span>
         {title}
       </button>
       {open && children}
