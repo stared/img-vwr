@@ -1,10 +1,5 @@
-//! The develop pipeline: scene-linear pixels in, display pixels out.
-//!
-//! Tone is shaped on luminance alone and then applied to RGB as a single
-//! gain. That is both faster (one curve evaluation per pixel rather than
-//! three) and more correct: scaling the channels together preserves hue, so
-//! pushing exposure or contrast never shifts a skin tone towards orange the
-//! way independent per-channel curves do.
+//! Tone is shaped on luminance and applied to RGB as a single gain: one curve evaluation per
+//! pixel, and scaling the channels together preserves hue where per-channel curves shift skin tones.
 
 use imgvwr_core::{linear_to_srgb, DecodedImage, LinearImage};
 use rayon::prelude::*;
@@ -12,8 +7,7 @@ use rayon::prelude::*;
 use crate::look::{self, LookTables, LookTuning};
 use crate::params::DevelopParams;
 
-/// Middle grey in scene-linear terms — the pivot every tonal control turns
-/// around, so "no change" is genuinely no change at the anchor.
+/// Scene-linear middle grey — the pivot every tonal control turns around.
 pub const MID_GREY: f32 = 0.18;
 
 /// Rec. 709 luminance of linear RGB.
@@ -22,8 +16,7 @@ pub fn luma(r: f32, g: f32, b: f32) -> f32 {
     0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-/// Slider values reduced to the constants the per-pixel loop actually needs,
-/// computed once per render instead of 1.5 million times.
+/// Slider values reduced to the constants the per-pixel loop needs, computed once per render.
 struct Tone {
     exposure_gain: f32,
     shadows: f32,
@@ -40,11 +33,8 @@ impl Tone {
     fn new(p: &DevelopParams) -> Self {
         Self {
             exposure_gain: (p.exposure).exp2(),
-            // ±100 maps to ±2.5 EV (shadows) / ±3.2 EV (highlights) at the
-            // extreme of each mask. The camera look's curve reaches white
-            // near scene 1.0 while the decoder keeps over two stops of
-            // headroom above it, so the highlight pull has to span that
-            // range or clipped skies stay clipped no matter the slider.
+            // ±100 maps to ±2.5 EV (shadows) / ±3.2 EV (highlights). The look's curve reaches white
+            // near scene 1.0 while the decoder keeps 2+ stops above it; the highlight pull must span that or clipped skies stay clipped.
             shadows: (p.shadows / 100.0) * 2.5,
             highlights: (p.highlights / 100.0) * 3.2,
             whites: (p.whites / 100.0) * 0.5,
@@ -55,21 +45,8 @@ impl Tone {
     }
 }
 
-/// The highlight shoulder: below the knee nothing happens, above it the range
-/// bends into an asymptote at white.
-///
-/// Every other control here is a gain or a power, and none of them can make
-/// this shape — they scale the highlights but still run into white at some
-/// finite value, where detail stops. Measured against the JPEGs a camera makes
-/// from the same raw frames, that difference is the single largest thing the
-/// pipeline was missing: two stops above middle grey it rendered 15 sRGB units
-/// brighter than the camera, having already run out of range.
-///
-/// Exponential rather than a spline because it is the shape that leaves the
-/// slope untouched at the knee (so there is no visible seam where it starts),
-/// approaches white without ever reaching it (so highlights always keep some
-/// separation), and is monotone for every parameter, which no fitted spline
-/// guarantees.
+/// Below the knee nothing happens; above it the range bends into an asymptote at white.
+/// Exponential: the slope is untouched at the knee (no seam), white is approached but never reached, and it is monotone for every parameter — which no fitted spline guarantees.
 #[inline]
 fn shoulder(y: f32, knee: f32) -> f32 {
     if knee >= 1.0 || y <= knee {
@@ -79,23 +56,16 @@ fn shoulder(y: f32, knee: f32) -> f32 {
     knee + span * (1.0 - ((knee - y) / span).exp())
 }
 
-/// The tonal response curve: scene-linear luminance in, luminance out.
-///
-/// Split out from the pixel loop so it can be reasoned about and tested on
-/// its own — monotonicity in particular, because a curve that folds back on
-/// itself produces posterised artefacts no slider combination should cause.
+/// Scene-linear luminance in, luminance out; must stay monotone — a curve that folds back posterises.
 fn tone_curve(y: f32, t: &Tone) -> f32 {
     let y = y * t.exposure_gain;
 
-    // A tone-range weight that is 0 at black, 0.5 at middle grey and tends to
-    // 1 in the highlights — bounded for any input, unlike a bare ratio.
+    // w: 0 at black, 0.5 at middle grey, tending to 1 in the highlights; bounded for any input.
     let w = y / (y + MID_GREY);
     let shadow_mask = (1.0 - w) * (1.0 - w) * (1.0 - w);
     let highlight_mask = w * w * w;
 
-    // EV-based so the extremes stay strong where the masks saturate; the
-    // cubic masks keep middle grey out of both. Slope stays positive for
-    // any slider position: |y d(mask)/dy| <= 0.32, and 3.2 * ln2 * 0.32 < 1.
+    // Slope stays positive for any slider: |y·d(mask)/dy| ≤ 0.32 and 3.2·ln2·0.32 < 1; the cubic masks keep middle grey out of both.
     let y = y * (t.shadows * shadow_mask + t.highlights * highlight_mask).exp2();
     let y = y * (1.0 + t.whites * w * w);
     let y = y + t.black_shift;
@@ -109,8 +79,7 @@ fn tone_curve(y: f32, t: &Tone) -> f32 {
         MID_GREY * (y / MID_GREY).powf(t.contrast_exp)
     };
 
-    // The shoulder goes last: it is the only stage that knows where white is,
-    // so it has to see the value that would actually be sent to the display.
+    // The shoulder goes last: it is the only stage that knows where white is.
     shoulder(y, t.knee)
 }
 
@@ -119,7 +88,6 @@ pub fn develop(src: &LinearImage, params: &DevelopParams) -> DecodedImage {
     develop_looked(src, params, None)
 }
 
-/// The same, through the camera look when one is in effect.
 pub fn develop_looked(
     src: &LinearImage,
     params: &DevelopParams,
@@ -133,12 +101,8 @@ pub fn develop_looked(
 fn toned_looked(inp: &[f32], tone: &Tone, tables: &Option<LookTables>) -> (f32, f32, f32) {
     let (mut r, mut g, mut b) = (inp[0], inp[1], inp[2]);
 
-    // Luminance from the non-negative part of each channel. A sensor
-    // records colours outside the sRGB primaries — deep ultraviolet-lit
-    // violet arrives with green strongly negative — and the raw weighted
-    // sum can then be zero or negative for a pixel that is plainly bright
-    // blue. Ranking such a pixel "black" sent it down the neutral branch
-    // below and punched black holes in UV-lit fabric.
+    // Luminance from the non-negative part of each channel: UV-lit violet arrives with green
+    // negative enough to zero the raw weighted sum, and ranking that bright blue pixel "black" punched black holes in UV-lit fabric.
     let y0 = luma(r.max(0.0), g.max(0.0), b.max(0.0));
     let y1 = tone_curve(y0, tone);
     if y0 > 1e-6 {
@@ -147,15 +111,12 @@ fn toned_looked(inp: &[f32], tone: &Tone, tables: &Option<LookTables>) -> (f32, 
         g *= gain;
         b *= gain;
     } else {
-        // Nothing to scale (the pixel is black); a lifted black point
-        // still has to show up, and it does so neutrally.
+        // Black pixel: a lifted black point still has to show up, and does so neutrally.
         r = y1;
         g = y1;
         b = y1;
     }
 
-    // The camera look renders the slider-adjusted scene the way the camera
-    // would have; without one the values pass through exactly as before.
     if let Some(tables) = tables {
         (r, g, b) = look::apply_pixel(r, g, b, tables);
     }
@@ -169,14 +130,8 @@ fn finish_pixel(mut r: f32, mut g: f32, mut b: f32, sat: f32, vib: f32, out: &mu
         let y = luma(r, g, b);
         let max = r.max(g).max(b);
         let min = r.min(g).min(b);
-        // How colourful this pixel already is, 0..1.
-        //
-        // Clamped, not merely divided: a sensor records colours outside
-        // the sRGB primaries, which arrive here as negative channels, and
-        // those would push the ratio past 1. Vibrance would then read the
-        // most saturated pixels in the image as "more than fully
-        // saturated" and pull colour *out* of them — the exact opposite
-        // of the control's purpose.
+        // Clamped, not merely divided: out-of-gamut negative channels push the ratio past 1, and
+        // vibrance would then read the most saturated pixels as "more than fully saturated" and drain them.
         let current = if max > 1e-6 {
             ((max - min) / max).clamp(0.0, 1.0)
         } else {
@@ -193,16 +148,8 @@ fn finish_pixel(mut r: f32, mut g: f32, mut b: f32, sat: f32, vib: f32, out: &mu
     out[3] = 255;
 }
 
-/// The full pipeline, with the optional noise-reduction pass between the
-/// look and the colour controls.
-///
-/// The slider pipeline runs first, in scene light — which is what keeps
-/// highlight recovery real: pulling highlights down moves values back under
-/// white *before* the look's curve decides where white is. With every slider
-/// at zero the tone stage is the identity and the output is exactly the
-/// camera's rendering. When NR is active the render goes through a
-/// display-linear float buffer so the guided filter can see neighbourhoods;
-/// otherwise everything stays in the original single pass.
+/// Sliders run first, in scene light: highlight recovery moves values under white before the look's curve decides where white is; with every slider at zero the output is exactly the camera's rendering.
+/// When NR is active the render goes through a display-linear float buffer so the guided filter can see neighbourhoods.
 pub fn develop_looked_nr(
     src: &LinearImage,
     params: &DevelopParams,
@@ -214,8 +161,6 @@ pub fn develop_looked_nr(
     let tone = Tone::new(&params);
     let tables = look.map(LookTables::new);
 
-    // Saturation and vibrance combine into one factor per pixel; vibrance is
-    // the part weighted down for colours that are already vivid.
     let sat = params.saturation / 100.0;
     let vib = params.vibrance / 100.0;
 
@@ -312,9 +257,7 @@ mod tests {
             contrast: 100.0,
             ..Default::default()
         });
-        // The pivot itself is fixed...
         assert!((tone_curve(MID_GREY, &t) - MID_GREY).abs() < 1e-5);
-        // ...darks get darker and brights get brighter.
         assert!(tone_curve(0.05, &t) < 0.05);
         assert!(tone_curve(0.5, &t) > 0.5);
     }
@@ -328,7 +271,6 @@ mod tests {
         let dark_before = 0.01;
         let bright_before = 4.0;
         assert!(tone_curve(dark_before, &lift) > dark_before * 1.5, "shadows lift");
-        // The highlight end is barely touched by a shadow move.
         let bright_after = tone_curve(bright_before, &lift);
         assert!(
             (bright_after / bright_before - 1.0).abs() < 0.05,
@@ -345,8 +287,6 @@ mod tests {
 
     #[test]
     fn the_curve_is_monotonic_for_extreme_slider_combinations() {
-        // A curve that folds back would posterise; no slider combination may
-        // produce one, so check the corners of the parameter space.
         for &contrast in &[-100.0, 0.0, 100.0] {
             for &shadows in &[-100.0, 100.0] {
                 for &highlights in &[-100.0, 100.0] {
@@ -400,8 +340,6 @@ mod tests {
             ..Default::default()
         });
 
-        // Without a shoulder every one of these renders as the same white; the
-        // whole point is that afterwards they do not.
         let bright = [1.2f32, 1.8, 3.0, 6.0];
         let flat: Vec<u8> = bright.iter().map(|y| encode(tone_curve(*y, &plain))).collect();
         assert!(flat.iter().all(|v| *v == 255), "clipped without one: {flat:?}");
@@ -416,11 +354,7 @@ mod tests {
                 "highlights must keep pulling apart: {separated:?}"
             );
         }
-        // The curve itself stays below white across the headroom raw files
-        // actually contain — measured against real NEFs the brightest sample
-        // is a little over three times white. (Past roughly eleven times the
-        // exponential falls under single-precision epsilon and the result
-        // rounds to exactly white, which costs nothing any sensor records.)
+        // Real NEFs measure a bit over 3× white at most; past ~11× the exponential falls under f32 epsilon and rounds to exactly white.
         for y in [3.5f32, 6.0, 8.0] {
             let out = tone_curve(y, &rolled);
             assert!(out < 1.0, "reached white at {y}: {out}");
@@ -429,8 +363,6 @@ mod tests {
 
     #[test]
     fn the_shoulder_leaves_the_midtones_where_they_were() {
-        // A control that quietly darkened everything would be an exposure
-        // change wearing a different name. Below the knee it must do nothing.
         let t = tone_of(DevelopParams {
             rolloff: 40.0,
             ..Default::default()
@@ -450,7 +382,6 @@ mod tests {
                 ..Default::default()
             },
         );
-        // Channel ratios survive; only the level moves.
         let (r, g, b) = (out.rgba[0] as f32, out.rgba[1] as f32, out.rgba[2] as f32);
         assert!(r > g && g > b, "ordering held: {r} {g} {b}");
         let plain = develop(&src, &DevelopParams::default());
@@ -473,11 +404,8 @@ mod tests {
 
     #[test]
     fn vibrance_spares_colours_that_are_already_vivid() {
-        // Vibrance is saturation that backs off where colour is already
-        // strong — the point being that it does not blow out a red jacket
-        // while it opens up a muted sky. So the test is not "which pixel
-        // moves more" (a saturated pixel has more spread to move in the first
-        // place) but "how much of a flat saturation move does each one get".
+        // Measured not as "which pixel moves more" (a saturated pixel has more spread to move)
+        // but as the fraction of a flat saturation move each pixel receives.
         let dull = linear(&[[0.20, 0.19, 0.18]]);
         let vivid = linear(&[[0.40, 0.02, 0.02]]);
         let spread = |img: &DecodedImage| {
@@ -517,10 +445,7 @@ mod tests {
 
     #[test]
     fn vibrance_does_not_invert_on_colours_outside_the_srgb_gamut() {
-        // A saturated green of the kind a sensor actually records: outside
-        // the sRGB primaries, so one channel is negative. Measured on real
-        // NEFs, 0.4–3.6% of samples land here. Vibrance must leave such a
-        // pixel alone, never drain it.
+        // Out-of-gamut green with negative channels: 0.4–3.6% of real NEF samples land here.
         let out_of_gamut = linear(&[[-0.03, 0.42, -0.01]]);
         let spread = |img: &DecodedImage| {
             let (r, g, b) = (img.rgba[0] as i32, img.rgba[1] as i32, img.rgba[2] as i32);
@@ -542,8 +467,6 @@ mod tests {
 
     #[test]
     fn highlights_above_one_are_recoverable_not_pre_clipped() {
-        // Scene-linear input with real headroom: pulling highlights down must
-        // bring detail back rather than leave a flat white patch.
         let src = linear(&[[3.0, 2.8, 2.6]]);
         let clipped = develop(&src, &DevelopParams::default());
         assert_eq!(clipped.rgba[0], 255, "unrecovered highlight clips");
@@ -570,11 +493,7 @@ mod tests {
 
     #[test]
     fn ultraviolet_violet_renders_as_colour_not_as_a_black_hole() {
-        // Deep UV-lit violet from a real sensor: outside the sRGB primaries,
-        // green negative enough to drag the raw luminance to zero. The pixel
-        // is plainly bright blue and must render as such — measured against
-        // the camera's JPEG of a blacklight party, zeroing these punched
-        // black holes across the fabric.
+        // Green negative enough to drag the raw luminance to zero while the pixel is plainly bright blue.
         let src = linear(&[[0.02, -0.09, 0.35]]);
         let out = develop(&src, &DevelopParams::default());
         assert!(out.rgba[2] > 100, "blue survives: {:?}", &out.rgba[..3]);

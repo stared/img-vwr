@@ -1,8 +1,3 @@
-//! Merge JPEG frames from the command line — the crate exercised against
-//! real brackets, the way `match_camera` exercises the develop pipeline.
-//!
-//!     cargo run -p imgvwr-hdr --release --example merge_files -- out.jpg in1.jpg in2.jpg ...
-
 fn main() {
     let mut args = std::env::args().skip(1);
     let out = args.next().expect("first argument: the output path");

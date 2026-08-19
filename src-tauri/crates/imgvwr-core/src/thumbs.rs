@@ -2,11 +2,8 @@ use image::RgbaImage;
 
 use crate::codec::{CodecError, CodecRegistry};
 
-/// 512, not 256: the mosaic and a wide grid draw cells past 400 px, and a
-/// thumbnail smaller than its cell is a photograph shown out of focus.
-/// Bumping this re-keys the display-thumbnail cache (old files are simply
-/// orphaned); the face-sidecar and vector caches deliberately pin their own
-/// identity salt so they survive it.
+/// 512 because mosaic/grid cells draw past 400 px. Bumping this re-keys the display-thumbnail cache;
+/// the face-sidecar and vector caches pin their own identity salt and survive it.
 pub const THUMB_MAX_EDGE: u32 = 512;
 pub const THUMB_WEBP_QUALITY: f32 = 80.0;
 
@@ -67,7 +64,6 @@ pub fn apply_orientation(img: RgbaImage, orientation: u32) -> RgbaImage {
     }
 }
 
-/// Pure pipeline: bytes in, encoded WebP thumbnail bytes out.
 pub fn make_thumbnail(
     ext: &str,
     bytes: &[u8],
@@ -98,7 +94,7 @@ mod tests {
     fn dimensions_preserve_aspect_and_never_upscale() {
         assert_eq!(thumb_dimensions(1000, 500, 256), (256, 128));
         assert_eq!(thumb_dimensions(500, 1000, 256), (128, 256));
-        assert_eq!(thumb_dimensions(100, 50, 256), (100, 50)); // already small
+        assert_eq!(thumb_dimensions(100, 50, 256), (100, 50));
         assert_eq!(thumb_dimensions(256, 256, 256), (256, 256));
         assert_eq!(thumb_dimensions(0, 0, 256), (0, 0));
     }

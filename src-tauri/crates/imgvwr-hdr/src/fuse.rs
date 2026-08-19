@@ -1,19 +1,5 @@
-//! Turning a bracket into one photograph: Mertens exposure fusion.
-//!
-//! Fusion rather than radiance recovery on purpose. The classical HDR route —
-//! solve for the camera response, build a floating-point radiance map, tone
-//! map it back down — needs the exposure times to be trusted and ends with a
-//! tone mapper whose look has to be chosen. Fusion skips both: every pixel of
-//! the result is a blend of the *input* pixels that showed it best, so the
-//! output already looks like the camera's photographs, just with the shadows
-//! taken from the long exposure and the highlights from the short one.
-//!
-//! "Showed it best" is Mertens' three-part weight: local contrast (a blurred
-//! frame knows nothing), saturation (a blown channel greys out), and
-//! well-exposedness (distance from mid-grey). The blend happens per level of
-//! a Laplacian pyramid, which is what keeps it from looking like a blend —
-//! flat regions hand over smoothly across many pixels while edges switch
-//! frames within a few.
+//! Mertens exposure fusion: each pixel blends the input frames that showed it best
+//! (contrast × saturation × well-exposedness), per Laplacian-pyramid level so handovers stay smooth.
 
 use rayon::prelude::*;
 
@@ -74,7 +60,6 @@ fn blurred(p: &Plane) -> Plane {
     vertical
 }
 
-/// Blur, then keep every second pixel — one pyramid step down.
 fn downsampled(p: &Plane) -> Plane {
     let smooth = blurred(p);
     let width = (p.width + 1) / 2;
@@ -88,12 +73,7 @@ fn downsampled(p: &Plane) -> Plane {
     out
 }
 
-/// Back up to (width, height) by bilinear interpolation.
-///
-/// Collapse uses the same function that built the Laplacian, so the round
-/// trip is exact by construction — the interpolant only decides how smoothly
-/// the levels hand over, and bilinear is smooth enough at every scale that
-/// matters here.
+/// Collapse must use the same interpolant that built the Laplacian, so the round trip is exact by construction.
 fn upsampled(p: &Plane, width: usize, height: usize) -> Plane {
     let mut out = Plane::new(width, height);
     out.data.par_chunks_mut(width).enumerate().for_each(|(y, row)| {
@@ -123,8 +103,7 @@ fn gaussian_pyramid(base: Plane, levels: usize) -> Vec<Plane> {
     out
 }
 
-/// How deep the pyramids go: down to a handful of pixels, so flat regions
-/// blend across the whole picture rather than in visible patches.
+/// Down to a handful of pixels, so flat regions blend across the whole picture rather than in patches.
 fn levels_for(width: usize, height: usize) -> usize {
     let mut extent = width.min(height);
     let mut levels = 1;
@@ -135,7 +114,6 @@ fn levels_for(width: usize, height: usize) -> usize {
     levels
 }
 
-/// The Mertens weight of every pixel of one frame.
 fn weight_of(planes: &[Plane; 3]) -> Plane {
     let [r, g, b] = planes;
     let (width, height) = (r.width, r.height);
@@ -164,24 +142,21 @@ fn weight_of(planes: &[Plane; 3]) -> Plane {
             let well = |c: f32| (-(c - 0.5).powi(2) / (2.0 * 0.2 * 0.2)).exp();
             let exposedness = well(pr) * well(pg) * well(pb);
 
-            // The epsilon keeps a pixel every frame botched from dividing by
-            // zero at normalisation; it decides nothing else.
+            // The epsilon only keeps a pixel every frame botched from dividing by zero at normalisation.
             *v = contrast * saturation * exposedness + 1e-12;
         }
     });
     out
 }
 
-/// Fuse aligned, same-sized frames into one. Panics on none given or on
-/// mismatched sizes — the caller aligned these, so both are its bugs.
+/// Panics on no frames or mismatched sizes — the caller aligned these, so both are its bugs.
 pub fn exposure_fusion(frames: &[image::RgbImage]) -> image::RgbImage {
     let (width, height) =
         (frames[0].width() as usize, frames[0].height() as usize);
     assert!(frames.iter().all(|f| (f.width() as usize, f.height() as usize) == (width, height)));
     let levels = levels_for(width, height);
 
-    // Weights first, normalised so every pixel's weights sum to one across
-    // frames — after that each frame can be folded in on its own.
+    // Weights are normalised to sum to one across frames, so each frame then folds in independently.
     let planes_of = |frame: &image::RgbImage| -> [Plane; 3] {
         let mut planes =
             [Plane::new(width, height), Plane::new(width, height), Plane::new(width, height)];
@@ -205,8 +180,6 @@ pub fn exposure_fusion(frames: &[image::RgbImage]) -> image::RgbImage {
         w.data.par_iter_mut().zip(&total.data).for_each(|(v, t)| *v /= t);
     }
 
-    // One Laplacian pyramid per channel, accumulated frame by frame under
-    // the Gaussian pyramid of that frame's weight.
     let mut fused: Vec<[Plane; 3]> = Vec::new();
     for (frame, weight) in frames.iter().zip(weights) {
         let weight_levels = gaussian_pyramid(weight, levels);
@@ -243,7 +216,6 @@ pub fn exposure_fusion(frames: &[image::RgbImage]) -> image::RgbImage {
         }
     }
 
-    // Collapse: start at the coarsest level and add detail back in.
     let mut picture: [Plane; 3] = fused.pop().expect("at least one level");
     while let Some(level) = fused.pop() {
         for c in 0..3 {
@@ -267,7 +239,6 @@ pub fn exposure_fusion(frames: &[image::RgbImage]) -> image::RgbImage {
 mod tests {
     use super::*;
 
-    /// A colourful scene: a horizontal ramp with a saturated block in it.
     fn scene(width: u32, height: u32) -> image::RgbImage {
         image::RgbImage::from_fn(width, height, |x, y| {
             let ramp = (x * 255 / width.max(1)) as u8;
@@ -308,9 +279,6 @@ mod tests {
 
     #[test]
     fn the_well_exposed_frame_wins_where_the_others_clipped() {
-        // In the bright frame the block has blown to near-white; in the dark
-        // one it has sunk to near-black. The fused block must still be red —
-        // taken from the frame that held it.
         let mid = scene(96, 64);
         let bracket = [exposed(&mid, 0.08), mid.clone(), exposed(&mid, 6.0)];
         let fused = exposure_fusion(&bracket);
@@ -325,8 +293,7 @@ mod tests {
     fn one_frame_fuses_to_itself() {
         let only = scene(40, 40);
         let fused = exposure_fusion(&[only.clone()]);
-        // Normalised weights of a single frame are all one, so the pyramid
-        // round-trip is the identity up to float noise.
+        // A single frame's normalised weights are all one, so the pyramid round-trip is the identity up to float noise.
         for (a, b) in only.pixels().zip(fused.pixels()) {
             for c in 0..3 {
                 assert!((a.0[c] as i16 - b.0[c] as i16).abs() <= 1, "{a:?} vs {b:?}");

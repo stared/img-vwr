@@ -11,15 +11,10 @@ pub struct ExifSubset {
     pub date_time: Option<String>,
     pub camera: Option<String>,
     pub lens: Option<String>,
-    /// The exposure, as a photographer states it. Kept as numbers rather than
-    /// as the camera's own strings so they can be compared, filtered and
-    /// sorted — formatting for display is the frontend's business, and "1/200"
-    /// is a rendering of 0.005, not a fact about the photograph.
     pub exposure_time: Option<f64>,
     pub f_number: Option<f64>,
     pub iso: Option<u32>,
-    /// The exposure-compensation dial, in EV. Zero is a real reading — the
-    /// dial at its detent — distinct from a file that never recorded one.
+    /// EV; Some(0.0) is the dial at its detent, distinct from unrecorded (None).
     pub exposure_bias: Option<f64>,
     /// Millimetres, as marked on the lens.
     pub focal_length: Option<f64>,
@@ -28,10 +23,7 @@ pub struct ExifSubset {
     pub gps_lon: Option<f64>,
 }
 
-/// The camera's own per-shot grade: how far its auto processing pushed this
-/// frame off the base profile, in the Adobe-unit recipe it writes into the
-/// raw file's XMP packet. Two frames shot seconds apart can carry different
-/// grades — this is the answer to "why do these neighbours look different".
+/// The camera's per-shot auto grade in Adobe slider units, from the raw file's XMP packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraGrade {
@@ -44,8 +36,7 @@ pub struct CameraGrade {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageMeta {
-    /// None when no Rust decoder knows the format (e.g. AVIF) — the webview
-    /// can still measure the image it renders natively.
+    /// None when no Rust decoder knows the format (e.g. AVIF).
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub format: String,
@@ -56,8 +47,7 @@ pub struct ImageMeta {
     pub grade: Option<CameraGrade>,
 }
 
-/// Header-only metadata read: image dimensions without a full decode, plus a
-/// small EXIF subset. Never fails on undecodable pixels — fields degrade to None.
+/// Header-only read; undecodable pixels degrade fields to None rather than erroring.
 pub fn read_meta(path: &Path) -> std::io::Result<ImageMeta> {
     let fs_meta = std::fs::metadata(path)?;
     let modified_ms = fs_meta
@@ -89,9 +79,7 @@ pub fn read_meta(path: &Path) -> std::io::Result<ImageMeta> {
     })
 }
 
-/// The XMP grade, for formats that can carry one. Gated by extension so a
-/// folder of JPEGs does not pay a head-read per file for a packet only raw
-/// files have.
+/// Extension-gated so a folder of JPEGs does not pay a per-file head read.
 fn read_grade(path: &Path, format: &str) -> Option<CameraGrade> {
     const RAW_LIKE: [&str; 8] = ["nef", "nrw", "arw", "cr3", "raf", "orf", "rw2", "dng"];
     if !RAW_LIKE.contains(&format) {
@@ -106,14 +94,7 @@ fn read_grade(path: &Path, format: &str) -> Option<CameraGrade> {
     })
 }
 
-/// Per-shot rendering decisions the camera wrote into the file.
-///
-/// Nikon embeds an XMP packet near the start of every NEF with its Auto
-/// Picture Control choices translated into Adobe terms (`crd:Contrast2012`
-/// and friends vary shot by shot), and the standard EXIF exposure fields
-/// say how the meter treated the scene. Together they are direct inputs to
-/// the camera-look tuning predictor — the camera telling us what it did,
-/// rather than us guessing from pixels.
+/// Nikon writes its per-shot Auto Picture Control choices into the NEF as XMP in Adobe terms (`crd:Contrast2012` etc.); these plus EXIF exposure fields feed the look predictor.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CameraDecisions {
     pub contrast: Option<f64>,
@@ -129,11 +110,7 @@ pub struct CameraDecisions {
     pub light_value: Option<f64>,
 }
 
-/// The camera's per-shot decisions, from the XMP packet and EXIF.
-///
-/// The XMP packet sits in the first kilobytes of the file as plain XML, so
-/// a byte scan of the head is enough — no TIFF walking, no maker-note
-/// decryption. Fields degrade to None when absent.
+/// The XMP packet is plain XML in the file head, so a byte scan suffices — no TIFF walking.
 pub fn read_camera_decisions(path: &Path) -> CameraDecisions {
     let head = read_head(path, 256 * 1024).unwrap_or_default();
     let xmp = |name: &str| xmp_number(&head, name);
@@ -189,7 +166,6 @@ fn read_head(path: &Path, len: usize) -> std::io::Result<Vec<u8>> {
     Ok(buf)
 }
 
-/// `<crd:Name>value</crd:Name>` from the XMP bytes, if present and numeric.
 fn xmp_number(head: &[u8], name: &str) -> Option<f64> {
     let open = format!("<crd:{name}>");
     let close = format!("</crd:{name}>");
@@ -233,9 +209,7 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
         lens: field_string(exif::Tag::LensModel).and_then(|s| clean_lens(&s)),
         exposure_time: rational(exif::Tag::ExposureTime),
         f_number: rational(exif::Tag::FNumber),
-        // Signed and allowed to be zero: the dial at its detent is a
-        // reading, not an absence — the positive-only helper above is for
-        // quantities that cannot meaningfully be zero or negative.
+        // Not the `rational` helper: it filters to >0, but 0 EV and negative bias are real readings.
         exposure_bias: data
             .get_field(exif::Tag::ExposureBiasValue, exif::In::PRIMARY)
             .and_then(|f| match &f.value {
@@ -244,7 +218,7 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
                 _ => None,
             })
             .filter(|v| v.is_finite()),
-        // The modern tag, falling back to the one film-era cameras wrote.
+        // PhotographicSensitivity is the modern ISO tag; ISOSpeed is the film-era fallback.
         iso: data
             .get_field(exif::Tag::PhotographicSensitivity, exif::In::PRIMARY)
             .or_else(|| data.get_field(exif::Tag::ISOSpeed, exif::In::PRIMARY))
@@ -255,11 +229,7 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
     })
 }
 
-/// The lens name, without the padding the camera wrote after it.
-///
-/// Nikon writes LensModel as a fixed-width array, so `display_value` renders
-/// `"NIKKOR Z 50mm f/1.8 S", "", "", ""` — forty-odd empty strings after the
-/// name. Printed verbatim that fills a panel with quotes and commas.
+/// Nikon writes LensModel as a fixed-width array, so `display_value` renders the name followed by dozens of empty quoted strings.
 fn clean_lens(raw: &str) -> Option<String> {
     let name = raw
         .split(',')
@@ -268,8 +238,7 @@ fn clean_lens(raw: &str) -> Option<String> {
     Some(name.to_owned())
 }
 
-/// One GPS coordinate as decimal degrees, negative for S/W. None when the
-/// tags are missing or the value is malformed (zero denominators, out of range).
+/// Decimal degrees, negative for S/W; None on missing or malformed tags.
 fn gps_coord(data: &exif::Exif, value_tag: exif::Tag, ref_tag: exif::Tag, max: f64) -> Option<f64> {
     let field = data.get_field(value_tag, exif::In::PRIMARY)?;
     let dms = match &field.value {
@@ -318,8 +287,6 @@ mod tests {
 
     #[test]
     fn a_padded_lens_name_loses_its_padding() {
-        // Nikon writes LensModel as a fixed-width array, so the display value
-        // is the name followed by forty-odd empty strings.
         let padded = r#""NIKKOR Z 50mm f/1.8 S", "", "", "", """#;
         assert_eq!(clean_lens(padded).as_deref(), Some("NIKKOR Z 50mm f/1.8 S"));
         assert_eq!(clean_lens(r#""50mm""#).as_deref(), Some("50mm"));

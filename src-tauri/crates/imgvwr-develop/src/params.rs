@@ -1,14 +1,7 @@
-//! The edit settings — the whole user-facing state of a develop session.
-
 use imgvwr_core::WhiteBalance;
 use serde::{Deserialize, Serialize};
 
-/// Tone and colour adjustments, all format-agnostic: they act on scene-linear
-/// pixels whatever plugin produced them.
-///
-/// Every slider is centred on zero meaning "unchanged", so [`Default`] is the
-/// identity edit and resetting is just replacing the struct. Ranges match the
-/// familiar ±100 of a photo editor, except exposure which is in stops.
+/// Zero means unchanged on every slider, so [`Default`] is the identity edit; ranges are ±100 except exposure (stops).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopParams {
@@ -24,15 +17,8 @@ pub struct DevelopParams {
     pub whites: f32,
     /// Moves the black point; ±100.
     pub blacks: f32,
-    /// How softly the brightest values approach white, 0–100.
-    ///
-    /// Zero clips: everything at or above white renders as white, which is
-    /// what a pipeline without a shoulder does. Above zero the top of the
-    /// range is bent into an asymptote instead, so highlights keep separating
-    /// long after they would otherwise have gone flat.
-    ///
-    /// One-sided rather than ±100 because there is nothing on the other side
-    /// of clipping — a curve cannot reach white sooner than immediately.
+    /// How softly the brightest values approach white, 0–100: zero clips at white, above zero bends
+    /// the top into an asymptote. One-sided because there is nothing on the other side of clipping.
     pub rolloff: f32,
     /// Saturation weighted towards already-dull colours; ±100.
     pub vibrance: f32,
@@ -57,15 +43,11 @@ impl Default for DevelopParams {
 }
 
 impl DevelopParams {
-    /// True when this edit would leave the image untouched — lets the viewer
-    /// skip the develop path entirely for images nobody has edited.
     pub fn is_identity(&self) -> bool {
         *self == Self::default()
     }
 
-    /// Clamp every slider into its documented range. Settings arrive from the
-    /// frontend and from a database written by older versions, so the pipeline
-    /// never assumes they are in range.
+    /// Settings arrive from the frontend and from databases written by older versions; never assumed in range.
     pub fn clamped(&self) -> Self {
         Self {
             exposure: clamp_finite(self.exposure, -5.0, 5.0),
@@ -81,37 +63,19 @@ impl DevelopParams {
     }
 }
 
-/// The complete persisted state of one image's edit: what neutral to render
-/// against, plus everything layered on top.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopSettings {
     pub white_balance: WhiteBalance,
     pub params: DevelopParams,
-    /// Which part of the frame the photograph actually is.
     pub crop: crate::crop::Crop,
-    /// Which preset this edit is a variation of.
-    ///
-    /// Stored rather than derived, and the two are not the same question.
-    /// "Which preset are the sliders sitting on right now" is answered by
-    /// comparing them, and goes stale the moment one moves. "Which preset was
-    /// this edit built on top of" cannot be recovered from the numbers at all
-    /// — and it is the one the sliders need, because it is what they measure
-    /// their deviation from.
-    ///
-    /// An id rather than a copy of the numbers, so improving a preset improves
-    /// the baseline of everything based on it. An unknown id (a preset that
-    /// has since been removed) reads as the identity, which is what a missing
-    /// baseline should mean.
+    /// The preset this edit was built on — stored, not derived: it cannot be recovered from the
+    /// numbers and is what the sliders measure deviation from. An id, so improving a preset
+    /// improves everything based on it; an unknown id reads as the identity.
     pub basis: String,
-    /// Which camera look renders this image — the fitted transform that makes
-    /// a neutral raw decode match the camera's own JPEG, applied under the
-    /// sliders. `"flat"` means none.
-    ///
-    /// Separate from `basis` (and defaulting to none) on purpose: edits saved
-    /// before the look existed carry slider positions that already emulate
-    /// it, and deserialising those into a world where the look also applied
-    /// would render every old edit twice as strong.
+    /// The fitted camera look applied under the sliders; `"flat"` means none.
+    /// Defaults independently of `basis`: edits saved before the look existed already emulate it
+    /// in slider positions, and applying the look to them too would render twice as strong.
     #[serde(default = "default_look")]
     pub look: String,
 }
@@ -121,8 +85,6 @@ fn default_look() -> String {
 }
 
 impl DevelopSettings {
-    /// The untouched starting point for an image whose camera chose `as_shot`,
-    /// with no look applied.
     pub fn neutral(as_shot: WhiteBalance) -> Self {
         Self {
             white_balance: as_shot,
@@ -160,17 +122,12 @@ fn clamp_finite(v: f32, lo: f32, hi: f32) -> f32 {
     }
 }
 
-/// Which analysis overlay to composite over the developed pixels. A closed
-/// enum rather than a bag of booleans: overlays are mutually exclusive, and a
-/// plugin adding one extends this in exactly one place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Overlay {
-    /// Just the photograph.
     None,
     /// Tint regions by how much fine detail they resolve — the focus map.
     Sharpness,
-    /// Mark the pixels that have run out of range at either end.
     Clipping,
 }
 

@@ -1,39 +1,12 @@
-//! Crop and straighten: which part of the frame the photograph actually is.
-//!
-//! Non-destructive like everything else here — a rectangle and an angle stored
-//! beside the sliders, applied at render time, and thrown away by a reset.
-//!
-//! ## The one piece of real geometry in the pipeline
-//!
-//! Everything else in this crate is per-pixel: a value goes in, a value comes
-//! out, and no pixel cares where it is. A straightened crop is not that. The
-//! rectangle the user drew is axis-aligned in a frame that is *rotated*
-//! relative to the sensor, so producing it means asking the plugin for the
-//! axis-aligned patch that contains the rotated rectangle and resampling out
-//! of it.
-//!
-//! Two consequences worth knowing:
-//!
-//! - Rotation is only correct in an isotropic space. Normalised coordinates
-//!   are not one — an image twice as wide as it is tall stretches x by two —
-//!   so every rotation here converts to a square space by the frame's aspect,
-//!   turns, and converts back. Skipping that shears the picture, and the shear
-//!   is small enough at small angles to look like sloppy interpolation rather
-//!   than a bug.
-//!
-//! - An unrotated crop must cost nothing. It is the overwhelmingly common
-//!   case, and resampling a straight rectangle would soften every cropped
-//!   image for no reason, so it takes a path that hands the region straight to
-//!   the plugin and never touches a pixel.
+//! Rotation is only correct in an isotropic space: normalised coordinates stretch x by the
+//! aspect, so every rotation here converts to a square space, turns, and converts back — skipping
+//! that shears the picture, subtly enough at small angles to look like sloppy interpolation.
+//! An unrotated crop hands its region straight to the plugin and never resamples a pixel.
 
 use imgvwr_core::{LinearImage, Region};
 use serde::{Deserialize, Serialize};
 
-/// The photograph within the frame: a rectangle, and the angle it sits at.
-///
-/// `x`, `y`, `width` and `height` are the rectangle in normalised coordinates
-/// of the original frame, describing where its *centre* and extent are; the
-/// rectangle itself is axis-aligned in the frame rotated by `angle`.
+/// The rectangle in normalised original-frame coordinates; the rectangle itself is axis-aligned in the frame rotated by `angle`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Crop {
@@ -41,13 +14,11 @@ pub struct Crop {
     pub y: f32,
     pub width: f32,
     pub height: f32,
-    /// Degrees clockwise. Positive straightens a horizon that falls to the
-    /// right, which is the direction a hand-held frame usually drifts.
+    /// Degrees clockwise; positive straightens a horizon that falls to the right.
     pub angle: f32,
 }
 
-/// Beyond this the "crop" is a rotation of the whole picture, and the corners
-/// it drags in from outside the frame would be empty.
+/// Beyond this the corners drag in empty area from outside the frame.
 const MAX_ANGLE: f32 = 45.0;
 
 /// Smaller than this and a crop is a mistake rather than an intention.
@@ -60,7 +31,6 @@ impl Default for Crop {
 }
 
 impl Crop {
-    /// The whole frame, unrotated.
     pub const FULL: Self = Self {
         x: 0.0,
         y: 0.0,
@@ -69,13 +39,10 @@ impl Crop {
         angle: 0.0,
     };
 
-    /// True when this crop takes the whole frame and turns nothing, so the
-    /// renderer can skip every step below.
     pub fn is_full(&self) -> bool {
         *self == Self::FULL
     }
 
-    /// True when the rectangle can be handed to a plugin as-is.
     pub fn is_axis_aligned(&self) -> bool {
         self.angle == 0.0
     }
@@ -84,9 +51,7 @@ impl Crop {
         let width = clamp_finite(self.width, MIN_EXTENT, 1.0);
         let height = clamp_finite(self.height, MIN_EXTENT, 1.0);
         Self {
-            // The rectangle stays inside the frame when it is not rotated. A
-            // rotated one is allowed past the edge, because its bounding box
-            // always is and clamping that would refuse legitimate crops.
+            // A rotated rectangle may pass the edge: its bounding box always does, and clamping that would refuse legitimate crops.
             x: clamp_finite(self.x, 0.0, 1.0 - width),
             y: clamp_finite(self.y, 0.0, 1.0 - height),
             width,
@@ -99,11 +64,7 @@ impl Crop {
         (self.x + self.width / 2.0, self.y + self.height / 2.0)
     }
 
-    /// A point given as an offset from the crop's centre, in the rotated
-    /// frame, expressed in the original frame's normalised coordinates.
-    ///
-    /// `aspect` is the frame's width over its height. Without it the rotation
-    /// happens in a stretched space and shears the picture.
+    /// Offset from the crop's centre in the rotated frame → the original frame's normalised coordinates. `aspect` is width over height; without it the rotation shears.
     fn rotated_to_original(&self, dx: f32, dy: f32, aspect: f32) -> (f32, f32) {
         let (cx, cy) = self.centre();
         let (sin, cos) = self.angle.to_radians().sin_cos();
@@ -113,19 +74,13 @@ impl Crop {
         (cx + rx / aspect, cy + ry)
     }
 
-    /// A point given in the cropped image's own coordinates, expressed in the
-    /// original frame's.
-    ///
-    /// What anything pointing at the picture needs: the eyedropper is handed
-    /// a place on what the user can see, and the plugin only knows where
-    /// things are on the sensor.
+    /// A point in the cropped image's own coordinates, expressed in the original frame's — what the eyedropper needs.
     pub fn point_in_original(&self, u: f32, v: f32, aspect: f32) -> (f32, f32) {
         let (x, y) = self.rotated_to_original((u - 0.5) * self.width, (v - 0.5) * self.height, aspect);
         (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0))
     }
 
-    /// The axis-aligned part of the original frame that contains this crop —
-    /// what a plugin has to render before anything can be resampled from it.
+    /// The axis-aligned part of the original frame containing this crop — what a plugin must render first.
     pub fn source_region(&self, aspect: f32) -> Region {
         if self.is_axis_aligned() {
             return Region {
@@ -151,20 +106,13 @@ impl Crop {
         .clamped()
     }
 
-    /// This crop narrowed to a sub-rectangle of itself, given in the cropped
-    /// image's own coordinates.
-    ///
-    /// How zooming into a cropped photograph stays cheap: the viewport asks
-    /// for a part of what it is showing, and what it is showing is already a
-    /// crop, so the two compose into one smaller crop rather than a full
-    /// render followed by a discard.
+    /// Narrowed to a sub-rectangle given in the cropped image's own coordinates: zooming composes into one smaller crop instead of a full render followed by a discard.
     pub fn narrowed(&self, region: Region, aspect: f32) -> Self {
         if region.is_full() {
             return *self;
         }
         let r = region.clamped();
-        // Where the sub-rectangle's centre sits, as an offset from this
-        // crop's centre, in the rotated frame.
+        // The sub-rectangle's centre as an offset from this crop's centre, in the rotated frame.
         let dx = (r.x + r.width / 2.0 - 0.5) * self.width;
         let dy = (r.y + r.height / 2.0 - 0.5) * self.height;
         let (cx, cy) = self.rotated_to_original(dx, dy, aspect);
@@ -178,14 +126,11 @@ impl Crop {
         }
     }
 
-    /// Output pixel size for this crop of a frame `native` pixels across,
-    /// with the longest edge held to `max_edge`.
     pub fn output_size(&self, native: (u32, u32), max_edge: u32) -> (u32, u32) {
         let w = self.width * native.0 as f32;
         let h = self.height * native.1 as f32;
         let longest = w.max(h).max(1.0);
-        // Never upscale: asking for more than the crop contains invents
-        // detail that is not there.
+        // Never upscale: more than the crop contains would be invented detail.
         let scale = (max_edge.max(1) as f32 / longest).min(1.0);
         (
             ((w * scale).round() as u32).max(1),
@@ -194,11 +139,8 @@ impl Crop {
     }
 }
 
-/// Resample a rotated crop out of the patch a plugin rendered for it.
-///
-/// `source` covers `region` of the original frame; the result is `crop` at
-/// `out` pixels. Bilinear, because a straightened horizon is judged on
-/// whether its edges look clean and nearest-neighbour makes them a staircase.
+/// `source` covers `region` of the original frame; the result is `crop` at `out` pixels.
+/// Bilinear — nearest-neighbour turns a straightened horizon into a staircase.
 pub fn resample(
     source: &LinearImage,
     region: Region,
@@ -212,8 +154,7 @@ pub fn resample(
 
     for j in 0..oh {
         for i in 0..ow {
-            // Where this output pixel sits in the crop, as an offset from the
-            // crop's centre in the rotated frame.
+            // This output pixel as an offset from the crop's centre, in the rotated frame.
             let dx = ((i as f32 + 0.5) / ow as f32 - 0.5) * crop.width;
             let dy = ((j as f32 + 0.5) / oh as f32 - 0.5) * crop.height;
             let (ox, oy) = crop.rotated_to_original(dx, dy, aspect);
@@ -237,11 +178,8 @@ pub fn resample(
     }
 }
 
-/// Bilinear sample, clamping at the edges.
-///
-/// Clamping rather than returning black: a rotated crop's corners can fall a
-/// fraction of a pixel outside the patch that was rendered for them, and a
-/// black fringe there would be a visible defect produced entirely by rounding.
+/// Clamps at the edges rather than returning black: a rotated crop's corners can fall a fraction
+/// of a pixel outside the rendered patch, and a black fringe there is a defect made of rounding.
 fn bilinear(src: &LinearImage, u: f32, v: f32) -> [f32; 3] {
     let (w, h) = (src.width as i64, src.height as i64);
     if w == 0 || h == 0 {
@@ -326,8 +264,6 @@ mod tests {
 
     #[test]
     fn a_rotated_crop_asks_for_more_than_it_keeps() {
-        // The patch containing a tilted rectangle is strictly bigger than the
-        // rectangle, which is the whole reason straightening loses edges.
         let straight = Crop {
             x: 0.25,
             y: 0.25,
@@ -346,10 +282,6 @@ mod tests {
 
     #[test]
     fn rotation_does_not_shear_a_non_square_frame() {
-        // The bug this catches: rotating in normalised coordinates, where a
-        // 2:1 frame stretches x by two, turns a rectangle into a
-        // parallelogram. Opposite corners must stay symmetric about the
-        // centre, and adjacent edges must stay perpendicular.
         let crop = Crop {
             x: 0.2,
             y: 0.2,
@@ -370,8 +302,7 @@ mod tests {
             assert!((corners[a].0 + corners[b].0 - 2.0 * cx).abs() < 1e-5);
             assert!((corners[a].1 + corners[b].1 - 2.0 * cy).abs() < 1e-5);
         }
-        // Adjacent edges are perpendicular — measured in the square space,
-        // which is where "perpendicular" is meaningful.
+        // Adjacent edges perpendicular — measured in the square space, where "perpendicular" is meaningful.
         let edge = |a: usize, b: usize| {
             (
                 (corners[b].0 - corners[a].0) * aspect,
@@ -396,8 +327,7 @@ mod tests {
 
     #[test]
     fn narrowing_composes_instead_of_rendering_and_discarding() {
-        // Zooming into the middle quarter of a crop must give the crop that
-        // covers that quarter — same centre, half the extent.
+        // The middle quarter of a crop is the crop covering that quarter — same centre, half the extent.
         let crop = Crop {
             x: 0.2,
             y: 0.2,
@@ -449,21 +379,14 @@ mod tests {
             height: 0.25,
             angle: 0.0,
         };
-        // A half-by-quarter crop of 4000x2000 is 2000x500; held to 1000 it
-        // becomes 1000x250.
+        // A half-by-quarter crop of 4000x2000 is 2000x500; held to 1000 it becomes 1000x250.
         assert_eq!(half.output_size((4000, 2000), 1000), (1000, 250));
-        // Asking for more than the crop holds gives what it holds.
         assert_eq!(half.output_size((4000, 2000), 9000), (2000, 500));
     }
 
     #[test]
     fn resampling_an_unrotated_crop_reproduces_the_patch() {
-        // With no rotation the resample is a straight scale, so a ramp must
-        // come back as the same ramp over the crop's own range.
-        //
-        // The patch here is the whole frame — `region` says what the source
-        // covers, and getting that pairing wrong is the easiest mistake to
-        // make when calling this.
+        // `region` says what the source covers (the whole frame here); getting that pairing wrong is the easiest calling mistake.
         let src = gradient(64, 64);
         let crop = Crop {
             x: 0.25,
@@ -475,18 +398,13 @@ mod tests {
         let out = resample(&src, Region::FULL, &crop, 1.0, (32, 32));
         assert_eq!((out.width, out.height), (32, 32));
 
-        // The top-left output pixel comes from a quarter of the way in.
         assert!((out.rgb[0] - 0.25).abs() < 0.03, "{}", out.rgb[0]);
-        // ...and the bottom-right from three quarters.
         let last = (31 * 32 + 31) * 3;
         assert!((out.rgb[last] - 0.75).abs() < 0.03, "{}", out.rgb[last]);
     }
 
     #[test]
     fn resampling_never_reads_outside_the_patch_it_was_given() {
-        // A rotated crop's corners land a hair outside the rendered patch.
-        // Clamping keeps them finite and in range; the failure this guards is
-        // a black fringe produced purely by rounding.
         let src = gradient(32, 32);
         let crop = Crop {
             x: 0.05,
@@ -501,9 +419,6 @@ mod tests {
 
     #[test]
     fn a_point_on_the_crop_maps_back_to_where_it_is_on_the_sensor() {
-        // The eyedropper is told where the user clicked on the picture they
-        // can see. Without this, clicking the middle of a corner crop would
-        // sample the middle of the frame.
         let crop = Crop {
             x: 0.5,
             y: 0.5,
@@ -514,7 +429,6 @@ mod tests {
         let (x, y) = crop.point_in_original(0.5, 0.5, 1.0);
         assert!((x - 0.7).abs() < 1e-5 && (y - 0.7).abs() < 1e-5, "{x} {y}");
 
-        // The crop's own corners land on its corners in the frame.
         let (tx, ty) = crop.point_in_original(0.0, 0.0, 1.0);
         assert!((tx - 0.5).abs() < 1e-5 && (ty - 0.5).abs() < 1e-5);
 

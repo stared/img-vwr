@@ -1,6 +1,3 @@
-//! Measure a model's real load/embed timings on this machine:
-//! cargo run --release -p imgvwr-embed --example bench -- <model-id> <models-dir> <image> [n]
-
 use std::time::Instant;
 
 fn main() {

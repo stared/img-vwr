@@ -1,9 +1,4 @@
-//! Renders a 1:1 centre patch through the shipped plugin (camera-matched
-//! detail settings included) — for eyeballing against the camera's JPEG.
-//!
-//! ```sh
-//! cargo run --release -p imgvwr-raw --example patch -- <raw> <out.png>
-//! ```
+//! Renders a 1:1 centre patch through the shipped plugin, for eyeballing against the camera's JPEG.
 
 use std::path::PathBuf;
 

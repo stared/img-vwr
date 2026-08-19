@@ -1,7 +1,5 @@
-//! Image/text embedding for "similar to" search. A dual encoder maps images
-//! and text phrases into one vector space; similarity is the dot product of
-//! L2-normalized embeddings. Models are downloaded on demand from Hugging
-//! Face into the app cache — never installed globally.
+//! Dual-encoder image/text embedding; similarity is the dot product of L2-normalized vectors.
+//! Models download on demand from Hugging Face into the app cache — never installed globally.
 
 use std::sync::Mutex;
 
@@ -32,14 +30,11 @@ impl std::fmt::Display for EmbedError {
 
 impl std::error::Error for EmbedError {}
 
-/// One offered model: identity, where its weights live, and the picker notes.
 pub struct ModelSpec {
     pub id: &'static str,
     pub label: &'static str,
-    /// One-line quality note for the picker.
     pub quality: &'static str,
-    /// One-line speed note for the picker. Throughput was measured with this
-    /// crate's `bench` example on an Apple Silicon GPU (Metal, release build).
+    /// Throughput measured with this crate's `bench` example on an Apple Silicon GPU (Metal, release).
     pub speed: &'static str,
     pub download_mb: u32,
     pub dim: u32,
@@ -47,12 +42,8 @@ pub struct ModelSpec {
     image_size: usize,
 }
 
-/// The picks — SigLIP 2 only. MobileCLIP S2 was evaluated and dropped:
-/// candle's Metal conv2d path makes its FastViT tower take ~78 s per image
-/// (vs 14 ms for a ViT), and even on CPU it ran 60× behind SigLIP 2 Base on
-/// the GPU — no niche left. ViTs are the fast path in this runtime; their
-/// 256 px input matches the thumbnail cache exactly, so indexing never
-/// re-decodes originals.
+/// SigLIP 2 only: MobileCLIP S2 was dropped — candle's Metal conv2d makes its FastViT tower take ~78 s/image vs 14 ms for a ViT.
+/// The 256 px input matches the thumbnail cache exactly, so indexing never re-decodes originals.
 pub static MODELS: &[ModelSpec] = &[
     ModelSpec {
         id: "siglip2-base",
@@ -80,7 +71,6 @@ pub fn model_spec(id: &str) -> Option<&'static ModelSpec> {
     MODELS.iter().find(|m| m.id == id)
 }
 
-/// Catalog entry as shown in the UI picker.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbedModelInfo {
@@ -94,7 +84,6 @@ pub struct EmbedModelInfo {
     pub active: bool,
 }
 
-/// True when every file the model needs is already in the local cache.
 pub fn is_downloaded(spec: &ModelSpec, cache_dir: &std::path::Path) -> bool {
     let cache = hf_hub::Cache::new(cache_dir.to_path_buf());
     let repo = cache.model(spec.hf_repo.to_string());
@@ -131,32 +120,13 @@ fn best_device() -> Device {
 }
 
 impl Embedder {
-    /// Claim the model for one forward pass.
-    ///
-    /// A `&self` method that computes on the GPU looks like it can be called
-    /// from anywhere, and it cannot: candle's Metal device keeps a mutable
-    /// residency set that Metal itself does not guard, so two threads
-    /// building tensors on one device corrupt it and the process dies inside
-    /// libmalloc with "pointer being freed was not allocated". That is not a
-    /// hypothetical — it took the app down while a folder was indexing in the
-    /// background and a phrase was ranked in the foreground, which is simply
-    /// what using this feature looks like.
-    ///
-    /// So inference is serialised, here rather than at each call site. A
-    /// caller cannot forget a lock it never has to take, and this is the only
-    /// place that knows the device is not shareable.
-    ///
-    /// A plain mutex, not a try-lock: a queued forward pass is a wait, and a
-    /// dropped one would be a wrong answer. Poisoning is ignored — a panic in
-    /// one pass says nothing about the next, and refusing to embed for the
-    /// rest of the session would be a worse failure than the one that caused
-    /// it.
+    /// Serialises every forward pass: candle's Metal device mutates an unguarded residency set, and two threads building tensors on one device die in libmalloc ("pointer being freed was not allocated").
+    /// A plain lock, not try-lock — a dropped pass is a wrong answer; poisoning is ignored, since a panic in one pass says nothing about the next.
     fn busy(&self) -> std::sync::MutexGuard<'_, ()> {
         self.gpu.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Downloads (or reuses) the weights, then loads the model. Slow — run on
-    /// a background thread. `cache_dir` is the app-owned model cache.
+    /// Downloads (or reuses) the weights, then loads. Slow — run on a background thread.
     pub fn load(spec: &'static ModelSpec, cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
         let api = hf_hub::api::sync::ApiBuilder::new()
             .with_cache_dir(cache_dir.to_path_buf())
@@ -195,9 +165,7 @@ impl Embedder {
         })
     }
 
-    /// Embed one image file (typically a cached thumbnail — already decoded
-    /// once, downscaled and orientation-corrected). Returns an L2-normalized
-    /// vector, so similarity is a plain dot product.
+    /// Returns an L2-normalized vector, so similarity is a plain dot product.
     pub fn embed_image_file(&self, path: &std::path::Path) -> Result<Vec<f32>, EmbedError> {
         let img = image::ImageReader::open(path)
             .map_err(|e| EmbedError::Image(e.to_string()))?
@@ -208,8 +176,7 @@ impl Embedder {
             .resize_to_fill(size as u32, size as u32, image::imageops::FilterType::Triangle)
             .to_rgb8()
             .into_raw();
-        // Everything above is CPU work on this thread's own data. From here
-        // the device is touched, so the pass takes its turn.
+        // The device is touched from here on; the pass takes its turn.
         let _turn = self.busy();
         let tensor = Tensor::from_vec(img, (size, size, 3), &Device::Cpu)
             .and_then(|t| t.permute((2, 0, 1)))
@@ -234,7 +201,7 @@ impl Embedder {
         Ok(l2_normalize(vec))
     }
 
-    /// Embed a query phrase into the same space; L2-normalized.
+    /// L2-normalized, in the same space as images.
     pub fn embed_text(&self, query: &str) -> Result<Vec<f32>, EmbedError> {
         let encoding = self
             .tokenizer
@@ -259,7 +226,6 @@ impl Embedder {
     }
 }
 
-/// Normalize to unit length; dot products become cosine similarities.
 pub fn l2_normalize(mut v: Vec<f32>) -> Vec<f32> {
     let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
@@ -270,7 +236,6 @@ pub fn l2_normalize(mut v: Vec<f32>) -> Vec<f32> {
     v
 }
 
-/// Similarity of two normalized embeddings.
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
@@ -279,20 +244,13 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
 mod tests {
     use super::*;
 
-    /// The crash this guards, in miniature.
-    ///
-    /// candle's Metal device keeps a residency set it mutates on every tensor
-    /// allocation, and Metal does not guard it: two threads embedding at once
-    /// corrupted it and the process died in libmalloc. A real regression test
-    /// would need a loaded model and a GPU, which no test has — so what is
-    /// pinned here is the property that made it possible, that `busy` admits
-    /// exactly one caller at a time.
+    /// The Metal-residency crash cannot be regression-tested (needs a loaded model and a GPU);
+    /// what is pinned is the property that made it possible — `busy` admits exactly one caller.
     #[test]
     fn inference_admits_one_caller_at_a_time() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::{Arc, Mutex};
 
-        // The guard, standing in for the Embedder that owns it.
         let gpu = Arc::new(Mutex::new(()));
         let inside = Arc::new(AtomicUsize::new(0));
         let ever_overlapped = Arc::new(AtomicUsize::new(0));
@@ -343,16 +301,8 @@ mod tests {
     }
 }
 
-/// The face-identity recognizer: an ArcFace-family model whose vectors
-/// measure "same face", where the SigLIP models above measure "similar
-/// picture". Clustering people through a generic image embedding groups by
-/// lighting and hair; this is the model whose job identity actually is.
-///
-/// ResNet-50 trained on WebFace600K (insightface's buffalo_l recognizer),
-/// ONNX run through onnxruntime. The bigger tower earns its 174 MB: on
-/// unaligned crops the small MobileFaceNet's same-person and
-/// different-person similarities overlap, and clustering in an overlap is
-/// choosing which way to be wrong.
+/// ArcFace-family identity vectors ("same face") — a generic image embedding groups by lighting and hair instead.
+/// insightface buffalo_l (ResNet-50, WebFace600K) via onnxruntime: on unaligned crops the small MobileFaceNet's same/different-person similarities overlap.
 pub struct FaceEmbedder {
     /// onnxruntime sessions want &mut for `run`; the mutex serializes.
     session: Mutex<ort::session::Session>,
@@ -362,13 +312,12 @@ pub struct FaceEmbedder {
 
 pub const FACE_MODEL_REPO: &str = "immich-app/buffalo_l";
 pub const FACE_MODEL_FILE: &str = "recognition/model.onnx";
-/// Tags cached identity vectors, so switching recognizers can never read
-/// another model's space.
+/// Tags cached identity vectors, so switching recognizers never reads another model's space.
 pub const FACE_MODEL_ID: &str = "buffalo-l";
 const FACE_EDGE: usize = 112;
 
 impl FaceEmbedder {
-    /// Download (first use) and load the recognizer. Blocking.
+    /// Blocking; downloads on first use.
     pub fn load(cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
         let api = hf_hub::api::sync::ApiBuilder::new()
             .with_cache_dir(cache_dir.to_path_buf())

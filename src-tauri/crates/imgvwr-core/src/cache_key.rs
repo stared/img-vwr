@@ -1,13 +1,6 @@
-/// Bump when the thumbnail format/quality changes, or when what a thumbnail
-/// *depicts* changes, so old cache entries are ignored.
-///
-/// 2: raw thumbnails render with the look a raw file now opens with, rather
-/// than the flat decode, so every cached one is a picture of the old rule.
+/// Bump when the thumbnail format changes or when what a thumbnail depicts changes (e.g. default raw look), not just on code refactors.
 pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
-/// Content-addressed thumbnail cache key. Any change to the source file
-/// (mtime or size) or to the thumbnail parameters yields a new key, so
-/// invalidation is automatic and stale files are simply never read again.
 pub fn thumb_cache_key(canonical_path: &str, mtime_ms: u64, size: u64, max_edge: u32) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(canonical_path.as_bytes());

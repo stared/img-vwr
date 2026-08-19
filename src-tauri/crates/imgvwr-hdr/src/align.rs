@@ -1,24 +1,6 @@
-//! Finding how one frame moved between the shots of a bracket.
-//!
-//! Ward's median threshold bitmaps, because the frames being aligned are the
-//! one case ordinary correlation is worst at: the same scene at wildly
-//! different exposures. Thresholding each frame at its own median produces a
-//! bitmap that barely notices exposure — half the pixels are set whatever the
-//! shutter did — and two such bitmaps can be compared by counting where they
-//! disagree. Pixels within a few grey levels of the median are excluded from
-//! the count: they are the ones whose side of the threshold is decided by
-//! noise rather than by the scene.
-//!
-//! The motion is rigid — rotation and translation — because hands rotate: at
-//! six thousand pixels across, a fifth of a degree is fifteen pixels in the
-//! corners, and a translation that centres the bracket still ghosts its
-//! edges. Nine tiles vote with their own translations, a motion is fitted to
-//! the votes, and — the part everything else depends on — every candidate
-//! motion is *measured*, by warping the frame and asking whether its edges
-//! land on the reference's edges. MTB proposes; photometry disposes. A pair
-//! whose best candidate measures poorly is refused, because the worst output
-//! of an aligner is not an error — it is a plausible frame with a ghost in
-//! it.
+//! Ward's median-threshold bitmaps: thresholding each frame at its own median is exposure-invariant,
+//! so bracket frames stops apart still compare. Every candidate motion is then measured by warping
+//! and edge-correlating; a pair that measures poorly is refused rather than merged with a ghost.
 
 use rayon::prelude::*;
 
@@ -35,8 +17,7 @@ impl Gray {
     }
 }
 
-/// Rec. 601 luma — which flavour hardly matters; the bitmap is thresholded
-/// at its own median anyway.
+/// Rec. 601; the flavour hardly matters since the bitmap is thresholded at its own median.
 pub fn luma_of(rgb: &image::RgbImage) -> Gray {
     let (width, height) = (rgb.width() as usize, rgb.height() as usize);
     let data = rgb
@@ -46,7 +27,6 @@ pub fn luma_of(rgb: &image::RgbImage) -> Gray {
     Gray { width, height, data }
 }
 
-/// Every second pixel of a 2×2 box average — one pyramid step down.
 fn halved(g: &Gray) -> Gray {
     let width = (g.width / 2).max(1);
     let height = (g.height / 2).max(1);
@@ -67,21 +47,8 @@ fn halved(g: &Gray) -> Gray {
     Gray { width, height, data }
 }
 
-/// The median, over *every* pixel — clipped ones included.
-///
-/// Including them is what makes the threshold exposure-invariant: the median
-/// is the 50th percentile of the scene, and the same scene percentile marks
-/// the same scene region in every frame of a bracket, however it was
-/// exposed. Excluding the clipped pixels would quietly move the percentile —
-/// a frame with a third of its sky blown would be thresholded at its 35th
-/// percentile against everyone else's 50th, two different iso-lines that the
-/// search then "aligns" by sliding one onto the other.
-///
-/// The one case the plain median cannot serve is when it *itself* clips — a
-/// frame more than half blown (or half black), where "over the median" would
-/// select nothing (or everything). Only then do the clipped pixels sit out
-/// the vote, trading the invariant for a threshold that still splits what
-/// the sensor resolved.
+/// Over every pixel, clipped included: excluding clipped pixels would move the percentile per-frame and the threshold stops being exposure-invariant.
+/// Only when the median itself clips (frame over half blown/black) do clipped pixels sit out, so the threshold still splits what the sensor resolved.
 fn median_of(g: &Gray) -> u8 {
     let mut histogram = [0u32; 256];
     for &v in &g.data {
@@ -110,8 +77,7 @@ fn median_of(g: &Gray) -> u8 {
     median(&resolved, resolved_total, 127)
 }
 
-/// The two bitmaps of one level: over-the-median, and far-enough-from-it
-/// that the vote is the scene's rather than the sensor noise's.
+/// `over`: above the median; `counted`: far enough from it that the vote is the scene's, not noise.
 struct Bitmaps {
     width: usize,
     height: usize,
@@ -133,20 +99,16 @@ fn bitmaps_of(g: &Gray) -> Bitmaps {
     Bitmaps { width: g.width, height: g.height, over, counted }
 }
 
-/// How badly a guessed shift fits, and on how much evidence.
 #[derive(Clone, Copy)]
 struct Fit {
     /// Disagreeing fraction of the counted pixels; 0.5 when nothing counted.
     wrong: f64,
-    /// How many pixels actually voted — a perfect score over nothing is not
-    /// a perfect score.
+    /// Pixels that voted — a perfect score over nothing is not a perfect score.
     counted: u64,
 }
 
-/// How badly the guess "`frame` slid by (dx, dy)" disagrees with
-/// `reference` — reference (x, y) against frame (x + dx, y + dy) — per
-/// counted pixel of the overlap; absolute counts would reward shifts that
-/// shrink the overlap.
+/// Compares reference (x, y) against frame (x + dx, y + dy), per counted pixel of the
+/// overlap — absolute counts would reward shifts that shrink the overlap.
 fn disagreement(reference: &Bitmaps, frame: &Bitmaps, dx: i32, dy: i32) -> Fit {
     let x0 = (-dx).max(0) as usize;
     let y0 = (-dy).max(0) as usize;
@@ -162,11 +124,8 @@ fn disagreement(reference: &Bitmaps, frame: &Bitmaps, dx: i32, dy: i32) -> Fit {
         let f_row = sy * frame.width;
         for x in x0..x1 {
             let sx = (x as i32 + dx) as usize;
-            // Counted in *either* frame, not both. Both-sides counting goes
-            // blind exactly where alignment matters most: a bright body over
-            // a flat sky is counted in the frame that holds it and excluded
-            // in the frame whose sky it slid onto, and requiring both sides
-            // scores every misalignment of it as perfect agreement.
+            // Counted in either frame, not both: a bright body over flat sky is excluded in the
+            // frame whose sky it slid onto, so requiring both sides scores misalignment as agreement.
             if reference.counted[r_row + x] || frame.counted[f_row + sx] {
                 counted += 1;
                 if reference.over[r_row + x] != frame.over[f_row + sx] {
@@ -176,8 +135,7 @@ fn disagreement(reference: &Bitmaps, frame: &Bitmaps, dx: i32, dy: i32) -> Fit {
         }
     }
     if counted == 0 {
-        // Nothing to compare — a level of pure noise. No opinion, rather than
-        // a perfect score for whatever shift got here first.
+        // No opinion, rather than a perfect score for whatever shift got here first.
         return Fit { wrong: 0.5, counted: 0 };
     }
     Fit { wrong: wrong as f64 / counted as f64, counted }
@@ -194,11 +152,7 @@ fn levels_for(width: usize, height: usize) -> usize {
     levels
 }
 
-/// The slide, and how well it actually fits: the disagreeing fraction and
-/// the number of pixels that voted, both measured at full resolution at the
-/// answer. The caller judges — a shift that "won" with a third of its
-/// pixels disagreeing is not an alignment, it is the least bad of nine bad
-/// guesses, and pretending otherwise is how a merge gets a second sun.
+/// ((dx, dy), wrong fraction, counted), judged at full resolution; the caller decides whether the fit is good enough.
 pub fn translation_scored(reference: &Gray, frame: &Gray) -> ((i32, i32), f64, u64) {
     let levels = levels_for(reference.width, reference.height);
 
@@ -219,9 +173,7 @@ pub fn translation_scored(reference: &Gray, frame: &Gray) -> ((i32, i32), f64, u
             dx *= 2;
             dy *= 2;
         }
-        // ±2 rather than Ward's ±1: it doubles the largest shift the walk
-        // can reach, which is what saves the bracket whose last frame is a
-        // whole breath away from its first.
+        // ±2 rather than Ward's ±1: doubles the largest shift the walk can reach.
         let candidates: Vec<(i32, i32)> = (dy - 2..=dy + 2)
             .flat_map(|y| (dx - 2..=dx + 2).map(move |x| (x, y)))
             .collect();
@@ -229,10 +181,8 @@ pub fn translation_scored(reference: &Gray, frame: &Gray) -> ((i32, i32), f64, u
             .par_iter()
             .map(|&(x, y)| disagreement(&r_levels[level], &f_levels[level], x, y))
             .collect();
-        // Staying put wins anything close: codec noise alone scores two
-        // frames of the same tripod shot a fraction apart, and every pixel
-        // of drift becomes an edge cropped off the merge. A real
-        // misalignment beats the incumbent by far more than this margin.
+        // 0.98 hysteresis: codec noise alone separates tripod frames, and every pixel of drift
+        // crops the merge; a real misalignment beats the incumbent by far more than this margin.
         let mut best = (dx, dy);
         let staying = disagreement(&r_levels[level], &f_levels[level], dx, dy);
         let mut best_score = staying.wrong * 0.98;
@@ -244,16 +194,11 @@ pub fn translation_scored(reference: &Gray, frame: &Gray) -> ((i32, i32), f64, u
         }
         (dx, dy) = best;
     }
-    // The answer is judged where it will be used: at full resolution.
     let judged = disagreement(&r_levels[0], &f_levels[0], dx, dy);
     ((dx, dy), judged.wrong, judged.counted)
 }
 
-/// A rigid motion — rotation and translation — mapping reference
-/// coordinates onto frame coordinates: the frame shows at `R·p + t` what
-/// the reference shows at `p`. Hands rotate as well as slide, and at six
-/// thousand pixels across, a fifth of a degree is fifteen pixels in the
-/// corners — a translation can centre a bracket and still ghost its edges.
+/// Maps reference coordinates onto frame coordinates: the frame shows at `R·p + t` what the reference shows at `p`.
 #[derive(Clone, Copy, Debug)]
 pub struct Rigid {
     pub cos: f64,
@@ -272,8 +217,7 @@ impl Rigid {
         )
     }
 
-    /// The motion "first `inner`, then this" — how per-link motions chain
-    /// into a frame's motion relative to the reference.
+    /// The motion "first `inner`, then this".
     pub fn after(&self, inner: &Rigid) -> Rigid {
         Rigid {
             cos: self.cos * inner.cos - self.sin * inner.sin,
@@ -297,43 +241,28 @@ impl Rigid {
     }
 }
 
-/// A tile's vote must fit at least this well — a shift that "won" while a
-/// third of its pixels disagreed is the least bad of bad guesses, not an
-/// alignment.
+/// A vote that "won" with a third of its pixels disagreeing is the least bad of bad guesses, not an alignment.
 const TILE_MAX_WRONG: f64 = 0.30;
 
-/// ...and must rest on at least this fraction of the tile's pixels. A tile
-/// of flat sky where three pixels voted has no opinion worth fitting to.
+/// A vote must rest on at least this fraction of the tile's pixels; flat sky with three votes has no opinion.
 const TILE_MIN_COUNTED: f64 = 0.002;
 
-/// Tiles per axis. Nine votes across the frame: enough to fit a rotation
-/// and still throw away the liars (the blown sun, the window edge that
-/// moves with the camera instead of the scene).
+/// Tiles per axis: nine votes is enough to fit a rotation and still drop the liars.
 const TILES: usize = 3;
 
-/// A fitted motion may not rotate more than this: brackets are shot in a
-/// breath, and a "rotation" past a couple of degrees is a bad fit, not a
-/// camera move.
+/// Brackets are shot in a breath; a "rotation" past a couple of degrees is a bad fit, not a camera move.
 const MAX_ROTATION_DEG: f64 = 2.0;
 
-/// After the fit, the surviving tiles must agree with it to within this
-/// many pixels — this is the "pixel-perfect or refuse" line.
+/// Surviving tiles must agree with the fit within this many pixels — pixel-perfect or refuse.
 const MAX_RESIDUAL_PX: f64 = 4.0;
 
-/// The rigid motion of `frame` relative to `reference`, fitted from
-/// per-tile translations — or a refusal.
-///
-/// Each of nine tiles votes with its own median-threshold alignment; tiles
-/// without evidence or without a good fit sit out; a rigid motion is fitted
-/// to the votes and the worst outliers are dropped once. What survives must
-/// be several tiles that all agree within a few pixels. Anything less is
-/// not an alignment, and the only honest answers are a motion that is right
-/// or a refusal — a merge built on "probably" gets a second sun.
+/// The rigid motion of `frame` relative to `reference`, fitted from per-tile votes — or a refusal:
+/// a merge built on "probably" gets a second sun.
 pub fn rigid_between(reference: &Gray, frame: &Gray) -> Result<Rigid, String> {
     let tile_w = reference.width / TILES;
     let tile_h = reference.height / TILES;
     if tile_w < 64 || tile_h < 64 {
-        // Too small to tile: a single global translation is the best case.
+        // Too small to tile: a single global translation is the best available.
         let ((dx, dy), wrong, _) = translation_scored(reference, frame);
         if wrong > TILE_MAX_WRONG {
             return Err("the frames do not match well enough to align".to_string());
@@ -359,12 +288,8 @@ pub fn rigid_between(reference: &Gray, frame: &Gray) -> Result<Rigid, String> {
             let f = tile_of(frame, tx, ty);
             let ((dx, dy), wrong, counted) = translation_scored(&r, &f);
             let evidence = counted as f64 / (tile_w * tile_h) as f64;
-            // A vote weighs what it can actually see. Smooth sky scores its
-            // own iso-line beautifully wherever it slides to — an excellent
-            // score wrapped around no answer — but it has no *edges*, and
-            // edges are the thing alignment is about. Texture-weighting is
-            // what lets one tile holding the subject outvote three tiles of
-            // gradient sky that all "fit" somewhere else.
+            // Texture-weighted: smooth sky scores its own iso-line beautifully wherever it slides —
+            // an excellent score around no answer — so one tile holding the subject must outvote it.
             let texture = edge_fraction(&r).min(edge_fraction(&f));
             let weight = counted as f64 * texture;
             if std::env::var_os("HDR_DEBUG").is_some() {
@@ -375,8 +300,7 @@ pub fn rigid_between(reference: &Gray, frame: &Gray) -> Result<Rigid, String> {
             if wrong > TILE_MAX_WRONG || evidence < TILE_MIN_COUNTED || weight <= 0.0 {
                 return None;
             }
-            // The tile's centre in frame-global coordinates, and where the
-            // frame shows that spot.
+            // (at, seen): the tile centre in frame-global coordinates, and where the frame shows it.
             let cx = (tx * tile_w + tile_w / 2) as f64;
             let cy = (ty * tile_h + tile_h / 2) as f64;
             Some(Vote {
@@ -392,13 +316,9 @@ pub fn rigid_between(reference: &Gray, frame: &Gray) -> Result<Rigid, String> {
     }
     let mut points: Vec<Vote> = initial.clone();
 
-    // Every distinct opinion becomes a candidate motion: the weighted
-    // rigid consensus (rotation and all) where one converges, and each
-    // cluster of tile slides as a plain translation. No candidate is
-    // *trusted* — each is measured, by warping the frame and asking how
-    // well its edges land on the reference's edges where both frames saw
-    // the scene. The best measurement wins; nothing measuring well enough
-    // is a refusal. Votes propose, photometry disposes.
+    // Candidates: the rigid consensus where one converges, plus each cluster of tile slides as a
+    // plain translation. None is trusted — each is measured by warping and edge-correlating, and
+    // nothing measuring well enough is a refusal.
     let mut candidates: Vec<Rigid> = Vec::new();
 
     let residual = |t: &Rigid, p: &Vote| -> f64 {
@@ -482,14 +402,10 @@ struct Vote {
 /// How far apart two tiles' slides may be and still be one opinion.
 const CLUSTER_PX: f64 = 6.0;
 
-/// Warped edges must correlate at least this well with the reference's for
-/// a motion to be believed — measured, never assumed. Aligned real frames
-/// measure 0.3 and up; misaligned ones a tenth of that.
+/// Aligned real frames measure 0.3 and up; misaligned ones a tenth of that.
 pub(crate) const MIN_EDGE_AGREEMENT: f64 = 0.2;
 
-/// Luma boxed down 4× — where candidate motions are measured. Small enough
-/// to score eight candidates in milliseconds, sharp enough that a few
-/// pixels of misalignment still murder the correlation.
+/// 4× box-down: cheap enough to score eight candidates in milliseconds, sharp enough that a few pixels of misalignment still kill the correlation.
 fn quarter_luma(g: &Gray) -> Vec<Vec<f32>> {
     let (w, h) = (g.width / 4, g.height / 4);
     (0..h)
@@ -538,20 +454,8 @@ fn warped_luma(src: &[Vec<f32>], motion: &Rigid) -> Vec<Vec<f32>> {
         .collect()
 }
 
-/// Where the reference has an edge, does the frame have one too?
-///
-/// Pearson correlation of edge magnitudes, over exactly the pixels where
-/// the reference shows a real edge and both frames resolved the scene
-/// (neither crushed black nor blown white). Restricted on purpose: over a
-/// whole frame the number drowns in flat-sky noise that no alignment could
-/// correlate, and a perfectly aligned bracket scores like a misaligned one.
-/// On the reference's own edges the question is sharp — an aligned frame
-/// puts its edges there, a misaligned frame puts background there.
-///
-/// Correlation rather than difference, because the frames are stops apart:
-/// a real edge is however-many-times stronger in the brighter frame, and
-/// correlation does not care — only that the edges are in the same places,
-/// which is the definition of aligned.
+/// Pearson correlation of edge magnitudes, restricted to pixels where the reference has a real edge and both frames resolved the scene — whole-frame scoring drowns in flat-sky noise.
+/// Correlation, not difference: the frames are stops apart, and only edge placement defines aligned.
 pub(crate) fn edge_agreement(a: &[Vec<f32>], b: &[Vec<f32>]) -> f64 {
     /// A real boundary in downsampled luma, above JPEG ripple on flat sky.
     const REFERENCE_EDGE: f64 = 4.0;
@@ -583,10 +487,7 @@ pub(crate) fn edge_agreement(a: &[Vec<f32>], b: &[Vec<f32>]) -> f64 {
             sab += ea * eb;
         }
     }
-    // Too little shared ground to judge — and a frame that shares no
-    // ground with the reference has nothing verified to contribute. The
-    // floor scales with the frame: for a real photograph it is hundreds of
-    // edge pixels, never satisfied by a stray speckle.
+    // Too little shared ground to judge; the floor scales with the frame so a stray speckle never satisfies it.
     let floor = (((w * h) as f64) / 1024.0).max(64.0);
     if n < floor {
         return 0.0;
@@ -600,11 +501,9 @@ pub(crate) fn edge_agreement(a: &[Vec<f32>], b: &[Vec<f32>]) -> f64 {
     cov / (var_a * var_b).sqrt()
 }
 
-/// A pixel is an edge when its neighbours differ by more than this — above
-/// the ripple JPEG leaves on flat sky, below any real boundary.
+/// Above the ripple JPEG leaves on flat sky, below any real boundary.
 const EDGE_STEP: i16 = 16;
 
-/// The fraction of a tile's pixels that sit on an edge.
 fn edge_fraction(g: &Gray) -> f64 {
     if g.width < 2 || g.height < 2 {
         return 0.0;
@@ -659,11 +558,7 @@ fn fit_rigid(points: &[Vote]) -> Rigid {
 mod tests {
     use super::*;
 
-    /// A scene with structure at every scale: a bright disk on a gradient,
-    /// with texture strewn over it. The texture is not decoration — a scene
-    /// that is *only* a smooth ramp is thresholded at a different iso-line
-    /// by every exposure, and no median bitmap can align that. Photographs
-    /// have texture; the synthetic frame has to as well to be one.
+    /// The texture is load-bearing: a pure smooth ramp is thresholded at a different iso-line by every exposure, and no median bitmap can align that.
     fn scene(width: usize, height: usize) -> Gray {
         let mut data = vec![0u8; width * height];
         for y in 0..height {
@@ -672,8 +567,7 @@ mod tests {
                 let dx = x as i32 - (width as i32 / 3);
                 let dy = y as i32 - (height as i32 / 2);
                 let disk = if dx * dx + dy * dy < (width as i32 / 6).pow(2) { 140 } else { 0 };
-                // Deterministic clutter at three scales, so the coarse
-                // pyramid levels see structure too — patches, blobs, grain.
+                // Deterministic clutter at three scales, so coarse pyramid levels see structure too.
                 let noise = |gx: usize, gy: usize, salt: usize| -> i32 {
                     (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97))
                         as i32
@@ -687,8 +581,7 @@ mod tests {
         Gray { width, height, data }
     }
 
-    /// The same scene slid by (dx, dy) and re-exposed: brighter by `gain`
-    /// per mille, so the two frames share no grey level, only structure.
+    /// Slid by (dx, dy) and re-exposed by `gain` per mille, so the frames share structure but no grey level.
     fn shifted(source: &Gray, dx: i32, dy: i32, gain: u32) -> Gray {
         let mut data = vec![0u8; source.width * source.height];
         for y in 0..source.height {
@@ -718,10 +611,7 @@ mod tests {
 
     #[test]
     fn an_eclipse_survives_its_own_bracket() {
-        // The shape this module was written for: a nearly flat dark sky with
-        // one small bright body in it, shot from 1/8000 to 1/125. The short
-        // exposure barely lifts the sky; the long one blows the disk to pure
-        // white. Alignment has nothing but that disk to hold on to.
+        // Nearly flat dark sky, one small bright body, exposures 1/8000 to 1/125: alignment has only the disk to hold on to.
         let (width, height) = (640, 480);
         let mut sky = vec![6u8; width * height];
         for y in 0..height {
@@ -744,8 +634,7 @@ mod tests {
 
     #[test]
     fn a_frame_of_nothing_reports_no_shift() {
-        // Flat grey thresholds to noise on both sides of the median; every
-        // comparison abstains and the walk keeps (0, 0) rather than drifting.
+        // Flat grey abstains from every comparison; the walk must keep (0, 0) rather than drift.
         let flat = Gray { width: 320, height: 240, data: vec![128; 320 * 240] };
         assert_eq!(translation_scored(&flat, &flat).0, (0, 0));
     }

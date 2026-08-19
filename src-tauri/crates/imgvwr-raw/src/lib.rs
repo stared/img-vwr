@@ -1,35 +1,9 @@
-//! The RAW format plugin.
-//!
-//! This is the "plugin for a particular format" the rest of the app never
-//! needs to know about: it implements [`SceneFormat`] and hands back
-//! scene-linear pixels, exactly like the built-in plugin for JPEG does.
-//!
-//! ## Why Core Image and not a Rust decoder
-//!
-//! The obvious choice would be a pure-Rust decoder (`rawler`, `rawloader`).
-//! It does not work for the files this was built against: recent Nikon bodies
-//! record **High Efficiency / HE\*** NEFs, a TicoRAW-derived compression that
-//! is licensed, undocumented, and consequently unsupported by every
-//! open-source decoder — rawler rejects them outright, and LibRaw (hence
-//! darktable and RawTherapee) cannot read them either.
-//!
-//! macOS decodes them natively, so this plugin drives `CIRAWFilter`. That
-//! follows the precedent already set for AVIF, which likewise has no viable
-//! Rust decoder and is left to the platform.
-//!
-//! Core Image is used for demosaicing, white balance in sensor space (which
-//! must happen before demosaicing to be correct, and is the one adjustment a
-//! generic pipeline genuinely cannot do properly), and detail reconstruction
-//! — capture sharpening and noise reduction, set per ISO to follow what the
-//! camera's own JPEG engine does. Everything Apple would otherwise add in
-//! *tone* — its tone curve, contrast, shadow boost, gamut mapping — is
-//! switched off, because exposure and tone belong to `imgvwr-develop` and
-//! must behave identically for every format.
+//! Core Image, not a Rust decoder: recent Nikon High Efficiency (HE*) NEFs are TicoRAW-derived
+//! and defeat rawler and LibRaw alike; macOS decodes them natively.
 
 use imgvwr_core::SceneFormat;
 
-/// The extensions this plugin claims — the same list scanning uses, so a file
-/// the gallery shows as raw is exactly a file this plugin offers to open.
+/// The same list scanning uses: what the gallery shows as raw is exactly what this plugin offers to open.
 pub use imgvwr_core::scan::{is_raw_extension, RAW_EXTENSIONS};
 
 #[cfg(target_os = "macos")]
@@ -40,9 +14,7 @@ mod preview;
 pub use core_image::CoreImageRawFormat;
 pub use preview::embedded_jpeg;
 
-/// Frame size of a raw file without decoding it, or `None` when this platform
-/// (or this file) cannot report one. Lets metadata cover raw files, which no
-/// Rust decoder can measure.
+/// Frame size without decoding; None when this platform (or file) cannot report one.
 pub fn raw_dimensions(path: &std::path::Path) -> Option<(u32, u32)> {
     #[cfg(target_os = "macos")]
     {
@@ -55,11 +27,7 @@ pub fn raw_dimensions(path: &std::path::Path) -> Option<(u32, u32)> {
     }
 }
 
-/// The plugin for this platform.
-///
-/// On macOS this is the Core Image implementation. Elsewhere it is a plugin
-/// that claims nothing, so RAW files simply have no develop support rather
-/// than the app failing to build — the same shape the AVIF gap already takes.
+/// Off macOS this is a plugin that claims nothing, so raw files degrade instead of the build failing.
 pub fn raw_format() -> Box<dyn SceneFormat> {
     #[cfg(target_os = "macos")]
     {

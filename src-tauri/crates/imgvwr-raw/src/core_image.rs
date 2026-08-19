@@ -1,5 +1,3 @@
-//! `CIRAWFilter`-backed implementation of the RAW plugin (macOS).
-
 use std::ffi::c_void;
 use std::path::Path;
 use std::ptr::NonNull;
@@ -44,8 +42,7 @@ impl SceneFormat for CoreImageRawFormat {
             .to_str()
             .ok_or_else(|| SceneError::Open("path is not valid UTF-8".into()))?;
 
-        // SAFETY: every call below is a plain Objective-C message send to an
-        // immutable-until-we-touch-it filter object we exclusively own.
+        // SAFETY: plain Objective-C message sends to a filter object we exclusively own.
         unsafe {
             let url = NSURL::fileURLWithPath(&NSString::from_str(path_str));
             let filter = CIRAWFilter::filterWithImageURL(&url).ok_or_else(|| {
@@ -55,16 +52,8 @@ impl SceneFormat for CoreImageRawFormat {
                 ))
             })?;
 
-            // Neutral in tone, matched in texture. Apple's renderer would
-            // otherwise apply its own look — a tone curve, shadow boost,
-            // gamut mapping — and the develop sliders would then be stacking
-            // on top of an opinion the user cannot see or undo; all of that
-            // is switched off. Capture sharpening and noise reduction are a
-            // different matter: they are detail reconstruction, like
-            // demosaicing, not tone — and measured against the camera's own
-            // JPEGs a decode without them has less than half the camera's
-            // edge energy at base ISO and many times its noise in the dark
-            // (fit_detail example). So they are set to follow the camera.
+            // Apple's look (tone curve, shadow boost, gamut mapping) is switched off so the sliders don't stack on an invisible opinion. Sharpening/NR stay:
+            // without them a decode has under half the camera JPEG's edge energy at base ISO and many times its noise in the dark (fit_detail example).
             filter.setBoostAmount(0.0);
             filter.setBoostShadowAmount(0.0);
             filter.setGamutMappingEnabled(false);
@@ -86,17 +75,12 @@ impl SceneFormat for CoreImageRawFormat {
             if filter.isLocalToneMapSupported() {
                 filter.setLocalToneMapAmount(0.0);
             }
-            // Apple already ramps luminance NR with ISO; the floor only ever
-            // raises it, because against the camera's JPEGs its ramp starts
-            // too late and ends too low. Colour NR is left as Apple set it —
-            // measured neutral everywhere.
+            // The floor only ever raises Apple's ISO ramp, which starts too late and ends too low vs the camera JPEGs; colour NR is left as Apple set it (measured neutral).
             let lnr = filter.luminanceNoiseReductionAmount();
             if lnr < nr_floor {
                 filter.setLuminanceNoiseReductionAmount(nr_floor);
             }
-            // Highlight recovery is not a look — it reconstructs channels the
-            // sensor clipped, which is precisely what makes a highlights slider
-            // able to recover anything at all.
+            // Not a look: recovery reconstructs clipped channels, which is what lets a highlights slider recover anything.
             if filter.isHighlightRecoverySupported() {
                 filter.setHighlightRecoveryEnabled(true);
             }
@@ -106,9 +90,7 @@ impl SceneFormat for CoreImageRawFormat {
                 tint: filter.neutralTint(),
             };
 
-            // Ask for the oriented full-size extent once, here: it is what
-            // forces the initial parse (~2 s for a 24 MP NEF), and doing it at
-            // open time means every later render is the cheap ~8 ms path.
+            // Reading the extent forces the initial parse (~2 s for a 24 MP NEF) here, so later renders take the ~8 ms path.
             filter.setScaleFactor(1.0);
             let extent = filter
                 .outputImage()
@@ -131,14 +113,8 @@ impl SceneFormat for CoreImageRawFormat {
     }
 }
 
-/// Capture sharpening and the luminance-NR floor for a frame's ISO, fitted
-/// against the camera's own JPEGs (`fit_detail` example, 2026-08-14).
-///
-/// The shape mirrors what the camera itself does: full sharpening at low
-/// ISO fading out as noise would be amplified (measured best at 1.0 for
-/// ISO ≤ 1600, harmful by 6400), and luminance noise reduction rising
-/// through the same range to a strong 0.7 (measured best at every high-ISO
-/// frame tried, above Apple's own ramp). Both ramps are linear in stops.
+/// Fitted against the camera's JPEGs (`fit_detail` example, 2026-08-14): sharpening 1.0 up to
+/// ISO 1600 fading to 0 by 6400, NR floor rising to 0.7 from ISO 800; both ramps linear in stops.
 fn detail_settings(iso: Option<u32>) -> (f32, f32) {
     let iso = iso.unwrap_or(400).max(1) as f32;
     let stops = iso.log2();
@@ -147,12 +123,7 @@ fn detail_settings(iso: Option<u32>) -> (f32, f32) {
     (sharpness, nr_floor)
 }
 
-/// Frame size without decoding anything.
-///
-/// Creating the filter parses headers only — the expensive demosaic setup is
-/// deferred until pixels are asked for — so this is cheap enough to run over
-/// a whole folder during a metadata sweep, which is what makes raw files
-/// sortable and filterable by size like every other format.
+/// Header-only: creating the filter defers demosaic setup, so this is cheap enough for a folder sweep.
 pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
     // SAFETY: header-only property reads on a filter object we own.
     unsafe {
@@ -163,10 +134,7 @@ pub fn dimensions(path: &Path) -> Option<(u32, u32)> {
         if w == 0 || h == 0 {
             return None;
         }
-        // `nativeSize` is the sensor's own frame. EXIF orientations 5–8 are
-        // the quarter turns, under which the photograph is the other way up.
-        // Compared numerically so this file needs no Image I/O dependency
-        // just to name the enum.
+        // `nativeSize` is unoriented; EXIF 5–8 are the quarter turns. Matched numerically to avoid an Image I/O dependency just for the enum.
         let rotated = matches!(filter.orientation() as u32, 5..=8);
         Some(if rotated { (h, w) } else { (w, h) })
     }
@@ -181,16 +149,11 @@ struct CoreImageRawScene {
     inner: Mutex<Inner>,
     native: (u32, u32),
     as_shot: WhiteBalance,
-    /// The fitted capture sharpening for this frame's ISO. Held here rather
-    /// than baked into the filter because it is only applied to renders near
-    /// 1:1 — at preview scales its radius is sub-pixel and invisible, while
-    /// its cost (~80 ms at 2000 px) would land on every slider drag.
+    /// Applied only near 1:1: at preview scales the radius is sub-pixel while costing ~80 ms per slider drag.
     sharpness: f32,
 }
 
-// SAFETY: `CIContext` is documented as thread-safe, and the filter is only
-// ever reached through the mutex — which is required anyway, since rendering
-// means mutating filter properties and then reading the result.
+// SAFETY: `CIContext` is documented thread-safe; the filter is only reached through the mutex.
 unsafe impl Send for CoreImageRawScene {}
 unsafe impl Sync for CoreImageRawScene {}
 
@@ -200,8 +163,6 @@ impl SceneImage for CoreImageRawScene {
     }
 
     fn rendering(&self) -> Rendering {
-        // Sensor measurements with every one of Apple's looks switched off:
-        // flat on purpose, and waiting for a look to be chosen.
         Rendering::SceneReferred
     }
 
@@ -215,22 +176,16 @@ impl SceneImage for CoreImageRawScene {
         y: f32,
         current: WhiteBalance,
     ) -> Result<WhiteBalance, SceneError> {
-        // Core Image has a `neutralLocation` property that looks like exactly
-        // the right tool, and measurably is not: setting it leaves
-        // `neutralTemperature` and `neutralTint` untouched for every point
-        // tried, before and after forcing a render. So the raw path measures
-        // a developed patch like any other format.
+        // CI's `neutralLocation` looks like the right tool and measurably is not: setting it
+        // never moves neutralTemperature/Tint, so the raw path measures a developed patch too.
         imgvwr_core::neutral_by_measurement(self, x, y, current)
     }
 
     fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError> {
         let region = req.region.clamped();
-        // Scale is chosen against the *requested region*, not the whole
-        // frame: that is what lets a 1:1 look at a small crop cost a small
-        // render rather than developing all 24 megapixels.
+        // Scale is chosen against the requested region, not the frame: a 1:1 crop costs a small render.
         let region_longest =
             (self.native.0 as f32 * region.width).max(self.native.1 as f32 * region.height);
-        // Never upscale: asking for more than the sensor has just wastes time.
         let scale = (req.max_edge.max(1) as f32 / region_longest.max(1.0)).min(1.0);
 
         let inner = self
@@ -238,22 +193,16 @@ impl SceneImage for CoreImageRawScene {
             .lock()
             .map_err(|_| SceneError::Render("RAW decoder lock poisoned".into()))?;
 
-        // SAFETY: exclusive access is held for the whole configure-and-render
-        // sequence, so no other thread can observe a half-applied setting.
+        // SAFETY: the mutex is held for the whole configure-and-render sequence.
         unsafe {
             inner.filter.setScaleFactor(scale);
-            // Capture sharpening only where its radius survives the scale: a
-            // fit-to-window preview downsamples it away while still paying
-            // for it on every slider drag. Near 1:1 — the loupe, a zoomed
-            // detail, an export — is where the camera's edge rendering is
-            // actually visible, and where it is applied.
+            // Sharpen only where the radius survives the scale (loupe, export); previews downsample it away while paying its cost.
             if inner.filter.isSharpnessSupported() {
                 inner
                     .filter
                     .setSharpnessAmount(if scale >= 0.5 { self.sharpness } else { 0.0 });
             }
-            // White balance goes to the decoder rather than being applied to
-            // the output: it belongs before demosaicing, in sensor space.
+            // White balance goes to the decoder, not the output: it belongs before demosaicing.
             inner
                 .filter
                 .setNeutralTemperature(req.white_balance.temperature);
@@ -268,9 +217,7 @@ impl SceneImage for CoreImageRawScene {
                 return Err(SceneError::Render("empty render extent".into()));
             }
 
-            // Crop in the scaled output's own coordinates. Core Image's origin
-            // is bottom-left while a region is stated top-down, so the y
-            // offset is measured from the far edge.
+            // Core Image's origin is bottom-left, the region is top-down: y is measured from the far edge.
             let extent = if region.is_full() {
                 full
             } else {
@@ -293,8 +240,7 @@ impl SceneImage for CoreImageRawScene {
             let colour_space = CGColorSpace::with_name(Some(kCGColorSpaceExtendedLinearSRGB))
                 .ok_or_else(|| SceneError::Render("no linear colour space".into()))?;
 
-            // Extended-linear sRGB keeps values above 1.0 instead of clipping
-            // them, which is what leaves highlight headroom to recover.
+            // Extended-linear sRGB keeps values above 1.0 instead of clipping — the highlight headroom.
             let pixels = (width as usize) * (height as usize);
             let mut rgba = vec![0f32; pixels * 4];
             inner.context.render_toBitmap_rowBytes_bounds_format_colorSpace(
@@ -307,13 +253,8 @@ impl SceneImage for CoreImageRawScene {
                 Some(&colour_space),
             );
 
-            // Drop alpha: the develop pipeline is RGB, and for a RAW file the
-            // alpha channel is a constant 1.0 anyway.
-            //
-            // Compacted within the same allocation rather than copied into a
-            // second one. At full export size the buffer is ~390 MB, so a
-            // copy would put nearly 700 MB in flight at once; the destination
-            // index always trails the source, which makes this safe in place.
+            // Alpha (constant 1.0 for RAW) is dropped in place: a second buffer would put ~700 MB
+            // in flight at export size, and the destination index always trails the source.
             let mut rgba = rgba;
             for i in 0..pixels {
                 let (src, dst) = (i * 4, i * 3);

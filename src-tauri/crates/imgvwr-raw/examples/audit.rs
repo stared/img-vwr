@@ -1,20 +1,4 @@
-//! Audits the claims the raw plugin makes, against real files.
-//!
-//! ```sh
-//! cargo run --release -p imgvwr-raw --example audit -- photo.NEF ...
-//! ```
-//!
-//! Checks, in order:
-//!  1. `raw_dimensions` (header-only) agrees with the opened scene's oriented
-//!     native size — the portrait case, where they could disagree.
-//!  2. The render really is scene-linear: doubling the light must double the
-//!     samples, which is only true if no tone curve is being applied.
-//!  3. How far outside the sRGB gamut the data lands, since the pipeline
-//!     works in sRGB primaries.
-//!  4. The eyedropper lands: picking a point must actually render that point
-//!     grey. The unit tests can only check the model against itself, because
-//!     for a raw file the gains are applied by Core Image rather than by
-//!     `white_balance_gains` — only a real render closes that loop.
+//! Audits the raw plugin's claims (dimensions, linearity, gamut, eyedropper) against real files.
 
 use imgvwr_core::{Region, RenderRequest, SceneFormat, SceneImage, WhiteBalance};
 use imgvwr_raw::{raw_dimensions, CoreImageRawFormat};
@@ -49,9 +33,7 @@ fn main() {
             .unwrap();
         let rendered_shape = if img.height > img.width { "portrait" } else { "landscape" };
 
-        // Gamut: sRGB primaries cannot hold every colour a sensor records, and
-        // gamut mapping is switched off, so out-of-range samples are expected.
-        // The question is how many.
+        // Gamut mapping is off, so out-of-sRGB samples are expected; the question is how many.
         let n = img.rgb.len() as f64;
         let below = img.rgb.iter().filter(|v| **v < 0.0).count() as f64;
         let above = img.rgb.iter().filter(|v| **v > 1.0).count() as f64;
@@ -81,10 +63,7 @@ fn main() {
         }
     }
 
-    // Linearity: the decisive check that "neutral decode" is real. Core Image's
-    // own `exposure` is a pure scene-linear gain in stops, so if our render is
-    // linear, +1 EV must double every sample. A tone curve anywhere in the
-    // chain would make the ratio drift away from 2.0 in the highlights.
+    // CI's `exposure` is a pure linear gain in stops: if the render is linear, +1 EV doubles every sample; a tone curve anywhere would pull the ratio off 2.0.
     if let Some(path) = files.first() {
         println!("\nlinearity check on {path}:");
         linearity(&format, std::path::Path::new(path));
@@ -94,18 +73,11 @@ fn main() {
     }
 }
 
-/// Pick a point, apply the answer, and look at the point again.
-///
-/// `neutral_at` measures the patch and inverts our illuminant model to get a
-/// temperature. Core Image then applies that temperature with *its* model, in
-/// sensor space. If the two disagree the picker overshoots or undershoots, and
-/// the only way to see it is to render again and measure what came back.
+/// Pick, apply, re-measure: Core Image applies the temperature with its own model, so only a re-render shows over/undershoot.
 fn eyedropper(format: &CoreImageRawFormat, path: &std::path::Path) {
     let scene = format.open(path).unwrap();
     let as_shot = scene.as_shot();
 
-    // How far a colour is from grey, as the fraction of its brightest channel
-    // that separates it from its dimmest. Zero is neutral.
     let cast = |rgb: [f32; 3]| {
         let max = rgb[0].max(rgb[1]).max(rgb[2]);
         let min = rgb[0].min(rgb[1]).min(rgb[2]);
@@ -127,19 +99,14 @@ fn eyedropper(format: &CoreImageRawFormat, path: &std::path::Path) {
         [img.rgb[0], img.rgb[1], img.rgb[2]]
     };
 
-    // Patches that are already close to grey and properly exposed. Probing a
-    // black or blown patch measures rounding error, and asking the picker to
-    // neutralise a saturated leaf proves nothing — no temperature and tint can
-    // make a leaf grey.
+    // Only near-grey, properly exposed patches: black/blown ones measure rounding error, saturated ones can never be greyed.
     let candidates = neutral_candidates(&*scene, as_shot);
     let Some(&(px, py)) = candidates.first() else {
         println!("  no usable patch in this frame");
         return;
     };
 
-    // Root cause first: does moving the temperature do what our model says it
-    // does? The picker inverts this relationship, so if the prediction is off
-    // by a factor, every pick is off by that same factor.
+    // The picker inverts the model, so a factor error here puts the same factor on every pick.
     let reference = patch_at(px, py, as_shot);
     println!("  our model's prediction against the decoder, at ({px:.2},{py:.2}):");
     for factor in [0.8f32, 0.9, 1.1, 1.25] {
@@ -168,17 +135,12 @@ fn eyedropper(format: &CoreImageRawFormat, path: &std::path::Path) {
     println!("  picking the most neutral patches in the frame:");
     for (x, y) in candidates {
         let before = patch_at(x, y, as_shot);
-        // Timed because the loop costs several renders rather than one, and a
-        // click has to stay a click.
         let started = std::time::Instant::now();
         let picked = scene.neutral_at(x, y, as_shot).unwrap();
         let took = started.elapsed();
         let after = patch_at(x, y, picked);
         let (b, a) = (cast(before), cast(after));
-        // A residual that both changed sign and is still visible means the
-        // move went past the target. One that changed sign at a thousandth of
-        // a stop is simply converged, and calling that an overshoot would be
-        // reporting arithmetic noise as a defect.
+        // Overshoot = a sign flip that is still visible; a flip within noise is just convergence.
         let flipped = (before[0] / before[2] > 1.0) != (after[0] / after[2] > 1.0);
         println!(
             "    ({x:.2},{y:.2}) {:.0} K → {:.0} K   cast {b:.3} → {a:.3}   {:>4} ms{}",
@@ -196,8 +158,6 @@ fn eyedropper(format: &CoreImageRawFormat, path: &std::path::Path) {
     }
 }
 
-/// Locations of the four least colourful mid-brightness patches in the frame —
-/// the kind of surface a user would actually click on to set white balance.
 fn neutral_candidates(scene: &dyn SceneImage, wb: WhiteBalance) -> Vec<(f32, f32)> {
     let img = scene
         .render(RenderRequest {
@@ -225,8 +185,6 @@ fn neutral_candidates(scene: &dyn SceneImage, wb: WhiteBalance) -> Vec<(f32, f32
     scored.into_iter().take(4).map(|(_, x, y)| (x, y)).collect()
 }
 
-/// Render twice, one stop apart, and report the measured ratio per brightness
-/// band. Uses the plugin's own path both times so the whole chain is covered.
 fn linearity(format: &CoreImageRawFormat, path: &std::path::Path) {
     use objc2_core_image::CIRAWFilter;
 
@@ -240,8 +198,7 @@ fn linearity(format: &CoreImageRawFormat, path: &std::path::Path) {
         })
         .unwrap();
 
-    // Re-open through Core Image directly to apply a known +1 EV, since the
-    // plugin deliberately does not expose Apple's exposure control.
+    // Re-opened through Core Image directly: the plugin deliberately does not expose Apple's exposure control.
     let brighter = unsafe {
         let url = objc2_foundation::NSURL::fileURLWithPath(&objc2_foundation::NSString::from_str(
             path.to_str().unwrap(),
@@ -266,8 +223,7 @@ fn linearity(format: &CoreImageRawFormat, path: &std::path::Path) {
         return;
     }
 
-    // Bucket by the darker render's value, so each band reports the ratio
-    // where a tone curve would bend differently.
+    // Banded by the darker render's value: a tone curve would bend each band differently.
     let bands = [(0.01f32, 0.05f32), (0.05, 0.15), (0.15, 0.35), (0.35, 0.7)];
     for (lo, hi) in bands {
         let mut sum = 0f64;

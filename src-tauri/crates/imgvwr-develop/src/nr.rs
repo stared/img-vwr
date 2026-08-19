@@ -1,29 +1,15 @@
-//! Edge-preserving noise reduction, matching the camera's high-ISO
-//! smoothing where the decoder's own knobs cannot.
-//!
-//! Measured on aligned 1:1 patches (tools/camera-look): from ISO ~5000 the
-//! camera's flat areas are far smoother than our decode, and CIRAW's
-//! luminance-NR knob loses more edge than it removes noise. A guided
-//! filter (He et al., grey guide) does what the knob cannot: flat regions
-//! average, edges keep their contrast because the local linear model
-//! follows the guide. Chroma first (colour speckle is the visible half),
-//! luminance only at the extreme ISOs where the camera plainly trades
-//! detail away too.
-//!
-//! Runs in display-linear light after the camera look, only on renders at
-//! 1:1-ish scale — at preview scale the noise averages out in the
-//! downsample and the pass would only cost drag latency.
+//! Guided-filter NR (He et al., grey guide), matching the camera's high-ISO smoothing where
+//! CIRAW's luminance-NR knob loses more edge than it removes noise (measured on aligned 1:1
+//! patches, tools/camera-look). Runs after the look, only at 1:1-ish scale — previews average the noise away in the downsample.
 
 use rayon::prelude::*;
 
-/// How hard each pass runs, 0..1 per axis. Zero means the pass is skipped;
-/// fractional strengths blend between the original and filtered result.
+/// 0..1 per axis; zero skips the pass, fractional strengths blend original and filtered.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NrStrength {
     pub chroma: f32,
     pub luma: f32,
-    /// Base-ISO unsharp: at low ISO the camera draws 1.27× our edge
-    /// energy, and CIRAW's sharpener maxes out below it.
+    /// Base-ISO unsharp: the camera draws 1.27× our edge energy and CIRAW's sharpener maxes out below it.
     pub sharpen: f32,
 }
 
@@ -39,24 +25,17 @@ impl NrStrength {
     }
 }
 
-/// Base radii and regularisation, fitted on 1:1 patches; radii scale with
-/// the render so the filter covers the same subject area at any zoom.
+/// Fitted on 1:1 patches; radii scale with the render so the filter covers the same subject area at any zoom.
 const CHROMA_RADIUS: f32 = 8.0;
 const CHROMA_EPS: f32 = 0.004;
 const LUMA_RADIUS: f32 = 4.0;
 const LUMA_EPS: f32 = 0.001;
-/// Unsharp: a wide, gentle boost (σ≈2 gaussian fitted; a box of this
-/// radius has the same variance) at half amount.
+/// σ≈2 gaussian was fitted; a box of this radius has the same variance.
 const SHARPEN_RADIUS: f32 = 3.0;
 const SHARPEN_AMOUNT: f32 = 0.5;
 
-/// Apply the enabled passes to a display-linear RGB f32 buffer in place.
-/// `scale` is rendered pixels per native pixel (1.0 at 1:1).
-///
-/// The filtering itself runs in gamma-encoded values: that is the space
-/// the strengths were fitted in, and its perceptual uniformity is what
-/// keeps one `eps` right in shadows and highlights alike — in linear
-/// light the same `eps` flattens shadows to mush.
+/// In place on display-linear RGB; `scale` is rendered pixels per native pixel (1.0 at 1:1).
+/// Filtering runs gamma-encoded — the strengths were fitted there; in linear light the same `eps` flattens shadows to mush.
 pub fn apply(rgb: &mut [f32], w: usize, h: usize, s: NrStrength, scale: f32) {
     if w < 8 || h < 8 {
         return;
@@ -159,8 +138,7 @@ fn guided(guide: &[f32], src: &[f32], w: usize, h: usize, r: usize, eps: f32) ->
 
 /// Box mean with clamped-to-edge windows, via a summed-area table.
 fn box_mean(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
-    // (w+1)×(h+1) integral in f64: a 24-megapixel plane summed in f32
-    // loses digits long before the bottom rows.
+    // Integral in f64: a 24-megapixel plane summed in f32 loses digits long before the bottom rows.
     let mut sat = vec![0f64; (w + 1) * (h + 1)];
     for yy in 0..h {
         let mut row = 0f64;
@@ -203,8 +181,6 @@ mod tests {
     #[test]
     fn chroma_speckle_smooths_while_a_luma_edge_stays() {
         let (w, h) = (48, 48);
-        // left half dark, right half bright (a hard luma edge), with
-        // alternating red/blue chroma speckle everywhere
         let mut rgb = vec![0f32; w * h * 3];
         for yy in 0..h {
             for xx in 0..w {
@@ -218,7 +194,6 @@ mod tests {
         }
         let mut out = rgb.clone();
         apply(&mut out, w, h, NrStrength { chroma: 1.0, luma: 0.0, sharpen: 0.0 }, 1.0);
-        // speckle: neighbouring pixels' red difference collapses
         let mid = (h / 2 * w + w / 4) * 3;
         let speckle_before = (rgb[mid] - rgb[mid + 3]).abs();
         let speckle_after = (out[mid] - out[mid + 3]).abs();
@@ -226,7 +201,6 @@ mod tests {
             speckle_after < speckle_before * 0.3,
             "speckle survived: {speckle_before} -> {speckle_after}"
         );
-        // the luma edge: still there
         let l = crate::pipeline::luma(out[mid], out[mid + 1], out[mid + 2]);
         let ridge = (h / 2 * w + 3 * w / 4) * 3;
         let rl = crate::pipeline::luma(out[ridge], out[ridge + 1], out[ridge + 2]);

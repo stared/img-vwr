@@ -1,30 +1,9 @@
-//! The develop-side extension seam.
-//!
-//! [`codec`](crate::codec) answers "what do these bytes look like" and stops at
-//! display-ready RGBA8. Editing needs more: exposure and colour balance are
-//! only meaningful on *scene-linear* data, and white balance is only correct
-//! when the format plugin applies it in the space the sensor recorded.
-//!
-//! So a develop-capable format implements [`SceneFormat`]: it opens a file into
-//! a [`SceneImage`] that can be re-rendered at any size, under any white
-//! balance, into scene-linear floats. Everything after that — exposure, tone,
-//! saturation — is format-agnostic and lives in `imgvwr-develop`.
-//!
-//! The contract is total on purpose: every plugin answers `native_size`,
-//! `as_shot` and `render`. A JPEG has no camera white balance to recover, so
-//! its plugin reports the D65 it was already balanced to and adapts
-//! chromatically from there; a RAW plugin reports what the camera chose and
-//! re-runs its pipeline. Callers never branch on the format.
-
 use std::path::Path;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-/// Colour temperature in kelvin plus a green–magenta tint, the two numbers a
-/// photographer actually reasons about. Higher `temperature` renders warmer;
-/// positive `tint` renders more magenta — the Lightroom convention, which is
-/// also what Core Image's RAW pipeline implements.
+/// Kelvin plus green–magenta tint; higher temperature renders warmer, positive tint more magenta (the Lightroom/Core Image convention).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WhiteBalance {
@@ -33,16 +12,13 @@ pub struct WhiteBalance {
 }
 
 impl WhiteBalance {
-    /// The daylight reference an already-balanced (non-RAW) image sits at.
     pub const D65: Self = Self {
         temperature: 6500.0,
         tint: 0.0,
     };
 }
 
-/// Scene-linear RGB with sRGB primaries, three channels, no alpha: 1.0 is
-/// diffuse white and values above it are real highlight headroom, not error.
-/// This is the hand-off type between a format plugin and the develop pipeline.
+/// Scene-linear RGB, sRGB primaries; 1.0 is diffuse white and values above it are real headroom.
 pub struct LinearImage {
     pub width: u32,
     pub height: u32,
@@ -56,12 +32,7 @@ impl LinearImage {
     }
 }
 
-/// A rectangle of the image in normalised coordinates: (0,0) is the top-left
-/// of the oriented frame and (1,1) the bottom-right.
-///
-/// Normalised rather than in pixels so a caller can ask for "the middle of
-/// the picture" without first learning how many pixels the sensor has, and so
-/// the same region means the same thing at preview and full resolution.
+/// Normalised coordinates: (0,0) is the top-left of the oriented frame, (1,1) the bottom-right.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Region {
     pub x: f32,
@@ -71,7 +42,6 @@ pub struct Region {
 }
 
 impl Region {
-    /// The whole frame.
     pub const FULL: Self = Self {
         x: 0.0,
         y: 0.0,
@@ -95,8 +65,7 @@ impl Region {
         }
     }
 
-    /// Pixel rect within an image of this size: (x, y, width, height), with
-    /// width and height at least one pixel.
+    /// (x, y, width, height) in pixels; width and height are at least 1.
     pub fn to_pixels(&self, width: u32, height: u32) -> (u32, u32, u32, u32) {
         let r = self.clamped();
         let px = (r.x * width as f32).round() as u32;
@@ -108,16 +77,11 @@ impl Region {
     }
 }
 
-/// What the caller wants back: which part of the image, how big, and under
-/// what white balance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderRequest {
     /// Longest output edge in pixels; the plugin never upscales past native.
     pub max_edge: u32,
     pub white_balance: WhiteBalance,
-    /// Which part of the frame to render. Rendering a crop is what makes
-    /// inspecting a 24 MP file at 1:1 affordable — only the visible part is
-    /// ever developed.
     pub region: Region,
 }
 
@@ -140,62 +104,35 @@ impl std::fmt::Display for SceneError {
 
 impl std::error::Error for SceneError {}
 
-/// Whether a plugin's pixels have already had somebody's rendering applied.
-///
-/// The difference decides whether a look should be chosen for the image. A raw
-/// file is measurements: flat by construction, and a camera would have applied
-/// a curve to it before showing it to anyone. A JPEG is already a finished
-/// picture — whoever made it chose the look, and applying another on open
-/// would apply it twice.
-///
-/// A closed enum rather than an `is_raw` flag, because the question is about
-/// what the pixels *are* and not what the file extension says. Callers match
-/// on it instead of asking about formats.
+/// SceneReferred pixels get a look chosen on open; AlreadyRendered ones must not be graded twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Rendering {
-    /// Straight from the sensor, expecting a look to be chosen.
     SceneReferred,
-    /// Rendered by whatever wrote the file.
     AlreadyRendered,
 }
 
-/// One opened image, held between renders so slider drags are cheap: the
-/// expensive work (parsing, demosaicing) happens in [`SceneFormat::open`],
-/// and `render` is the part that runs per interaction.
+/// Expensive work (parsing, demosaicing) happens in [`SceneFormat::open`]; `render` runs per slider drag.
 pub trait SceneImage: Send + Sync {
-    /// Full sensor/file resolution, after orientation.
+    /// Full resolution, after orientation.
     fn native_size(&self) -> (u32, u32);
-    /// Whether these pixels still want a look chosen for them.
     fn rendering(&self) -> Rendering;
-    /// The white balance the image already carries — the neutral starting
-    /// point the UI shows before the user touches anything.
     fn as_shot(&self) -> WhiteBalance;
     fn render(&self, req: RenderRequest) -> Result<LinearImage, SceneError>;
-    /// The white balance that renders the point at normalised (x, y) neutral
-    /// — the eyedropper.
-    ///
-    /// Part of the contract rather than a free function so a plugin whose
-    /// decoder can answer this natively is free to. Neither current plugin
-    /// can — Core Image exposes a `neutralLocation` property that measurably
-    /// does nothing to the derived temperature and tint — so both delegate to
-    /// [`neutral_by_measurement`], which develops a small patch and solves
-    /// for the balance that greys it.
+    /// White balance rendering the point at normalised (x, y) neutral — the eyedropper.
+    /// On the trait so a plugin could answer natively; Core Image's `neutralLocation` measurably does nothing, so both plugins delegate to [`neutral_by_measurement`].
     fn neutral_at(&self, x: f32, y: f32, current: WhiteBalance)
         -> Result<WhiteBalance, SceneError>;
 }
 
-/// A develop-capable format. Registering one is how a new RAW format (or a
-/// future WASM plugin host) joins the pipeline.
 pub trait SceneFormat: Send + Sync {
     fn id(&self) -> &'static str;
-    /// Cheap check: lowercased extension plus the file's first bytes.
+    /// `ext` is lowercased; `magic` is the file's first bytes.
     fn probe(&self, ext: &str, magic: &[u8]) -> bool;
     fn open(&self, path: &Path) -> Result<Box<dyn SceneImage>, SceneError>;
 }
 
-/// Ordered set of format plugins; first match wins, exactly like
-/// [`CodecRegistry`](crate::codec::CodecRegistry).
+/// Ordered; the first format whose probe accepts wins.
 pub struct SceneRegistry {
     formats: Vec<Arc<dyn SceneFormat>>,
 }
@@ -212,9 +149,6 @@ impl SceneRegistry {
             .map(|f| f.as_ref())
     }
 
-    /// Open `path` with the first plugin that claims it. Reads only the file's
-    /// first bytes for probing — plugins open the path themselves, because a
-    /// RAW decoder may want to stream rather than slurp 18 MB.
     pub fn open(&self, path: &Path) -> Result<Box<dyn SceneImage>, SceneError> {
         let ext = path
             .extension()
@@ -232,32 +166,8 @@ impl SceneRegistry {
     }
 }
 
-/// Eyedropper by measurement: develop a small patch around the point under
-/// the current balance, then solve for the balance that would render it grey.
-///
-/// The shared implementation of [`SceneImage::neutral_at`]. Averaging a patch
-/// rather than sampling one pixel matters — a single pixel of a photograph is
-/// substantially noise, and the user is pointing at a surface.
-///
-/// ## Why this measures more than once
-///
-/// [`white_balance_for_sample`] answers with *our* illuminant model, and a
-/// plugin is free to implement temperature by some other one. The raw plugin
-/// hands the setting to Core Image, which — measured against real NEFs by
-/// `cargo run -p imgvwr-raw --example audit` — moves red against blue about
-/// half again as far per kelvin as our model expects. A single solve therefore
-/// lands well past the mark: on a real file it overshoots hard enough to
-/// reverse the cast it was asked to remove.
-///
-/// So the answer is checked against the plugin rather than trusted. Each round
-/// renders the patch again, and the size of the move that produced the change
-/// gives the plugin's actual sensitivity — after which the next proposal is
-/// scaled by it. That is a secant step, and it converges for any plugin whose
-/// response merely points the right way; plain re-solving does not, because a
-/// plugin twice as strong as the model oscillates instead of settling.
-///
-/// None of this needs to know that Core Image is on the other side, which is
-/// the point of the seam.
+/// Eyedropper: develops a small patch (one pixel is mostly noise) and solves for the balance that greys it.
+/// Iterates with a secant step scaled by the plugin's observed response: Core Image moves red/blue ~1.5x further per kelvin than our model (imgvwr-raw `audit` example), so a single solve overshoots and reverses the cast.
 pub fn neutral_by_measurement(
     scene: &dyn SceneImage,
     x: f32,
@@ -265,14 +175,11 @@ pub fn neutral_by_measurement(
     current: WhiteBalance,
 ) -> Result<WhiteBalance, SceneError> {
     const PATCH: f32 = 0.01;
-    /// One uncalibrated step plus a few corrected ones. Each is a one-pixel
-    /// render of a hundredth of the frame, so this is cheap even on RAW.
+    /// One uncalibrated step plus corrected ones; each round is a one-pixel render.
     const ROUNDS: usize = 4;
-    /// A patch this close to neutral is neutral; further rounds would be
-    /// chasing sensor noise.
+    /// A patch this close to neutral is neutral; further rounds chase sensor noise.
     const CLOSE_ENOUGH: f32 = 0.005;
-    /// How far the plugin's sensitivity is allowed to be believed. A wild
-    /// estimate from a near-zero move must not throw the search.
+    /// Clamp on believed sensitivity: a wild estimate from a near-zero move must not throw the search.
     const SENSITIVITY: std::ops::Range<f32> = 0.25..4.0;
 
     let region = Region {
@@ -296,8 +203,7 @@ pub fn neutral_by_measurement(
 
     let mut balance = current;
     let mut rgb = measure(balance)?;
-    // Where the previous round stood, and how warm the patch was there —
-    // the two points a secant step is drawn through.
+    // Previous (balance, warmth): the second point the secant step is drawn through.
     let mut previous: Option<(WhiteBalance, f32)> = None;
 
     for _ in 0..ROUNDS {
@@ -310,9 +216,7 @@ pub fn neutral_by_measurement(
             break;
         }
 
-        // How strongly the plugin answered the last move, relative to what our
-        // model predicted for it. Unknown on the first round, when the model
-        // is the only guess available.
+        // Observed/predicted response to the last move; 1.0 on the first round.
         let sensitivity = previous
             .and_then(|(from, was)| {
                 let gains = white_balance_gains(from, balance);
@@ -324,8 +228,7 @@ pub fn neutral_by_measurement(
             .unwrap_or(1.0);
 
         let proposed = white_balance_for_sample(balance, rgb);
-        // Scaled in log-temperature, because temperature acts multiplicatively
-        // — 500 K is a large move at 3000 K and a small one at 9000 K.
+        // Stepped in log-temperature: temperature acts multiplicatively.
         let next = WhiteBalance {
             temperature: (balance.temperature.ln()
                 + (proposed.temperature.ln() - balance.temperature.ln()) / sensitivity)
@@ -334,7 +237,7 @@ pub fn neutral_by_measurement(
             tint: balance.tint + (proposed.tint - balance.tint) / sensitivity,
         };
         if next == balance {
-            break; // the solver has nothing left to move
+            break;
         }
 
         previous = Some((balance, warmth(rgb)));
@@ -344,8 +247,7 @@ pub fn neutral_by_measurement(
     Ok(balance)
 }
 
-/// Red against blue, in log terms — the axis colour temperature moves along.
-/// Log because the controls are multiplicative and the errors compose.
+/// ln(R/B) — the axis colour temperature moves along.
 fn warmth(rgb: [f32; 3]) -> f32 {
     safe_ratio(rgb[0], rgb[2]).ln()
 }
@@ -360,16 +262,7 @@ fn read_magic(path: &Path) -> Result<Vec<u8>, SceneError> {
     Ok(magic[..n].to_vec())
 }
 
-/* ---------------------------------------------------------------------- */
-/*  Colour temperature                                                     */
-/* ---------------------------------------------------------------------- */
-
-/// Chromaticity of the illuminant at a given colour temperature.
-///
-/// Two loci, as photographic white balance uses them: the CIE daylight series
-/// at and above 4000 K (so 6504 K lands exactly on D65, which sRGB is defined
-/// against and a neutral render depends on), and the Planckian locus below it
-/// via Kim et al.'s cubic fit, where real light sources are incandescent.
+/// CIE daylight locus at/above 4000 K (so 6504 K lands exactly on D65); Kim et al.'s cubic Planckian fit below.
 fn cct_to_xy(temperature: f32) -> (f32, f32) {
     let t = temperature.clamp(1667.0, 25000.0) as f64;
     let (t2, t3) = (t * t, t * t * t);
@@ -393,8 +286,7 @@ fn cct_to_xy(temperature: f32) -> (f32, f32) {
     (x as f32, y as f32)
 }
 
-/// Linear-sRGB tristimulus of the illuminant at `temperature`, normalised to
-/// unit luminance.
+/// Linear-sRGB tristimulus of the illuminant, normalised to unit luminance.
 fn illuminant_rgb(temperature: f32) -> [f32; 3] {
     let (x, y) = cct_to_xy(temperature);
     if y <= f32::EPSILON {
@@ -409,13 +301,7 @@ fn illuminant_rgb(temperature: f32) -> [f32; 3] {
     ]
 }
 
-/// Per-channel gains that take an image balanced for `from` and render it as
-/// if balanced for `to`. Normalised on green so the change is chromatic only
-/// and does not double as an exposure change.
-///
-/// Used by plugins whose pixels are already demosaiced and balanced (JPEG and
-/// friends). A RAW plugin ignores this and re-runs its own pipeline instead,
-/// which is more correct because it happens before demosaicing.
+/// Gains taking an image balanced for `from` to `to`; green-normalised so the change is chromatic only, never an exposure change.
 pub fn white_balance_gains(from: WhiteBalance, to: WhiteBalance) -> [f32; 3] {
     let src = illuminant_rgb(from.temperature);
     let dst = illuminant_rgb(to.temperature);
@@ -437,21 +323,12 @@ pub fn white_balance_gains(from: WhiteBalance, to: WhiteBalance) -> [f32; 3] {
     [gains[0] / norm, gains[1] / norm, gains[2] / norm]
 }
 
-/// White balance that would render `sample` neutral, given that `sample` was
-/// measured under `current`.
-///
-/// This is the eyedropper: the user says "this patch is grey", and the answer
-/// is the temperature and tint that make it so. Solved by search rather than
-/// algebra because the map from temperature to channel gains runs through two
-/// different loci and has no useful closed-form inverse — but it is a smooth
-/// 1-D problem over a bounded range, so a coarse-then-fine sweep lands within
-/// a few kelvin for a fraction of the cost of one render.
+/// Balance rendering `sample` (measured under `current`) neutral.
+/// Searched, not solved: the temperature→gain map runs through two loci and has no closed-form inverse.
 pub fn white_balance_for_sample(current: WhiteBalance, sample: [f32; 3]) -> WhiteBalance {
-    // What the sample needs multiplying by to become neutral, on top of
-    // whatever the current setting already applies.
     let mid = (sample[0] + sample[1] + sample[2]) / 3.0;
     if !mid.is_finite() || mid <= 1e-6 {
-        return current; // black or nonsense: nothing to balance against
+        return current;
     }
     let wanted = [
         safe_ratio(mid, sample[0]),
@@ -491,12 +368,9 @@ pub fn white_balance_for_sample(current: WhiteBalance, sample: [f32; 3]) -> Whit
         hi = (best + step).min(25000.0);
     }
 
-    // Temperature only moves red against blue, so whatever green cast is
-    // left over is exactly what tint is for. Gains are green-normalised, so
-    // the leftover is green measured against the red/blue average.
+    // Temperature moves only red vs blue; the leftover green cast is tint's job.
     let residual_green = safe_ratio(wanted[1], (wanted[0] * wanted[2]).sqrt());
-    // Tint divides green by (1 + tint/150); needing `residual_green` more
-    // green therefore means moving tint by 150 * (1/residual - 1).
+    // Inverts the gains' `green /= 1 + tint/150`.
     let delta_tint = 150.0 * (1.0 / residual_green - 1.0);
     let tint = (current.tint + delta_tint).clamp(-150.0, 150.0);
 
@@ -514,7 +388,6 @@ fn safe_ratio(num: f32, den: f32) -> f32 {
     }
 }
 
-/// sRGB electro-optical transfer function: encoded 0–1 → linear.
 pub fn srgb_to_linear(v: f32) -> f32 {
     if v <= 0.040_45 {
         v / 12.92
@@ -523,7 +396,6 @@ pub fn srgb_to_linear(v: f32) -> f32 {
     }
 }
 
-/// Inverse of [`srgb_to_linear`]: linear → encoded 0–1.
 pub fn linear_to_srgb(v: f32) -> f32 {
     if v <= 0.003_130_8 {
         v * 12.92
@@ -600,7 +472,6 @@ mod tests {
     #[test]
     fn d65_illuminant_is_neutral_in_srgb() {
         let rgb = illuminant_rgb(6504.0);
-        // sRGB is defined against D65, so its illuminant must come out grey.
         assert!((rgb[0] - rgb[1]).abs() < 0.02, "{rgb:?}");
         assert!((rgb[2] - rgb[1]).abs() < 0.02, "{rgb:?}");
     }
@@ -645,7 +516,6 @@ mod tests {
                 tint: 50.0,
             },
         );
-        // Green normalised to 1; magenta means red and blue rise above it.
         assert!((gains[1] - 1.0).abs() < 1e-5);
         assert!(gains[0] > 1.0 && gains[2] > 1.0, "{gains:?}");
     }
@@ -666,9 +536,6 @@ mod tests {
 
     #[test]
     fn picking_a_blue_patch_warms_the_render() {
-        // The patch came out blue, so the render is too cool for the light
-        // that was really there; neutralising it means warming up. Raising
-        // the temperature is what warms, per `raising_temperature_warms_the_image`.
         let current = WhiteBalance::D65;
         let picked = white_balance_for_sample(current, [0.20, 0.30, 0.50]);
         assert!(
@@ -695,8 +562,6 @@ mod tests {
 
     #[test]
     fn a_picked_balance_actually_neutralises_the_patch() {
-        // The property that matters: applying the answer to the sample should
-        // bring its channels together.
         let current = WhiteBalance::D65;
         for sample in [[0.5, 0.3, 0.18], [0.2, 0.3, 0.5], [0.35, 0.3, 0.28]] {
             let picked = white_balance_for_sample(current, sample);
@@ -721,14 +586,7 @@ mod tests {
         (max - min) / max.max(1e-6)
     }
 
-    /// A one-patch scene that answers a temperature change with `strength`
-    /// times the gains our model predicts — in log terms, so a strength of 1.5
-    /// moves red against blue half again as far per kelvin.
-    ///
-    /// This is not a hypothetical: measured against real NEFs, Core Image runs
-    /// at about 1.5. The point of the seam is that the eyedropper must work
-    /// without knowing that number, so the test states a number the solver has
-    /// no way to learn.
+    /// One-patch scene answering a temperature change with `strength` times the model's gains (in log terms); the solver must land without knowing the number.
     struct StrongerThanOurModel {
         patch: [f32; 3],
         reference: WhiteBalance,
@@ -774,9 +632,7 @@ mod tests {
     fn the_eyedropper_lands_even_when_the_plugin_disagrees_with_our_model() {
         let reference = WhiteBalance::D65;
         for patch in [[0.5, 0.3, 0.18], [0.18, 0.3, 0.5], [0.34, 0.3, 0.27]] {
-            // Core Image measures around 1.5; the others bracket it on both
-            // sides, including a plugin weaker than the model rather than
-            // stronger, which the same secant step has to handle.
+            // 1.5 is measured Core Image; the rest bracket it, including weaker-than-model.
             for strength in [0.6, 1.0, 1.5, 1.9] {
                 let scene = StrongerThanOurModel {
                     patch,
@@ -792,10 +648,7 @@ mod tests {
                     })
                     .unwrap();
                 let landed = spread([after.rgb[0], after.rgb[1], after.rgb[2]]);
-                // A weak plugin can need a temperature the scale does not go
-                // to — neutralising a strongly blue patch at strength 0.6 wants
-                // more than 25000 K. Running out of scale is a real answer;
-                // stopping short while the scale still has room is not.
+                // A weak plugin can legitimately run out of scale (>25000 K); only stopping short with room left is a failure.
                 let out_of_range =
                     picked.temperature >= 24999.0 || picked.temperature <= 1668.0;
                 assert!(
@@ -809,9 +662,6 @@ mod tests {
 
     #[test]
     fn one_solve_alone_would_overshoot_a_stronger_plugin() {
-        // The regression this guards: a single pass was what shipped, and on a
-        // plugin that moves further than our model it lands past neutral —
-        // reversing the cast rather than removing it.
         let reference = WhiteBalance::D65;
         let patch = [0.5, 0.3, 0.18];
         let scene = StrongerThanOurModel {

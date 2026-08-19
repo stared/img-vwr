@@ -1,20 +1,6 @@
-//! Merging an exposure bracket into one photograph.
-//!
-//! The caller hands over decoded frames of the same scene at different
-//! exposures; this crate lines them up, crops to the pixels every frame
-//! actually saw, and fuses. What comes back is an ordinary 8-bit picture —
-//! see `fuse` for why fusion rather than a radiance map, and `align` for
-//! why median threshold bitmaps and why alignment is a rigid motion rather
-//! than a slide.
-//!
-//! Alignment is verified, and a merge that cannot be aligned is *refused*.
-//! Nine regions of every frame vote independently; a rigid motion has to
-//! explain the surviving votes to within a few pixels or there is no merge.
-//! The failure mode this buys out of is the worst one this module has: a
-//! plausible-looking fusion with a second sun in it.
-//!
-//! No files and no formats: decoding, encoding and metadata belong to the
-//! caller, which is the layer that knows what the bytes were.
+//! Merges an exposure bracket: aligns, crops to the pixels every frame saw, fuses. Alignment is
+//! verified and an unalignable merge is refused — the worst output is a plausible frame with a
+//! ghost in it. Decoding, encoding and metadata belong to the caller.
 
 mod align;
 mod fuse;
@@ -24,21 +10,15 @@ pub use align::Rigid;
 
 use rayon::prelude::*;
 
-/// What a merge produced, and what it did to get there.
 pub struct Merged {
     pub image: image::RgbImage,
-    /// Which input frame the others were aligned to: the middle of the run
-    /// of exposures that verifiably aligned — chosen by measurement, not
-    /// position, so one unalignable frame never dictates the outcome.
+    /// The middle of the longest verifiably-aligned run — chosen by measurement, not position.
     pub reference: usize,
-    /// Per input frame, the motion that was undone to lay it on the
-    /// reference (mapping reference coordinates onto that frame's) — None
-    /// for a frame that could not be aligned and was left out.
+    /// Per input frame, the motion undone to lay it on the reference (reference coords onto the frame's); None = left out.
     pub motions: Vec<Option<Rigid>>,
 }
 
-/// The overlap a merge refuses to go below: frames sharing less than this
-/// fraction of their extent per axis are different pictures, not a bracket.
+/// Frames sharing less than this fraction of their extent per axis are different pictures, not a bracket.
 const MIN_OVERLAP: f64 = 0.75;
 
 fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
@@ -50,11 +30,8 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
         return Err("the frames are not the same size".to_string());
     }
 
-    // Alignment walks the bracket in brightness order, each frame against
-    // its exposure neighbour. Never directly across the bracket: its ends
-    // are six stops apart, and six stops of clipping leave two thresholded
-    // frames barely showing the same picture — neighbours are one bracket
-    // step apart by construction.
+    // Aligned in brightness order, each frame against its exposure neighbour — never directly
+    // across the bracket, whose ends can be six stops apart and barely share a thresholded picture.
     let grays: Vec<align::Gray> = frames.par_iter().map(align::luma_of).collect();
     let mut order: Vec<usize> = (0..frames.len()).collect();
     let mean = |g: &align::Gray| -> u64 {
@@ -67,15 +44,9 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
         .map(|k| align::rigid_between(&grays[order[k]], &grays[order[k + 1]]))
         .collect();
 
-    // Failed links split the ordered bracket into runs of frames that
-    // verifiably continue one another, and the merge takes the longest run.
-    // The anchor is an *outcome* of the measurements, never a prior: a
-    // bracket whose middle frame is the unalignable one (a bird, a cloud,
-    // parallax at the wrong moment) still merges the frames that do agree,
-    // instead of the middle's failure sinking everything. Ties prefer the
-    // run holding the middle exposure — its metadata is the honest one to
-    // hand a viewer — and the reference is the chosen run's own middle, so
-    // composed errors stay half a run long at worst.
+    // Failed links split the ordered bracket into runs and the longest run merges — the anchor is
+    // an outcome of measurement, so an unalignable middle frame never sinks the rest. Ties prefer
+    // the run holding the middle exposure; the reference is the run's own middle, so composed error stays half a run at worst.
     let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
     let mut start = 0;
     for (k, link) in links.iter().enumerate() {
@@ -100,10 +71,6 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
         return Err(refusal);
     }
 
-    // A link that cannot be aligned does not sink the bracket: the frames
-    // beyond the run are left out and the rest still merge. Align or
-    // refuse holds per frame — an excluded frame contributes nothing,
-    // which is strictly better than contributing a ghost.
     let run_middle = run.start + run.len() / 2;
     let reference = order[run_middle];
     let mut motions: Vec<Option<Rigid>> = vec![None; frames.len()];
@@ -120,15 +87,11 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
     }
     let included: Vec<usize> = (0..frames.len()).filter(|&i| motions[i].is_some()).collect();
 
-    // The window every motioned frame covers. Cropping to it is the honest
-    // move: pixels only one end of the bracket saw would have to be
-    // invented for the others, and an edge of invented pixels is what
-    // merges are remembered by. Iterative, because shrinking a corner of a
-    // rotated rectangle moves where the other corners land.
+    // Crop to the window every motioned frame covers. Iterative, because shrinking one corner of
+    // a rotated rectangle moves where the other corners land.
     let (mut x0, mut y0) = (0.0f64, 0.0f64);
     let (mut x1, mut y1) = (width as f64 - 1.0, height as f64 - 1.0);
-    // Samples may land exactly on [0, w−1]: the bilinear clamp makes the
-    // very edge exact, so identity motions cost no pixels at all.
+    // Samples may land exactly on [0, w−1]: the bilinear clamp makes the very edge exact, so identity motions cost no pixels.
     for _ in 0..6 {
         for motion in motions.iter().flatten() {
             for (cx, cy) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
@@ -166,12 +129,8 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
         })
         .collect();
 
-    // The last word is photometric, because it is the only word that
-    // actually measures ghosting: after warping, every frame's edges must
-    // land on the reference's edges wherever both frames saw the scene. A
-    // chain of pairwise alignments can carry one confident lie a long way;
-    // this check does not care which link lied, only whether the frame in
-    // hand is the same picture. A frame that fails is left out.
+    // The last word is photometric: a chain of pairwise alignments can carry one confident lie a
+    // long way, so each warped frame's edges must land on the reference's or the frame is left out.
     let reference_at = included
         .iter()
         .position(|&i| i == reference)
@@ -204,8 +163,7 @@ fn aligned_bracket(frames: &[image::RgbImage]) -> Result<Aligned, String> {
     Ok(Aligned { frames: aligned, reference, motions })
 }
 
-/// The bracket after alignment: the surviving frames warped into reference
-/// coordinates, ready for whichever merge the caller wants.
+/// Surviving frames warped into reference coordinates.
 struct Aligned {
     /// (original index, warped pixels), in the order alignment kept them.
     frames: Vec<(usize, image::RgbImage)>,
@@ -213,14 +171,7 @@ struct Aligned {
     motions: Vec<Option<Rigid>>,
 }
 
-/// A merge of the light itself: scene-linear radiance, not a finished
-/// picture.
-///
-/// `1.0` is the reference frame's diffuse white; values above it are the
-/// headroom the darker exposures actually measured. Handed to the develop
-/// pipeline as a scene-referred image, the ordinary tone controls become
-/// real HDR knobs — highlights pulls detail down from above 1.0 instead of
-/// stretching an 8-bit blend.
+/// Scene-linear radiance: 1.0 is the reference frame's diffuse white; values above it are measured headroom.
 pub struct MergedRadiance {
     pub width: u32,
     pub height: u32,
@@ -241,9 +192,7 @@ pub fn merge_radiance(frames: &[image::RgbImage]) -> Result<MergedRadiance, Stri
     Ok(radiance::radiance_of(a))
 }
 
-/// The frame resampled into reference coordinates: output (x, y) reads the
-/// frame at `motion(x + ox, y + oy)`, bilinear. The crop guarantees every
-/// sample lands inside; the clamp is a seatbelt, not a strategy.
+/// Output (x, y) reads the frame at `motion(x + ox, y + oy)`, bilinear; the crop guarantees samples land inside, the clamp is a seatbelt.
 fn warped(
     frame: &image::RgbImage,
     motion: &Rigid,
@@ -276,8 +225,7 @@ fn warped(
     out
 }
 
-/// Luma at half resolution — where a few pixels of misalignment are still
-/// visible to the check but noise mostly is not.
+/// Half resolution: a few pixels of misalignment stay visible while noise mostly is not.
 fn half_luma(rgb: &image::RgbImage) -> Vec<Vec<f32>> {
     let (w, h) = ((rgb.width() / 2) as usize, (rgb.height() / 2) as usize);
     (0..h)
@@ -301,10 +249,7 @@ fn half_luma(rgb: &image::RgbImage) -> Vec<Vec<f32>> {
 mod tests {
     use super::*;
 
-    /// A photograph-shaped scene: a warm disk over textured ground. The
-    /// texture is multi-scale on purpose — a smooth synthetic ramp is the
-    /// one thing exposure-invariant alignment cannot hold on to, and no
-    /// photograph is one.
+    /// Multi-scale texture on purpose: a smooth ramp is the one thing exposure-invariant alignment cannot hold on to.
     fn scene(width: u32, height: u32) -> image::RgbImage {
         let noise = |gx: u32, gy: u32, salt: u32| -> i32 {
             (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97)) as i32
@@ -323,8 +268,7 @@ mod tests {
         })
     }
 
-    /// The scene under a rigid motion and an exposure change: output (x, y)
-    /// shows the source at `motion(x, y)`, `gain` per mille brighter.
+    /// Output (x, y) shows the source at `motion(x, y)`, `gain` times brighter.
     fn moved_exposed(src: &image::RgbImage, motion: &Rigid, gain: f32) -> image::RgbImage {
         image::RgbImage::from_fn(src.width(), src.height(), |x, y| {
             let (fx, fy) = motion.apply(x as f64, y as f64);
@@ -368,16 +312,13 @@ mod tests {
         assert_eq!(merged.reference, 1, "the middle exposure anchors the bracket");
         let anchor = merged.motions[1].expect("the reference is always included");
         assert!(anchor.tx.abs() < 0.5 && anchor.sin.abs() < 1e-6);
-        // The found motions are within a pixel of the truth — inverted,
-        // because a motion maps reference coordinates onto the frame, and
-        // the fixture built the frame by mapping the other way.
+        // Inverted: a motion maps reference coords onto the frame; the fixture mapped the other way.
         let dark = merged.motions[0].expect("aligned");
         assert!((dark.tx + 6.0).abs() <= 1.0, "{dark:?}");
         assert!((dark.ty - 4.0).abs() <= 1.0);
         let bright = merged.motions[2].expect("aligned");
         assert!((bright.tx - 5.0).abs() <= 1.0, "{bright:?}");
         assert!((bright.ty + 3.0).abs() <= 1.0);
-        // ...and the output gave up exactly the pixels not every frame saw.
         assert!(merged.image.width() < 640 && merged.image.width() >= 640 - 16);
         assert!(merged.image.height() < 480 && merged.image.height() >= 480 - 16);
     }
@@ -410,10 +351,7 @@ mod tests {
     #[test]
     fn an_unalignable_middle_frame_does_not_sink_the_frames_that_agree() {
         let mid = scene(640, 480);
-        // By brightness this sits in the middle of the bracket — exactly
-        // where the old fixed anchor lived. An anchor chosen by position
-        // would refuse the whole set; the measurements instead pick the
-        // run that verifies and merge it.
+        // By brightness the garbage sits mid-bracket; an anchor chosen by position would refuse the whole set.
         let garbage = image::RgbImage::from_fn(640, 480, |x, y| {
             let v = ((x / 7 + y / 11) % 2 * 200) as u8;
             image::Rgb([v, 40, 255 - v])
@@ -437,9 +375,6 @@ mod tests {
 
     #[test]
     fn frames_of_different_scenes_are_refused_rather_than_ghosted() {
-        // Two pictures that share nothing must not come back as one. This
-        // is the whole point of verified alignment: the worst output of a
-        // merge is not an error, it is a plausible frame with a ghost in it.
         let a = scene(320, 240);
         let b = image::RgbImage::from_fn(320, 240, |x, y| {
             let v = ((x / 7 + y / 11) % 2 * 200) as u8;

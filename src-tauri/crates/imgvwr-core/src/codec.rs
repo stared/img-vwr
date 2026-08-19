@@ -1,8 +1,6 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
-/// A decoded image as raw RGBA8 pixels — deliberately free of `image` crate
-/// types so a future WASM plugin can implement the same contract.
 pub struct DecodedImage {
     pub width: u32,
     pub height: u32,
@@ -26,10 +24,9 @@ impl std::fmt::Display for CodecError {
 
 impl std::error::Error for CodecError {}
 
-/// The core extension seam: a future plugin host wraps WASM exports in this trait.
 pub trait ImageCodec: Send + Sync {
     fn id(&self) -> &'static str;
-    /// Cheap check: lowercased extension plus the file's first bytes.
+    /// `ext` is lowercased; `magic` is the file's first bytes.
     fn probe(&self, ext: &str, magic: &[u8]) -> bool;
     fn decode(&self, bytes: &[u8]) -> Result<DecodedImage, CodecError>;
 }
@@ -43,12 +40,10 @@ impl CodecRegistry {
         Self { codecs }
     }
 
-    /// Registry with all built-in codecs.
     pub fn builtin() -> Self {
         Self::new(vec![Arc::new(ImageCrateCodec)])
     }
 
-    /// First codec whose probe accepts the file, or None (caller falls back).
     pub fn find(&self, ext: &str, magic: &[u8]) -> Option<&dyn ImageCodec> {
         self.codecs
             .iter()
@@ -64,7 +59,7 @@ impl CodecRegistry {
     }
 }
 
-/// Built-in codec backed by the `image` crate: PNG, JPEG, WebP, GIF (first frame).
+/// GIF decodes as its first frame only.
 pub struct ImageCrateCodec;
 
 const SUPPORTED_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
@@ -78,11 +73,8 @@ impl ImageCodec for ImageCrateCodec {
         if SUPPORTED_EXTS.contains(&ext) {
             return true;
         }
-        // `guess_format` recognises formats this build has no decoder for.
-        // That matters for camera raw: a NEF is a TIFF container, so magic
-        // alone would claim it here, fail to decode, and never reach the raw
-        // plugin that can actually read it. Probing must promise only what
-        // `decode` can deliver.
+        // `guess_format` recognises formats this build has no decoder for; a NEF is a
+        // TIFF container, so bare magic would claim it here and shadow the raw plugin.
         matches!(
             image::guess_format(magic),
             Ok(image::ImageFormat::Png
@@ -122,15 +114,12 @@ mod tests {
 
     #[test]
     fn probe_accepts_by_magic_bytes() {
-        // Wrong extension but recognizable PNG magic.
         assert!(ImageCrateCodec.probe("dat", PNG_MAGIC));
     }
 
     #[test]
     fn probe_declines_formats_this_build_cannot_decode() {
-        // TIFF magic, which is also how every camera raw file starts. The
-        // crate recognises the container but has no decoder for it, and
-        // claiming it here would shadow the raw plugin.
+        // TIFF magic is also how camera raw files start; claiming it would shadow the raw plugin.
         const TIFF_MAGIC: &[u8] = &[0x49, 0x49, 0x2a, 0x00, 0x08, 0, 0, 0];
         assert!(!ImageCrateCodec.probe("nef", TIFF_MAGIC));
         assert!(!ImageCrateCodec.probe("tif", TIFF_MAGIC));

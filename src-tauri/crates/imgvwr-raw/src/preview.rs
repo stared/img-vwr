@@ -1,11 +1,5 @@
-//! The camera's own JPEG, dug out of a raw file.
-//!
-//! A NEF is a TIFF: IFD0 carries a SubIFDs list, and the camera stores a
-//! full-size JPEG rendering in one of them as the classic
-//! JPEGInterchangeFormat offset/length pair. This walker reads just enough
-//! TIFF to find the largest such JPEG — the fallback picture for the rare
-//! file whose raw decode fails outright (pixel-shift brackets defeat the
-//! system decoder while their embedded JPEG is perfectly fine).
+//! Fallback for files whose raw decode fails outright (pixel-shift brackets defeat the system
+//! decoder while their embedded JPEG is fine).
 
 use std::path::Path;
 
@@ -34,8 +28,6 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
         })
     };
 
-    // Walk IFD0's chain plus every SubIFD it lists; collect every
-    // JPEGInterchangeFormat pair and keep the largest.
     let mut queue: Vec<u32> = vec![u32_at(4)?];
     let mut seen = std::collections::HashSet::new();
     let mut best: Option<(u32, u32)> = None;
@@ -85,7 +77,6 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
 
     let (off, len) = best?;
     let bytes = data.get(off as usize..(off as usize).checked_add(len as usize)?)?;
-    // Only a real JPEG counts.
     if bytes.get(0..2) != Some(&[0xff, 0xd8]) {
         return None;
     }
@@ -96,8 +87,6 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    /// A minimal little-endian TIFF: IFD0 with a SubIFDs entry pointing at
-    /// one sub-IFD that carries a (fake) JPEG at a known offset.
     #[test]
     fn finds_the_jpeg_behind_a_subifd() {
         let mut d = vec![0u8; 256];

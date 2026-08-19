@@ -2,14 +2,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-/// Extensions the viewer knows how to display. AVIF has no Rust decoder in v1
-/// but WKWebView renders it natively, so it is listed here.
+/// AVIF has no Rust decoder here, but WKWebView renders it natively.
 pub const DISPLAY_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "avif"];
 
-/// Camera raw extensions. The list lives here rather than in the RAW plugin
-/// because scanning has to recognise these files before any plugin is
-/// consulted — a folder of NEFs must not look empty. Which of them can
-/// actually be decoded is the plugin's business, and platform-dependent.
+/// Lives here, not in the RAW plugin: scanning must recognise these before any plugin is consulted.
 pub const RAW_EXTENSIONS: &[&str] = &[
     "nef", "nrw", // Nikon
     "cr2", "cr3", "crw", // Canon
@@ -28,7 +24,6 @@ pub fn is_raw_extension(ext: &str) -> bool {
     RAW_EXTENSIONS.contains(&ext)
 }
 
-/// Everything the gallery lists.
 pub fn is_supported_extension(ext: &str) -> bool {
     DISPLAY_EXTENSIONS.contains(&ext) || RAW_EXTENSIONS.contains(&ext)
 }
@@ -51,7 +46,6 @@ pub struct DirEntry {
     pub name: String,
 }
 
-/// True for files the gallery should show: known image extension, not hidden.
 pub fn is_image_candidate(name: &str) -> bool {
     if name.starts_with('.') {
         return false;
@@ -62,7 +56,6 @@ pub fn is_image_candidate(name: &str) -> bool {
     }
 }
 
-/// Compare filenames so that "img2" < "img10" (digit runs compare numerically).
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     let (mut i, mut j) = (0, 0);
@@ -95,7 +88,6 @@ fn take_number(s: &[u8], start: usize) -> (u128, usize) {
     while end < s.len() && s[end].is_ascii_digit() {
         end += 1;
     }
-    // Saturate rather than panic on absurdly long digit runs.
     let value = s[start..end]
         .iter()
         .fold(0u128, |acc, d| acc.saturating_mul(10).saturating_add(u128::from(d - b'0')));
@@ -105,8 +97,7 @@ fn take_number(s: &[u8], start: usize) -> (u128, usize) {
 /// Guard against runaway trees; no sane photo library nests deeper.
 const MAX_SCAN_DEPTH: usize = 32;
 
-/// Build a [`FileEntry`] from a dirent whose name already passed the image
-/// filter; `None` when the path is not UTF-8 or the file vanished mid-scan.
+/// None when the path is not UTF-8 or the file vanished mid-scan.
 fn file_entry(entry: &std::fs::DirEntry, name: String) -> Option<FileEntry> {
     let meta = entry.metadata().ok()?;
     if !meta.is_file() {
@@ -131,18 +122,13 @@ fn file_entry(entry: &std::fs::DirEntry, name: String) -> Option<FileEntry> {
     })
 }
 
-/// Walk `dir` calling `sink` for every image file as it is found — the
-/// caller batches and delivers, so a slow (cloud-backed) tree shows its
-/// first files immediately instead of after the full walk. `sink` returns
-/// `false` to cancel. Recursive mode skips hidden directories and symlinks
-/// (linked dirs could cycle); order is the walk order, unsorted — display
-/// order is the frontend's query sort, so no order is promised here.
+/// Streams entries in walk order — no order is promised; `sink` returns false to cancel.
+/// Recursive mode skips hidden directories and symlinks (linked dirs could cycle).
 pub fn scan_stream(
     dir: &Path,
     recursive: bool,
     sink: &mut dyn FnMut(FileEntry) -> bool,
 ) -> std::io::Result<()> {
-    // (path, depth) — the root must exist; deeper unreadable dirs are skipped.
     let mut queue = vec![(dir.to_path_buf(), 0usize)];
     let root = std::fs::read_dir(dir)?; // surface a bad root as an error
     drop(root);
@@ -158,8 +144,7 @@ pub fn scan_stream(
                 let Ok(file_type) = entry.file_type() else {
                     continue;
                 };
-                // file_type() does not follow symlinks, so linked dirs
-                // (cycles) and linked files are both skipped here.
+                // file_type() does not follow symlinks, so linked dirs (cycles) and files are skipped.
                 if file_type.is_dir() {
                     if !name.starts_with('.') && depth < MAX_SCAN_DEPTH {
                         queue.push((entry.path(), depth + 1));
@@ -173,8 +158,7 @@ pub fn scan_stream(
             if !is_image_candidate(&name) {
                 continue;
             }
-            // Non-recursive keeps following symlinked files (metadata()
-            // resolves them), matching the original single-dir behavior.
+            // Non-recursive still follows symlinked files: metadata() resolves them.
             let Some(file) = file_entry(&entry, name) else {
                 continue;
             };
@@ -186,7 +170,6 @@ pub fn scan_stream(
     Ok(())
 }
 
-/// One non-recursive pass over `dir`: image files only, natural-sorted by name.
 pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     let mut entries = Vec::new();
     scan_stream(dir, false, &mut |entry| {
@@ -197,8 +180,7 @@ pub fn scan_dir(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     Ok(entries)
 }
 
-/// Every image under `dir`, any depth, natural-sorted by the path relative
-/// to `dir` so one folder's files stay together.
+/// Natural-sorted by path relative to `dir` so one folder's files stay together.
 pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     let mut entries = Vec::new();
     scan_stream(dir, true, &mut |entry| {
@@ -215,8 +197,7 @@ pub fn scan_dir_recursive(dir: &Path) -> std::io::Result<Vec<FileEntry>> {
     Ok(entries)
 }
 
-/// Count image files directly inside `dir`. Cheap: filename filter plus the
-/// dirent file type — no per-file stat. Unreadable dirs count as 0.
+/// No per-file stat; unreadable dirs count as 0.
 pub fn count_images(dir: &Path) -> u32 {
     match std::fs::read_dir(dir) {
         Ok(read) => read
@@ -228,10 +209,7 @@ pub fn count_images(dir: &Path) -> u32 {
     }
 }
 
-/// Non-hidden subdirectories of `dir`, natural-sorted (lazy sidebar tree, one
-/// level). Deliberately does NOT count contents — on cloud-backed folders
-/// (Dropbox, iCloud) reading each subdir can take seconds, so counts are
-/// computed in the background and streamed as events.
+/// Deliberately does not count contents: on cloud-backed folders (Dropbox, iCloud) reading each subdir can take seconds; counts stream in from the background instead.
 pub fn list_subdirs(dir: &Path) -> std::io::Result<Vec<DirEntry>> {
     let mut dirs: Vec<DirEntry> = std::fs::read_dir(dir)?
         .filter_map(|entry| {
@@ -338,7 +316,6 @@ mod tests {
         for name in ["a.png", "b.jpg", ".hidden.png", "skip.txt"] {
             std::fs::write(tmp.path().join(name), b"x").unwrap();
         }
-        // Images below the direct level must not count (non-recursive).
         std::fs::write(tmp.path().join("deeper").join("deep.png"), b"x").unwrap();
 
         assert_eq!(count_images(tmp.path()), 2);

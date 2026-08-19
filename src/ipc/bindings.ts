@@ -333,23 +333,15 @@ thumbnailReady: "thumbnail-ready"
 /** user-defined types **/
 
 /**
- * The camera's own per-shot grade: how far its auto processing pushed this
- * frame off the base profile, in the Adobe-unit recipe it writes into the
- * raw file's XMP packet. Two frames shot seconds apart can carry different
- * grades — this is the answer to "why do these neighbours look different".
+ * The camera's per-shot auto grade in Adobe slider units, from the raw file's XMP packet.
  */
 export type CameraGrade = { contrast: number; saturation: number; clarity: number; texture: number }
 /**
- * The photograph within the frame: a rectangle, and the angle it sits at.
- * 
- * `x`, `y`, `width` and `height` are the rectangle in normalised coordinates
- * of the original frame, describing where its *centre* and extent are; the
- * rectangle itself is axis-aligned in the frame rotated by `angle`.
+ * The rectangle in normalised original-frame coordinates; the rectangle itself is axis-aligned in the frame rotated by `angle`.
  */
 export type Crop = { x: number; y: number; width: number; height: number; 
 /**
- * Degrees clockwise. Positive straightens a horizon that falls to the
- * right, which is the direction a hand-held frame usually drifts.
+ * Degrees clockwise; positive straightens a horizon that falls to the right.
  */
 angle: number }
 /**
@@ -361,12 +353,7 @@ export type DevelopFrame = { token: number; width: number; height: number; sourc
  */
 regionX: number; regionY: number; regionWidth: number; regionHeight: number }
 /**
- * Tone and colour adjustments, all format-agnostic: they act on scene-linear
- * pixels whatever plugin produced them.
- * 
- * Every slider is centred on zero meaning "unchanged", so [`Default`] is the
- * identity edit and resetting is just replacing the struct. Ranges match the
- * familiar ±100 of a photo editor, except exposure which is in stops.
+ * Zero means unchanged on every slider, so [`Default`] is the identity edit; ranges are ±100 except exposure (stops).
  */
 export type DevelopParams = { 
 /**
@@ -394,15 +381,8 @@ whites: number;
  */
 blacks: number; 
 /**
- * How softly the brightest values approach white, 0–100.
- * 
- * Zero clips: everything at or above white renders as white, which is
- * what a pipeline without a shoulder does. Above zero the top of the
- * range is bent into an asymptote instead, so highlights keep separating
- * long after they would otherwise have gone flat.
- * 
- * One-sided rather than ±100 because there is nothing on the other side
- * of clipping — a curve cannot reach white sooner than immediately.
+ * How softly the brightest values approach white, 0–100: zero clips at white, above zero bends
+ * the top into an asymptote. One-sided because there is nothing on the other side of clipping.
  */
 rolloff: number; 
 /**
@@ -413,40 +393,17 @@ vibrance: number;
  * Flat saturation; ±100.
  */
 saturation: number }
+export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams; crop: Crop; 
 /**
- * The complete persisted state of one image's edit: what neutral to render
- * against, plus everything layered on top.
- */
-export type DevelopSettings = { whiteBalance: WhiteBalance; params: DevelopParams; 
-/**
- * Which part of the frame the photograph actually is.
- */
-crop: Crop; 
-/**
- * Which preset this edit is a variation of.
- * 
- * Stored rather than derived, and the two are not the same question.
- * "Which preset are the sliders sitting on right now" is answered by
- * comparing them, and goes stale the moment one moves. "Which preset was
- * this edit built on top of" cannot be recovered from the numbers at all
- * — and it is the one the sliders need, because it is what they measure
- * their deviation from.
- * 
- * An id rather than a copy of the numbers, so improving a preset improves
- * the baseline of everything based on it. An unknown id (a preset that
- * has since been removed) reads as the identity, which is what a missing
- * baseline should mean.
+ * The preset this edit was built on — stored, not derived: it cannot be recovered from the
+ * numbers and is what the sliders measure deviation from. An id, so improving a preset
+ * improves everything based on it; an unknown id reads as the identity.
  */
 basis: string; 
 /**
- * Which camera look renders this image — the fitted transform that makes
- * a neutral raw decode match the camera's own JPEG, applied under the
- * sliders. `"flat"` means none.
- * 
- * Separate from `basis` (and defaulting to none) on purpose: edits saved
- * before the look existed carry slider positions that already emulate
- * it, and deserialising those into a world where the look also applied
- * would render every old edit twice as strong.
+ * The fitted camera look applied under the sliders; `"flat"` means none.
+ * Defaults independently of `basis`: edits saved before the look existed already emulate it
+ * in slider positions, and applying the look to them too would render twice as strong.
  */
 look?: string }
 export type DevelopState = { width: number; height: number; asShot: WhiteBalance; settings: DevelopSettings; edited: boolean; 
@@ -459,9 +416,6 @@ needsRender: boolean; hdr: HdrOutcome }
  */
 export type DirCountReady = { path: string; imageCount: number }
 export type DirEntry = { path: string; name: string }
-/**
- * Catalog entry as shown in the UI picker.
- */
 export type EmbedModelInfo = { id: string; label: string; quality: string; speed: string; downloadMb: number; dim: number; downloaded: boolean; active: boolean }
 export type EmbeddingProgress = { done: number; total: number; epoch: number }
 /**
@@ -469,17 +423,9 @@ export type EmbeddingProgress = { done: number; total: number; epoch: number }
  */
 export type EmbeddingStatus = { modelId: string; phase: string; error: string | null }
 export type ExifSource = { kind: "none" } | { kind: "file"; path: string }
-export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; lens: string | null; 
+export type ExifSubset = { orientation: number; dateTime: string | null; camera: string | null; lens: string | null; exposureTime: number | null; fNumber: number | null; iso: number | null; 
 /**
- * The exposure, as a photographer states it. Kept as numbers rather than
- * as the camera's own strings so they can be compared, filtered and
- * sorted — formatting for display is the frontend's business, and "1/200"
- * is a rendering of 0.005, not a fact about the photograph.
- */
-exposureTime: number | null; fNumber: number | null; iso: number | null; 
-/**
- * The exposure-compensation dial, in EV. Zero is a real reading — the
- * dial at its detent — distinct from a file that never recorded one.
+ * EV; Some(0.0) is the dial at its detent, distinct from unrecorded (None).
  */
 exposureBias: number | null; 
 /**
@@ -557,8 +503,7 @@ clippedShadows: number; clippedHighlights: number }
 export type ImageLabels = { stars: number | null; tags: string[] }
 export type ImageMeta = { 
 /**
- * None when no Rust decoder knows the format (e.g. AVIF) — the webview
- * can still measure the image it renders natively.
+ * None when no Rust decoder knows the format (e.g. AVIF).
  */
 width: number | null; height: number | null; format: string; fileSize: number; modifiedMs: number; exif: ExifSubset | null; 
 /**
@@ -566,9 +511,7 @@ width: number | null; height: number | null; format: string; fileSize: number; m
  */
 grade: CameraGrade | null }
 /**
- * Per-image pixel statistics for the info panel, computed from the cached
- * thumbnail (256 px is plenty for distribution shapes and it is already on
- * disk — the original is never re-decoded for this).
+ * Computed from the cached thumbnail; the original is never re-decoded for stats.
  */
 export type ImageStats = { 
 /**
@@ -576,33 +519,17 @@ export type ImageStats = {
  */
 luma: number[]; red: number[]; green: number[]; blue: number[]; 
 /**
- * Maxwell-triangle density over a simplex tessellation: the triangle
- * splits into `TRIANGLE_N`² small triangles — "up" cells (▲) indexed
- * `[b*N + a]` for a + b ≤ N-1 and "down" cells (▽) for a + b ≤ N-2,
- * where a, b scale the barycentric red/green coordinates by N. Both
- * vectors are N×N with the structurally empty slots at zero.
+ * Maxwell-triangle density: ▲ cells at `[b*N + a]` for a + b ≤ N-1, ▽ for a + b ≤ N-2 (a, b = barycentric red/green × N).
+ * Both vectors are N×N with structurally empty slots at zero.
  */
 triangleN: number; triUp: number[]; triDown: number[] }
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
-/**
- * Which analysis overlay to composite over the developed pixels. A closed
- * enum rather than a bag of booleans: overlays are mutually exclusive, and a
- * plugin adding one extends this in exactly one place.
- */
-export type Overlay = 
-/**
- * Just the photograph.
- */
-"none" | 
+export type Overlay = "none" | 
 /**
  * Tint regions by how much fine detail they resolve — the focus map.
  */
-"sharpness" | 
-/**
- * Mark the pixels that have run out of range at either end.
- */
-"clipping"
+"sharpness" | "clipping"
 export type PersonCluster = { 
 /**
  * A named person's id IS their name (it survives reclustering); unnamed clusters get run ordinals.
@@ -640,10 +567,7 @@ export type TrashOutcome = {
  */
 removed: string[]; failed: TrashFailure[] }
 /**
- * Colour temperature in kelvin plus a green–magenta tint, the two numbers a
- * photographer actually reasons about. Higher `temperature` renders warmer;
- * positive `tint` renders more magenta — the Lightroom convention, which is
- * also what Core Image's RAW pipeline implements.
+ * Kelvin plus green–magenta tint; higher temperature renders warmer, positive tint more magenta (the Lightroom/Core Image convention).
  */
 export type WhiteBalance = { temperature: number; tint: number }
 

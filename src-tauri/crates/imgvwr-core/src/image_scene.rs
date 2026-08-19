@@ -1,14 +1,3 @@
-//! The built-in [`SceneFormat`] for ordinary formats — whatever the codec
-//! registry can decode (JPEG, PNG, WebP, GIF).
-//!
-//! These files are already demosaiced, already white-balanced and already
-//! gamma-encoded, so this plugin's job is the inverse of a RAW plugin's: undo
-//! the sRGB transfer function to get back to linear light, and treat white
-//! balance as a chromatic adaptation away from the D65 the file was encoded
-//! against. It is an approximation of what a RAW plugin does properly, but it
-//! is the honest best available for an 8-bit delivery file — and it means the
-//! develop panel behaves identically no matter what the user opened.
-
 use std::path::Path;
 
 use crate::codec::CodecRegistry;
@@ -36,11 +25,6 @@ impl ImageCrateFormat {
     }
 }
 
-/// A scene over pixels that were decoded — or synthesised — elsewhere.
-///
-/// The HDR merge hands its fused picture here, so a photograph that exists
-/// only in memory develops exactly like a JPEG on disk would: same
-/// linearisation, same white balance model, same everything downstream.
 pub fn scene_from_rgba(img: image::RgbaImage) -> Box<dyn SceneImage> {
     Box::new(ImageCrateScene {
         width: img.width(),
@@ -49,14 +33,7 @@ pub fn scene_from_rgba(img: image::RgbaImage) -> Box<dyn SceneImage> {
     })
 }
 
-/// A scene over scene-linear float pixels synthesised elsewhere — the HDR
-/// radiance merge.
-///
-/// Scene-referred on purpose: this is measured light, not a finished
-/// picture, so the develop pipeline chooses a look for it and the ordinary
-/// tone controls work the full measured range. `1.0` is diffuse white and
-/// the headroom above it is real — which is precisely what makes the
-/// sliders HDR knobs rather than curve-benders over an 8-bit blend.
+/// `rgb` is scene-linear with 1.0 at diffuse white; headroom above 1.0 is real and preserved.
 pub fn scene_from_radiance(width: u32, height: u32, rgb: Vec<f32>) -> Box<dyn SceneImage> {
     Box::new(RadianceScene { width, height, rgb })
 }
@@ -77,8 +54,7 @@ impl SceneImage for RadianceScene {
     }
 
     fn as_shot(&self) -> WhiteBalance {
-        // The radiance came from delivery files that were already
-        // white-balanced against D65; the merge does not change that.
+        // Radiance was merged from delivery files already balanced to D65.
         WhiteBalance::D65
     }
 
@@ -122,8 +98,6 @@ impl SceneImage for RadianceScene {
     }
 }
 
-/// Area-average downscale of already-linear samples: the float sibling of
-/// [`resample_to_linear`], with no transfer function to undo.
 fn resample_area_f32(
     rgb: &[f32],
     src_w: u32,
@@ -195,9 +169,7 @@ impl SceneFormat for ImageCrateFormat {
         Ok(Box::new(ImageCrateScene {
             width: img.width(),
             height: img.height(),
-            // Kept 8-bit on purpose: the source has no more precision than
-            // this, and a full-resolution float buffer would cost ~290 MB for
-            // a 24 MP file. Linearisation happens during resampling instead.
+            // Kept 8-bit: a full-res float buffer is ~290 MB at 24 MP; linearisation happens in resample.
             rgba: img.into_raw(),
         }))
     }
@@ -215,14 +187,11 @@ impl SceneImage for ImageCrateScene {
     }
 
     fn rendering(&self) -> Rendering {
-        // A JPEG or PNG is somebody's finished picture; the look was chosen
-        // when the file was written.
         Rendering::AlreadyRendered
     }
 
     fn as_shot(&self) -> WhiteBalance {
-        // A delivery file carries no camera white balance to recover; it was
-        // encoded against D65 and that is the neutral the UI starts from.
+        // Delivery files carry no camera WB to recover; their encoding neutral is D65.
         WhiteBalance::D65
     }
 
@@ -267,8 +236,6 @@ impl SceneImage for ImageCrateScene {
     }
 }
 
-/// 256-entry sRGB→linear lookup: the transfer function is the hot path of
-/// every resample, and an 8-bit source only has 256 distinct inputs.
 fn srgb_lut() -> [f32; 256] {
     let mut lut = [0f32; 256];
     for (i, slot) in lut.iter_mut().enumerate() {
@@ -277,11 +244,7 @@ fn srgb_lut() -> [f32; 256] {
     lut
 }
 
-/// Area-average downscale that converts to linear light *during* accumulation.
-///
-/// Averaging gamma-encoded values (what a naive resize does) darkens detailed
-/// regions; doing it in linear light is correct and costs nothing extra here,
-/// because the conversion is a table lookup we have to do anyway.
+/// Linearises before averaging; averaging gamma-encoded values darkens detailed regions.
 fn resample_to_linear(
     rgba: &[u8],
     src_w: u32,
@@ -316,7 +279,6 @@ fn resample_to_linear(
     }
 
     for dy in 0..dh {
-        // Source row span (within the region) covered by this output row.
         let y0 = dy * rh / dh;
         let y1 = (((dy + 1) * rh).div_ceil(dh)).min(rh).max(y0 + 1);
         for dx in 0..dw {
@@ -369,9 +331,6 @@ mod tests {
 
     #[test]
     fn resample_averages_in_linear_light_not_gamma() {
-        // Half black, half white: the linear mean is 0.5, which re-encodes to
-        // ~0.735 in sRGB — visibly brighter than the naive 0.5 a gamma-space
-        // average would give. This is the whole point of the LUT.
         let src: Vec<u8> = [[0u8, 0, 0, 255], [255, 255, 255, 255]]
             .iter()
             .flatten()
@@ -431,8 +390,6 @@ mod tests {
 
     #[test]
     fn rendering_a_region_develops_only_that_crop() {
-        // Left half black, right half white. Asking for the right half must
-        // come back white, at the size of the crop rather than the frame.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("split.png");
         let mut img = image::RgbImage::new(80, 20);
@@ -478,8 +435,6 @@ mod tests {
 
     #[test]
     fn a_region_at_native_scale_is_not_downsampled() {
-        // The 1:1 case: a small crop asked for at its own size comes back
-        // pixel-for-pixel, which is the whole point of region rendering.
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("big.png");
         image::DynamicImage::new_rgb8(2000, 1000).save(&path).unwrap();
@@ -497,7 +452,6 @@ mod tests {
                 },
             })
             .unwrap();
-        // 10% of 2000 = 200 px wide, under the 400 cap, so no scaling.
         assert_eq!((crop.width, crop.height), (200, 100));
     }
 

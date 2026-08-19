@@ -5,9 +5,7 @@ use crate::codec::DecodedImage;
 /// Rows in the color-triangle tessellation (N² small triangles).
 pub const TRIANGLE_N: usize = 48;
 
-/// Per-image pixel statistics for the info panel, computed from the cached
-/// thumbnail (256 px is plenty for distribution shapes and it is already on
-/// disk — the original is never re-decoded for this).
+/// Computed from the cached thumbnail; the original is never re-decoded for stats.
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageStats {
@@ -16,11 +14,8 @@ pub struct ImageStats {
     pub red: Vec<u32>,
     pub green: Vec<u32>,
     pub blue: Vec<u32>,
-    /// Maxwell-triangle density over a simplex tessellation: the triangle
-    /// splits into `TRIANGLE_N`² small triangles — "up" cells (▲) indexed
-    /// `[b*N + a]` for a + b ≤ N-1 and "down" cells (▽) for a + b ≤ N-2,
-    /// where a, b scale the barycentric red/green coordinates by N. Both
-    /// vectors are N×N with the structurally empty slots at zero.
+    /// Maxwell-triangle density: ▲ cells at `[b*N + a]` for a + b ≤ N-1, ▽ for a + b ≤ N-2 (a, b = barycentric red/green × N).
+    /// Both vectors are N×N with structurally empty slots at zero.
     pub triangle_n: u32,
     pub tri_up: Vec<u32>,
     pub tri_down: Vec<u32>,
@@ -49,8 +44,7 @@ pub fn image_stats(img: &DecodedImage) -> ImageStats {
         } else {
             (f32::from(r) / sum as f32, f32::from(g) / sum as f32)
         };
-        // Simplex binning: cell (a, b), upward when the fractional parts
-        // stay under the cell's diagonal, downward above it.
+        // Up-cell when the fractional parts stay under the cell's diagonal.
         let (su, sv) = (u * n as f32, v * n as f32);
         let a = (su as usize).min(n - 1);
         let mut b = (sv as usize).min(n - 1);
@@ -96,7 +90,7 @@ mod tests {
         assert_eq!(stats.red[255], 2);
         assert_eq!(stats.red[0], 1);
         assert_eq!(stats.green[0], 3);
-        assert_eq!(stats.luma[0], 1); // black
+        assert_eq!(stats.luma[0], 1);
         assert_eq!(stats.luma[54], 2); // 0.2126 * 255 ≈ 54
         assert_eq!(stats.luma.iter().sum::<u32>(), 3);
     }
