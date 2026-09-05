@@ -1279,6 +1279,17 @@ button.stats-row:hover .stats-label {
   color: var(--accent);
 }
 
+.status-selected {
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-selected:hover {
+  text-decoration: underline;
+}
+
 /* ---- Command palette ---- */
 
 .palette-backdrop {

@@ -41,7 +41,15 @@ export function StatusBar() {
       <span className="status-right">
         {labelsText && <span className="status-labels">{labelsText}</span>}
         {entry && <span>{pairedName(entry, siblings)}</span>}
-        {entry && chosen > 1 && <span>{chosen} selected</span>}
+        {entry && chosen > 1 && (
+          <button
+            className="status-selected"
+            title="Actions for the selection"
+            onClick={(e) => useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY })}
+          >
+            {chosen} selected
+          </button>
+        )}
         {entry && chosen <= 1 && (
           <span>
             {(index ?? 0) + 1} / {visible.length}

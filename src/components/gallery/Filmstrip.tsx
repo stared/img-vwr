@@ -166,27 +166,25 @@ export function Filmstrip({ height }: { height: number }) {
               member
                 ? `${entry.name} — in this stack; click to show it in front`
                 : spread
-                  ? `${entry.name} — the one in front; click to restack`
+                  ? `${entry.name} — the one in front; double-click to restack`
                   : hdrSet
-                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; click to spread its frames`
+                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; double-click to spread its frames`
                     : siblings.length > 0
-                      ? `${stackCaption(entry, siblings)} — click to spread the stack`
+                      ? `${stackCaption(entry, siblings)} — double-click to spread the stack`
                       : stacking
                         ? stackCaption(entry, siblings)
                         : entry.name
             }
             onClick={(e) => {
-              const mode = selectMode(e);
               if (index === null) {
                 useAppStore.getState().preferMember(entry.path);
                 return;
               }
-              if (mode === "replace" && (siblings.length > 0 || spread)) {
-                useAppStore.getState().selectAt(index, mode);
-                useAppStore.getState().toggleStackExpanded(key);
-                return;
-              }
-              useAppStore.getState().selectAt(index, mode);
+              useAppStore.getState().selectAt(index, selectMode(e));
+            }}
+            onDoubleClick={() => {
+              if (index === null || (siblings.length === 0 && !spread)) return;
+              useAppStore.getState().toggleStackExpanded(key);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
