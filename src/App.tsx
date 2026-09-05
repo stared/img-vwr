@@ -1,10 +1,5 @@
 import { useEffect, useRef } from "react";
 
-import { GalleryGrid } from "./components/gallery/GalleryGrid";
-import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
-import { MapGallery } from "./components/gallery/MapGallery";
-import { MosaicGallery } from "./components/gallery/MosaicGallery";
-import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { CommandPalette } from "./components/shell/CommandPalette";
 import { ExportDialog } from "./components/shell/ExportDialog";
 import { FilterBar } from "./components/shell/FilterBar";
@@ -16,6 +11,7 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
+import { getView } from "./registry/views";
 import { developSetFusions, events, requestMeta, type FusionRecipe } from "./ipc";
 import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
@@ -90,6 +86,7 @@ function App() {
   const count = useAppStore((s) => s.entries.length);
   const viewMode = useAppStore((s) => s.viewMode);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
+  const GalleryView = getView(galleryLayout)?.component;
 
   useGlobalKeybindings();
   useSceneRefinement();
@@ -144,25 +141,21 @@ function App() {
         <Sidebar />
         <main className="main-pane">
           {status === "idle" && (
-            <p className="hint">Open a folder or a source from the sidebar, or press ⌘K.</p>
+            <section className="welcome">
+              <p className="welcome-eyebrow">IMAGE WORKSPACE</p>
+              <h1>Browse photographs where they are.</h1>
+              <p>Open a folder or choose a source. Originals are never modified.</p>
+              <button onClick={() => useAppStore.getState().promptCommand("folder.open")}>
+                Open Folder… <kbd>⌘O</kbd>
+              </button>
+              <span>Press <kbd>⌘K</kbd> for every command.</span>
+            </section>
           )}
           {viewMode === "gallery" && <FilterBar />}
           {status === "loading" && count === 0 && <p className="hint">Loading…</p>}
           {status === "error" && <p className="error">{error}</p>}
           {status === "loaded" && count === 0 && <p className="hint">No images found.</p>}
-          {count > 0 && viewMode === "gallery" && (
-            galleryLayout === "map" ? (
-              <MapGallery />
-            ) : galleryLayout === "mosaic" ? (
-              <MosaicGallery />
-            ) : galleryLayout === "timeline" ? (
-              <TimelineGallery />
-            ) : galleryLayout === "darkroom" ? (
-              <DarkroomGallery />
-            ) : (
-              <GalleryGrid grouped={galleryLayout === "scenes"} />
-            )
-          )}
+          {count > 0 && viewMode === "gallery" && GalleryView && <GalleryView />}
           {count > 0 && viewMode === "viewer" && <ImageViewer />}
         </main>
         <RightSidebar />

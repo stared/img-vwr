@@ -5,6 +5,7 @@ import { filterFieldsFor, getFilterField, type FilterField } from "../../registr
 import { chordsForCommand, formatChord } from "../../registry/keybindings";
 import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
+import { allViews, getView } from "../../registry/views";
 import type { RangeOp, Sort } from "../../state/query";
 import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
 import {
@@ -18,7 +19,7 @@ import {
 } from "../../state/develop";
 import { sceneGapLabel, sliderFromTau, tauFromSlider } from "../../state/scenes";
 import type { GalleryLayout, Scope } from "../../state/store";
-import { useAppStore } from "../../state/store";
+import { useAppStore, useVisibleEntries } from "../../state/store";
 import { maxColumnsFor } from "../gallery/GalleryGrid";
 import { ZoomBar } from "../viewer/ZoomBar";
 import { FormatMenuItems } from "./filterMenus";
@@ -53,15 +54,6 @@ function sortOptions(scope: Scope | null): SortRow[] {
 }
 
 const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
-
-const VIEW_OPTIONS: { layout: GalleryLayout; hint: string }[] = [
-  { layout: "grid", hint: "thumbnails" },
-  { layout: "mosaic", hint: "packed rows, no gaps" },
-  { layout: "scenes", hint: "grouped into moments" },
-  { layout: "timeline", hint: "by date" },
-  { layout: "map", hint: "geolocated" },
-  { layout: "darkroom", hint: "one large, strip below" },
-];
 
 function ViewKnobs({ layout }: { layout: GalleryLayout }) {
   const gridColumns = useAppStore((s) => s.gridColumns);
@@ -598,6 +590,9 @@ export function FilterBar() {
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const setGalleryLayout = useAppStore((s) => s.setGalleryLayout);
+  const total = useAppStore((s) => s.entries.length);
+  const visible = useVisibleEntries().length;
+  const currentView = getView(galleryLayout);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -673,26 +668,29 @@ export function FilterBar() {
       <AddFilterMenu scope={scope} />
 
       <div className="filterbar-right">
+      <span className="result-count" title={`${total} images in the input`}>
+        {visible} result{visible === 1 ? "" : "s"}
+      </span>
       <EditableChip
         chipKey="view"
-        value={galleryLayout}
+        value={currentView?.label ?? galleryLayout}
         title="change how the results render"
         renderMenu={(close) => (
           <>
-            {VIEW_OPTIONS.map(({ layout, hint }) => {
-              const chord = chordsForCommand(`view.${layout}`).map(formatChord)[0];
+            {allViews().map((view) => {
+              const chord = chordsForCommand(`view.${view.id}`).map(formatChord)[0];
               return (
                 <button
-                  key={layout}
+                  key={view.id}
                   onClick={() => {
-                    setGalleryLayout(layout);
+                    setGalleryLayout(view.id);
                     close();
                   }}
                 >
-                  <span>{layout}</span>
-                  <span className="menu-hint">{hint}</span>
+                  <span>{view.label}</span>
+                  <span className="menu-hint">{view.hint}</span>
                   {chord !== undefined && <span className="menu-key">{chord}</span>}
-                  <span className="menu-check">{galleryLayout === layout ? "✓" : ""}</span>
+                  <span className="menu-check">{galleryLayout === view.id ? "✓" : ""}</span>
                 </button>
               );
             })}
@@ -703,7 +701,7 @@ export function FilterBar() {
 
       <SortChip scope={scope} sort={query.sort} />
 
-      {galleryLayout === "darkroom" && <ZoomBar />}
+      {currentView?.zoomable === true && <ZoomBar />}
       </div>
     </div>
   );

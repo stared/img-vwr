@@ -2,6 +2,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
+import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
+import { MapGallery } from "./components/gallery/MapGallery";
+import { MosaicGallery } from "./components/gallery/MosaicGallery";
+import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
@@ -18,6 +23,7 @@ import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
 import { allPanels, registerPanel } from "./registry/panels";
+import { allViews, registerView } from "./registry/views";
 import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
@@ -30,6 +36,55 @@ import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
 import { registerBuiltinSorts } from "./sorts/builtin";
+
+registerView({
+  id: "grid",
+  label: "Grid",
+  hint: "regular thumbnail rows",
+  component: () => <GalleryGrid grouped={false} />,
+  keywords: ["thumbnails", "cells"],
+  zoomable: false,
+});
+registerView({
+  id: "mosaic",
+  label: "Mosaic",
+  hint: "edge-to-edge photographs",
+  component: MosaicGallery,
+  keywords: ["packed", "wall", "justified"],
+  zoomable: false,
+});
+registerView({
+  id: "scenes",
+  label: "Scenes",
+  hint: "moments inferred from time and content",
+  component: () => <GalleryGrid grouped />,
+  keywords: ["moments", "groups", "series", "burst"],
+  zoomable: false,
+});
+registerView({
+  id: "timeline",
+  label: "Timeline",
+  hint: "photographs positioned by capture time",
+  component: TimelineGallery,
+  keywords: ["date", "taken", "time", "chronological"],
+  zoomable: false,
+});
+registerView({
+  id: "map",
+  label: "Map",
+  hint: "photographs with GPS locations",
+  component: MapGallery,
+  keywords: ["geo", "gps", "location"],
+  zoomable: false,
+});
+registerView({
+  id: "darkroom",
+  label: "Darkroom",
+  hint: "main image + filmstrip; loupe, culling, editing",
+  component: DarkroomGallery,
+  keywords: ["develop", "edit", "filmstrip", "lightroom", "carousel", "loupe"],
+  zoomable: true,
+});
 
 registerBuiltinCommands();
 registerBuiltinSorts();
@@ -82,10 +137,7 @@ registerPanel({
   title: "Develop",
   component: DevelopPanel,
   side: "right",
-  when: () => {
-    const s = useAppStore.getState();
-    return s.galleryLayout === "darkroom" || s.viewMode === "viewer";
-  },
+  when: inSession,
 });
 registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
 registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
@@ -99,6 +151,9 @@ for (const panel of allPanels()) {
     run: ({ store }) => store.getState().setActivePanel(panel.id),
   });
 }
+
+// Assert registration during startup: commands and the shell both depend on this being non-empty.
+if (allViews().length === 0) throw new Error("no gallery views registered");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { allSorts } from "../registry/sorts";
 import { FORMAT_GROUPS } from "../state/query";
-import type { GalleryLayout } from "../state/store";
+import { allViews } from "../registry/views";
 
 const ZOOM_STEP = 1.25;
 
@@ -60,25 +60,17 @@ export function registerBuiltinCommands(): void {
     run: ({ store }) => store.getState().toggleInspector(),
   });
 
-  const views: { layout: GalleryLayout; title: string; keywords: string[] }[] = [
-    { layout: "grid", title: "Grid View", keywords: ["thumbnails", "cells"] },
-    { layout: "mosaic", title: "Mosaic View", keywords: ["packed", "wall", "justified"] },
-    { layout: "scenes", title: "Scenes View", keywords: ["moments", "groups", "series", "burst"] },
-    { layout: "timeline", title: "Timeline View", keywords: ["date", "taken", "time", "chronological"] },
-    { layout: "map", title: "Map View", keywords: ["geo", "gps", "location"] },
-    { layout: "darkroom", title: "Darkroom View", keywords: ["develop", "edit", "filmstrip", "lightroom"] },
-  ];
-  for (const view of views) {
+  for (const view of allViews()) {
     registerCommand({
-      id: `view.${view.layout}`,
-      title: view.title,
+      id: `view.${view.id}`,
+      title: `${view.label} View`,
       keywords: view.keywords,
       when: hasImages,
       menus: [],
       run: ({ store }) => {
         const state = store.getState();
         if (state.viewMode === "viewer") state.closeViewer();
-        store.getState().setGalleryLayout(view.layout);
+        store.getState().setGalleryLayout(view.id);
       },
     });
   }

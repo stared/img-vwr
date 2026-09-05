@@ -78,6 +78,56 @@ kbd {
   color: var(--danger);
 }
 
+.welcome {
+  align-self: center;
+  width: min(520px, calc(100% - 48px));
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--text-dim);
+}
+
+.welcome-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent-text);
+}
+
+.welcome h1 {
+  max-width: 430px;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.welcome > p:not(.welcome-eyebrow) {
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.welcome > button {
+  margin-top: 8px;
+  padding: 7px 12px;
+  color: white;
+  background: var(--accent);
+  border-radius: 6px;
+}
+
+.welcome > button kbd {
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.welcome > span {
+  font-size: 12px;
+}
+
 /* ---- Sidebar ---- */
 
 .activitybar {
@@ -667,6 +717,13 @@ button.stats-row:hover .stats-label {
   margin-left: auto;
 }
 
+.result-count {
+  padding: 0 2px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -1055,6 +1112,15 @@ button.stats-row:hover .stats-label {
   z-index: 2;
   border: 1px solid var(--accent);
   pointer-events: none;
+}
+
+.thumb-cell.selected,
+.filmstrip-cell.selected {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mosaic-cell.selected {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .thumb-cell.lead::before,

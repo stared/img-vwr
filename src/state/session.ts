@@ -148,7 +148,7 @@ function readQuery(v: unknown): Query {
 
 /** Returns whether a scope was reopened, so the caller knows the start folder is spoken for. */
 export function restoreSession(): boolean {
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = localStorage.getItem(KEY);
   } catch {

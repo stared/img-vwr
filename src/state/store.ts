@@ -760,7 +760,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   cropApplied: (path, crop) => {
     const crops = { ...get().crops };
-    if (crop === null) delete crops[path];
+    if (crop === null) Reflect.deleteProperty(crops, path);
     else crops[path] = crop;
     set({ crops });
   },
