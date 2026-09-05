@@ -29,6 +29,28 @@ afterEach(() => {
 });
 
 describe("restoreSession", () => {
+  it("restores pinned sections and removes duplicate IDs", () => {
+    stored.set(KEY, JSON.stringify({ pinnedPanels: ["loupe", "histogram", "loupe"] }));
+    restoreSession();
+    expect(useAppStore.getState().pinnedPanels).toEqual(["loupe", "histogram"]);
+  });
+
+  it("ignores malformed pins from a saved session", () => {
+    stored.set(KEY, JSON.stringify({ pinnedPanels: ["loupe", 42] }));
+    restoreSession();
+    expect(useAppStore.getState().pinnedPanels).toEqual([]);
+  });
+
+  it("pins independently and unpins without changing section order", () => {
+    const { togglePanelPin, setPanelOrder } = useAppStore.getState();
+    setPanelOrder(["develop", "loupe", "histogram"]);
+    togglePanelPin("loupe");
+    togglePanelPin("histogram");
+    togglePanelPin("loupe");
+    expect(useAppStore.getState().pinnedPanels).toEqual(["histogram"]);
+    expect(useAppStore.getState().panelOrder).toEqual(["develop", "loupe", "histogram"]);
+  });
+
   it("restores nothing on a fresh machine", () => {
     expect(restoreSession()).toBe(false);
     expect(useAppStore.getState().galleryLayout).toBe("grid");

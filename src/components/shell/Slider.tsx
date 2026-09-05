@@ -144,6 +144,7 @@ export function Slider({
       className={changed ? "slider-value changed" : "slider-value"}
       value={typing ?? display}
       title="Type a value"
+      aria-label={label ? `${label} value` : "Value"}
       spellCheck={false}
       onChange={(e) => setTyping(e.currentTarget.value)}
       onFocus={(e) => e.currentTarget.select()}

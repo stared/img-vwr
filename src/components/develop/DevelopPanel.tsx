@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
@@ -21,23 +21,26 @@ import {
 } from "../../state/develop";
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
+  const contentId = useId();
   const folded = useDevelopStore((s) => s.folded[title] === true);
   const toggleFolded = useDevelopStore((s) => s.toggleFolded);
   return (
     <section className="develop-group">
       <h4>
-        <button className="develop-fold" onClick={() => toggleFolded(title)}>
-          <span className="panel-disclosure">{folded ? "▸" : "▾"}</span>
+        <button className="develop-fold" aria-expanded={!folded} aria-controls={contentId} onClick={() => toggleFolded(title)}>
+          <span className="panel-disclosure" aria-hidden="true">{folded ? "▸" : "▾"}</span>
           {title}
         </button>
       </h4>
-      {!folded && children}
+      <div id={contentId} hidden={folded}>{children}</div>
     </section>
   );
 }
 
 export function DevelopPanel() {
   const entry = useSelectedEntry();
+  const [autoPending, setAutoPending] = useState(false);
+  const [autoError, setAutoError] = useState<string | null>(null);
 
   const session = useDevelopStore((s) => s.session);
   const opening = useDevelopStore((s) => s.opening);
@@ -52,6 +55,9 @@ export function DevelopPanel() {
   const applyPreset = useDevelopStore((s) => s.applyPreset);
   const showDeviation = useDevelopStore((s) => s.showDeviation);
   const toggleDeviation = useDevelopStore((s) => s.toggleDeviation);
+  const autoTone = useDevelopStore((s) => s.autoTone);
+  const toggleComparing = useDevelopStore((s) => s.toggleComparing);
+  const cancelCrop = useDevelopStore((s) => s.cancelCrop);
   const comparing = useDevelopStore((s) => s.comparing);
   const cropping = useDevelopStore((s) => s.cropping);
   const setCropping = useDevelopStore((s) => s.setCropping);
@@ -97,25 +103,195 @@ export function DevelopPanel() {
   const cropped = isCropped(settings.crop);
   const developedSize = displayedSize(info, settings.crop);
 
+  const renderParam = (spec: ParamSpec) => {
+    const value = settings.params[spec.key];
+    // Slider zero level is the preset baseline, not flat, so double-click returns to the preset.
+    const from = baseline ? baseline.params[spec.key] : 0;
+    return (
+      <Slider
+        key={spec.key}
+        label={spec.label}
+        value={value}
+        neutral={from}
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        display={showDeviation ? spec.format(value - from) : spec.format(value)}
+        // Typed values are parsed in the display's current mode, or "+12" would mean two different edits.
+        parse={(text) => {
+          const typed = parseNumber(text);
+          return typed === null ? null : showDeviation ? from + typed : typed;
+        }}
+        ticks={from === 0 ? [] : [{ at: from, title: `${baseline?.label ?? "flat"}` }]}
+        layout="inline"
+        title={`Double-click to put it back to ${baseline?.label ?? "flat"}.`}
+        onChange={(next) => setParam(spec.key, next)}
+      />
+    );
+  };
+
   return (
     <div className="develop-panel">
-      <div className="develop-status">
-        <span>
-          {comparing ? "before" : ""}
-          {session.rendering ? (comparing ? " · rendering…" : "rendering…") : ""}
-        </span>
-        <button
-          className="develop-reset"
-          disabled={untouched}
-          onClick={() => void reset()}
-          title="Put every control back to what this image opened with"
-        >
-          reset
-        </button>
+      <div className="develop-toolbar">
+        <div className="develop-actions">
+          <button
+            className="develop-toggle"
+            disabled={autoPending}
+            onClick={() => {
+              setAutoPending(true);
+              setAutoError(null);
+              void autoTone()
+                .catch(() => setAutoError("Auto tone failed. Please try again."))
+                .finally(() => setAutoPending(false));
+            }}
+            title="Automatically adjust exposure"
+          >
+            {autoPending ? "Adjusting…" : "Auto tone"}
+          </button>
+          <button
+            className={comparing ? "develop-toggle on" : "develop-toggle"}
+            aria-pressed={comparing}
+            onClick={toggleComparing}
+            title="Compare with the image before your edits"
+          >
+            {comparing ? "Show edited" : "Show before"}
+          </button>
+          <button
+            className="develop-reset"
+            disabled={untouched}
+            onClick={() => void reset()}
+            title="Put every control back to what this image opened with"
+          >
+            Reset all
+          </button>
+        </div>
+        <div className="develop-status" role="status">
+          {comparing ? "Before · original settings" : untouched ? "Original settings" : "Edited"}
+          {session.rendering ? " · updating…" : ""}
+        </div>
       </div>
 
-      {session.error !== null && <p className="develop-error">{session.error}</p>}
+      {autoError && <p className="develop-error" role="alert">{autoError}</p>}
+      {session.error !== null && <p className="develop-error" role="alert">{session.error}</p>}
 
+      <Group title="Tone">
+        {/* Presets are sensor-pixels only: a finished JPEG already has the camera's rendering baked in. */}
+        {presets.length > 0 && info.needsRender && (
+          <label className="develop-field">
+            <span>Look</span>
+            <select value={active?.id ?? ""} onChange={(event) => applyPreset(event.target.value)}>
+              <option value="" disabled>Custom</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id} title={preset.note}>{preset.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {PARAM_SPECS.filter((spec) => spec.key !== "vibrance" && spec.key !== "saturation").map(renderParam)}
+      </Group>
+
+      <Group title="Colour">
+        <Slider
+          label="temperature"
+          value={settings.whiteBalance.temperature}
+          neutral={info.asShot.temperature}
+          min={TEMPERATURE_RANGE.min}
+          max={TEMPERATURE_RANGE.max}
+          step={TEMPERATURE_RANGE.step}
+          display={`${Math.round(settings.whiteBalance.temperature)} K`}
+          parse={parseNumber}
+          ticks={[{ at: info.asShot.temperature, title: "as the camera measured it" }]}
+          layout="inline"
+          title="Warm to the right, cool to the left. The mark is the camera's own reading."
+          onChange={setTemperature}
+        />
+        <Slider
+          label="tint"
+          value={settings.whiteBalance.tint}
+          neutral={info.asShot.tint}
+          min={TINT_RANGE.min}
+          max={TINT_RANGE.max}
+          step={TINT_RANGE.step}
+          display={`${settings.whiteBalance.tint > 0 ? "+" : ""}${Math.round(
+            settings.whiteBalance.tint,
+          )}`}
+          parse={parseNumber}
+          ticks={[{ at: info.asShot.tint, title: "as the camera measured it" }]}
+          layout="inline"
+          title="Green to the left, magenta to the right. The mark is the camera's own reading."
+          onChange={setTint}
+        />
+        <button
+          className={session.picking ? "develop-toggle armed" : "develop-toggle"}
+          aria-pressed={session.picking}
+          onClick={() => setPicking(!session.picking)}
+        >
+          {session.picking ? "Cancel picker" : "Pick neutral colour"}
+        </button>
+        {session.picking && <p className="develop-note" role="status">Click a grey or white area in the photo.</p>}
+        {PARAM_SPECS.filter((spec) => spec.key === "vibrance" || spec.key === "saturation").map(renderParam)}
+      </Group>
+
+      <Group title="Crop">
+        <button
+          className={cropping ? "develop-toggle armed" : "develop-toggle"}
+          title="Drag the handles to trim, the inside to move it, the outside to draw a new one. Enter keeps the crop, Escape puts back the one you started with."
+          onClick={() => setCropping(!cropping)}
+        >
+          {cropping ? "Done" : "Crop & straighten"}
+        </button>
+        {cropping && (
+          <>
+            <button className="develop-toggle" onClick={cancelCrop}>Cancel</button>
+            <p className="develop-note">Drag the handles to crop. Enter keeps changes; Esc cancels.</p>
+          </>
+        )}
+        {cropping && (<>
+        <div className="develop-crop-options">
+          <label className="develop-field">
+            <span>Aspect</span>
+            <select value={cropChoice} onChange={(event) => setCropChoice(event.target.value)}>
+              {ASPECT_CHOICES.map((choice) => (
+                <option key={choice.id} value={choice.id}>{choice.label}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="develop-toggle"
+            onClick={toggleCropOrientation}
+            title="Swap landscape and portrait"
+          >
+            {isPortrait(settings.crop, frameAspect(info)) ? "↔ Landscape" : "↕ Portrait"}
+          </button>
+        </div>
+        <Slider
+          label="straighten"
+          value={settings.crop.angle}
+          neutral={0}
+          min={-45}
+          max={45}
+          step={0.1}
+          display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
+          parse={parseNumber}
+          ticks={[{ at: 0, title: "as shot" }]}
+          layout="inline"
+          title="Turns the photograph under the rectangle. The crop shrinks to stay inside the frame, so straightening costs edges."
+          onChange={straighten}
+        />
+        </>)}
+        <p className="develop-note">
+          {developedSize.width} × {developedSize.height} px
+          {cropped ? "" : " · the whole frame"}
+        </p>
+        {cropped && (
+          <button className="develop-toggle" onClick={() => setCrop(FULL_CROP)}>
+            Reset crop
+          </button>
+        )}
+      </Group>
+
+      <details className="develop-secondary">
+        <summary>Source & display</summary>
       {hdrSet !== null && (() => {
         const face = hdrSet.face;
         const onFace = entry.path === face.path;
@@ -273,68 +449,6 @@ export function DevelopPanel() {
         </div>
       )}
 
-      <Group title="White balance">
-        <Slider
-          label="temperature"
-          value={settings.whiteBalance.temperature}
-          neutral={info.asShot.temperature}
-          min={TEMPERATURE_RANGE.min}
-          max={TEMPERATURE_RANGE.max}
-          step={TEMPERATURE_RANGE.step}
-          display={`${Math.round(settings.whiteBalance.temperature)} K`}
-          parse={parseNumber}
-          ticks={[{ at: info.asShot.temperature, title: "as the camera measured it" }]}
-          layout="stacked"
-          title="Warm to the right, cool to the left. The mark is the camera's own reading."
-          onChange={setTemperature}
-        />
-        <Slider
-          label="tint"
-          value={settings.whiteBalance.tint}
-          neutral={info.asShot.tint}
-          min={TINT_RANGE.min}
-          max={TINT_RANGE.max}
-          step={TINT_RANGE.step}
-          display={`${settings.whiteBalance.tint > 0 ? "+" : ""}${Math.round(
-            settings.whiteBalance.tint,
-          )}`}
-          parse={parseNumber}
-          ticks={[{ at: info.asShot.tint, title: "as the camera measured it" }]}
-          layout="stacked"
-          title="Green to the left, magenta to the right. The mark is the camera's own reading."
-          onChange={setTint}
-        />
-        <button
-          className={session.picking ? "develop-toggle armed" : "develop-toggle"}
-          onClick={() => setPicking(!session.picking)}
-        >
-          {session.picking ? "picking: click something grey" : "pick a neutral point"}
-        </button>
-        <p className="develop-note">
-          as shot: {Math.round(info.asShot.temperature)} K, tint{" "}
-          {Math.round(info.asShot.tint)}
-        </p>
-      </Group>
-
-      <Group title="Tone">
-        {/* Presets are sensor-pixels only: a finished JPEG already has the camera's rendering baked in. */}
-        {presets.length > 0 && info.needsRender && (
-          <div className="develop-switch">
-            <span className="develop-switch-label">preset</span>
-            {presets.map((preset) => (
-              <button
-                key={preset.id}
-                className={
-                  active?.id === preset.id ? "develop-toggle on" : "develop-toggle"
-                }
-                title={preset.note}
-                onClick={() => applyPreset(preset.id)}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        )}
         {info.needsRender && session.frame && (
           <p className="develop-note">
             {session.frame.source === "cameraJpeg"
@@ -342,124 +456,11 @@ export function DevelopPanel() {
               : "showing this app's raw develop"}
           </p>
         )}
-        {PARAM_SPECS.map((spec: ParamSpec) => {
-          const value = settings.params[spec.key];
-          // Slider zero level is the preset baseline, not flat, so double-click returns to the preset.
-          const from = baseline ? baseline.params[spec.key] : 0;
-          return (
-            <Slider
-              key={spec.key}
-              label={spec.label}
-              value={value}
-              neutral={from}
-              min={spec.min}
-              max={spec.max}
-              step={spec.step}
-              display={showDeviation ? spec.format(value - from) : spec.format(value)}
-              // Typed values are parsed in the display's current mode, or "+12" would mean two different edits.
-              parse={(text) => {
-                const typed = parseNumber(text);
-                return typed === null ? null : showDeviation ? from + typed : typed;
-              }}
-              ticks={from === 0 ? [] : [{ at: from, title: `${baseline?.label ?? "flat"}` }]}
-              layout="stacked"
-              title={`Double-click to put it back to ${baseline?.label ?? "flat"}.`}
-              onChange={(next) => setParam(spec.key, next)}
-            />
-          );
-        })}
-        <div className="develop-switch">
-          <span className="develop-switch-label">values</span>
-          <button
-            className={showDeviation ? "develop-toggle on" : "develop-toggle"}
-            onClick={() => !showDeviation && toggleDeviation()}
-          >
-            from {baseline?.label ?? "flat"}
-          </button>
-          <button
-            className={showDeviation ? "develop-toggle" : "develop-toggle on"}
-            onClick={() => showDeviation && toggleDeviation()}
-          >
-            absolute
-          </button>
-        </div>
-      </Group>
-
-      <Group title="Crop">
-        <button
-          className={cropping ? "develop-toggle armed" : "develop-toggle"}
-          title="Drag the handles to trim, the inside to move it, the outside to draw a new one. Enter keeps the crop, Escape puts back the one you started with."
-          onClick={() => setCropping(!cropping)}
-        >
-          {cropping ? "cropping: Enter when done" : "crop"}
-        </button>
-        <div className="develop-choices">
-          {ASPECT_CHOICES.map((choice) => (
-            <button
-              key={choice.id}
-              className={
-                cropChoice === choice.id ? "develop-choice on" : "develop-choice"
-              }
-              title={
-                choice.id === "original"
-                  ? "The frame's own shape."
-                  : choice.id === "free"
-                    ? "No constraint; every handle moves on its own."
-                    : `Held to ${choice.label}`
-              }
-              onClick={() => setCropChoice(choice.id)}
-            >
-              {choice.label}
-            </button>
-          ))}
-        </div>
-        {(() => {
-          const portrait = isPortrait(settings.crop, frameAspect(info));
-          return (
-            <div
-              className="develop-switch"
-              title="Stand the shape on end. A free crop swaps the extents it has."
-            >
-              <span className="develop-switch-label">standing</span>
-              <button
-                className={portrait ? "develop-toggle" : "develop-toggle on"}
-                onClick={() => portrait && toggleCropOrientation()}
-              >
-                landscape
-              </button>
-              <button
-                className={portrait ? "develop-toggle on" : "develop-toggle"}
-                onClick={() => !portrait && toggleCropOrientation()}
-              >
-                portrait
-              </button>
-            </div>
-          );
-        })()}
-        <Slider
-          label="straighten"
-          value={settings.crop.angle}
-          neutral={0}
-          min={-45}
-          max={45}
-          step={0.1}
-          display={`${settings.crop.angle > 0 ? "+" : ""}${settings.crop.angle.toFixed(1)}°`}
-          parse={parseNumber}
-          ticks={[{ at: 0, title: "as shot" }]}
-          layout="stacked"
-          title="Turns the photograph under the rectangle. The crop shrinks to stay inside the frame, so straightening costs edges."
-          onChange={straighten}
-        />
-        <p className="develop-note">
-          {developedSize.width} × {developedSize.height} px
-          {cropped ? "" : " · the whole frame"}
-        </p>
-        {cropped && (
-          <button className="develop-toggle" onClick={() => setCrop(FULL_CROP)}>
-            back to the whole frame
-          </button>
-        )}
-      </Group>
+        <label className="develop-check">
+          <input type="checkbox" checked={showDeviation} onChange={toggleDeviation} />
+          Values relative to {baseline?.label ?? "flat"}
+        </label>
+      </details>
 
     </div>
   );

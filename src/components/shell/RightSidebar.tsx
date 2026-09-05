@@ -15,6 +15,7 @@ function ordered(panels: Panel[], order: string[]): Panel[] {
 export function RightSidebar() {
   const visible = useAppStore((s) => s.inspectorVisible);
   const toggleInspector = useAppStore((s) => s.toggleInspector);
+  const pinned = useAppStore((s) => s.pinnedPanels);
   const order = useAppStore((s) => s.panelOrder);
   const setPanelOrder = useAppStore((s) => s.setPanelOrder);
   const width = useAppStore((s) => s.rightbarWidth);
@@ -45,7 +46,7 @@ export function RightSidebar() {
 
   // Moving swaps with the neighbor as displayed; hidden sections keep their stored slot.
   const move = (id: string, dir: -1 | 1) => {
-    const shown = panels.map((p) => p.id);
+    const shown = panels.filter((p) => pinned.includes(p.id) === pinned.includes(id)).map((p) => p.id);
     const at = shown.indexOf(id);
     const neighbor = shown[at + dir];
     if (neighbor === undefined) return;
@@ -54,30 +55,41 @@ export function RightSidebar() {
     setPanelOrder(full);
   };
 
+  const renderPanels = (group: Panel[]) => group.map((panel, i) => (
+    <PanelSection
+      key={panel.id}
+      panel={panel}
+      move={{
+        up: i > 0 ? () => move(panel.id, -1) : null,
+        down: i < group.length - 1 ? () => move(panel.id, 1) : null,
+      }}
+      action={
+        panel.id === (pinnedSections[0] ?? scrollingSections[0])?.id ? (
+          <button
+            className="sidebar-toggle"
+            title={titleWithChord("hide the inspector", "inspector.toggle")}
+            onClick={toggleInspector}
+          >
+            »
+          </button>
+        ) : undefined
+      }
+    />
+  ));
+  const pinnedSections = panels.filter((panel) => pinned.includes(panel.id));
+  const scrollingSections = panels.filter((panel) => !pinned.includes(panel.id));
+
   return (
     <aside className="sidebar right" style={{ width }}>
       <SidebarResizer side="right" />
-      {panels.map((panel, i) => (
-        <PanelSection
-          key={panel.id}
-          panel={panel}
-          move={{
-            up: i > 0 ? () => move(panel.id, -1) : null,
-            down: i < panels.length - 1 ? () => move(panel.id, 1) : null,
-          }}
-          action={
-            i === 0 ? (
-              <button
-                className="sidebar-toggle"
-                title={titleWithChord("hide the inspector", "inspector.toggle")}
-                onClick={toggleInspector}
-              >
-                »
-              </button>
-            ) : undefined
-          }
-        />
-      ))}
+      {pinnedSections.length > 0 && (
+        <div className="sidebar-pinned" aria-label="Pinned sections">
+          {renderPanels(pinnedSections)}
+        </div>
+      )}
+      <div className="sidebar-scroll">
+        {renderPanels(scrollingSections)}
+      </div>
     </aside>
   );
 }

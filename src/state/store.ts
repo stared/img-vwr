@@ -110,6 +110,7 @@ export interface AppState {
   panelFolds: Record<string, boolean>;
   /** Right-column section order, panel ids; unknown ids keep registration order after these. Persisted. */
   panelOrder: string[];
+  pinnedPanels: string[];
   /** Sidebar widths, px — dragged at the inner edge. Persisted. */
   sidebarWidth: number;
   rightbarWidth: number;
@@ -207,6 +208,7 @@ interface AppActions {
   cropApplied: (path: string, crop: Crop | null) => void;
   toggleInspector: () => void;
   togglePanelFold: (id: string) => void;
+  togglePanelPin: (id: string) => void;
   setPanelOrder: (order: string[]) => void;
   setSidebarWidth: (px: number) => void;
   setRightbarWidth: (px: number) => void;
@@ -292,6 +294,7 @@ export const initialState: AppState = {
   inspectorVisible: true,
   panelFolds: {},
   panelOrder: [],
+  pinnedPanels: [],
   sidebarWidth: 230,
   // Wide enough for the Shot block's one-line exposure row at worst case (five-digit ISO, negative EV).
   rightbarWidth: 310,
@@ -769,6 +772,12 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   togglePanelFold: (id) =>
     set((s) => ({ panelFolds: { ...s.panelFolds, [id]: !(s.panelFolds[id] ?? false) } })),
+
+  togglePanelPin: (id) => set((s) => ({
+    pinnedPanels: s.pinnedPanels.includes(id)
+      ? s.pinnedPanels.filter((p) => p !== id)
+      : [...s.pinnedPanels, id],
+  })),
 
   setPanelOrder: (panelOrder) => set({ panelOrder }),
 

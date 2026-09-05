@@ -29,6 +29,7 @@ interface SavedSession {
   activePanelId: string;
   panelFolds: Record<string, boolean>;
   panelOrder: string[];
+  pinnedPanels: string[];
   sidebarWidth: number;
   rightbarWidth: number;
   sceneGapMin: number;
@@ -61,6 +62,7 @@ function snapshot(): SavedSession {
     activePanelId: s.activePanelId,
     panelFolds: s.panelFolds,
     panelOrder: s.panelOrder,
+    pinnedPanels: s.pinnedPanels,
     sidebarWidth: s.sidebarWidth,
     rightbarWidth: s.rightbarWidth,
     sceneGapMin: s.sceneGapMin,
@@ -190,6 +192,10 @@ export function restoreSession(): boolean {
             ),
           )
         : app.panelFolds,
+    pinnedPanels:
+      Array.isArray(o.pinnedPanels) && o.pinnedPanels.every(isString)
+        ? [...new Set(o.pinnedPanels)]
+        : app.pinnedPanels,
     panelOrder:
       Array.isArray(o.panelOrder) && o.panelOrder.every(isString)
         ? o.panelOrder

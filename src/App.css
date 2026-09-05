@@ -268,7 +268,8 @@ kbd {
   opacity: 0;
 }
 
-.sidebar-panel header:hover .panel-move {
+.sidebar-panel header:hover .panel-move,
+.sidebar-panel header:focus-within .panel-move {
   opacity: 1;
 }
 
@@ -1644,13 +1645,150 @@ button.stats-row:hover .stats-label {
   font-variant-numeric: tabular-nums;
 }
 
-.develop-status {
+.develop-toolbar {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.develop-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 8px 6px;
+  gap: 6px;
+}
+
+.develop-actions .develop-toggle {
+  margin: 0;
+}
+
+.develop-status {
+  padding-top: 6px;
   color: var(--text-dim);
-  border-bottom: 1px solid var(--border-faint);
+  font-size: 10px;
+  min-height: 20px;
+}
+
+.develop-panel .develop-toggle,
+.develop-panel .develop-reset,
+.develop-panel .develop-choice {
+  min-height: 28px;
+  height: auto;
+  padding: 4px 8px;
+}
+
+.develop-panel button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.develop-panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.develop-panel .slider-label,
+.develop-panel .slider-value {
+  color: var(--text-dim);
+}
+
+.develop-panel .slider-track {
+  height: 22px;
+}
+
+.develop-panel .slider-value {
+  width: 76px;
+  padding: 2px 4px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--border-faint);
+}
+
+/* A stable label / track / value grid keeps adjustments compact and aligned. */
+.sidebar.right .develop-panel .slider.inline {
+  display: grid;
+  grid-template-columns: 72px minmax(32px, 1fr) 62px;
+  gap: 8px;
+  padding: 1px 10px;
+  min-height: 28px;
+}
+
+.develop-panel .slider.inline .slider-value {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.develop-panel .slider.inline .slider-track {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+}
+
+.develop-panel .develop-group {
+  padding: 3px 0;
+}
+
+.develop-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 10px;
+  min-width: 0;
+  color: var(--text-dim);
+}
+
+.develop-field > span {
+  flex: 0 0 70px;
+}
+
+.develop-field select {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-faint);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.develop-field select:focus-visible,
+.develop-secondary summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.develop-crop-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.develop-crop-options .develop-field {
+  flex: 1;
+}
+
+.develop-crop-options .develop-field > span {
+  flex-basis: auto;
+}
+
+.develop-secondary {
+  border-top: 1px solid var(--border-faint);
+  margin-top: 4px;
+}
+
+.develop-secondary > summary {
+  padding: 9px 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.develop-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--text-dim);
 }
 
 .develop-error {
@@ -1669,6 +1807,9 @@ button.stats-row:hover .stats-label {
 
 .hdr-frame-name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1715,7 +1856,9 @@ button.stats-row:hover .stats-label {
   align-items: center;
   gap: 5px;
   width: 100%;
-  padding: 2px 0;
+  min-height: 30px;
+  padding: 4px 0;
+  color: var(--text-dim);
   text-align: left;
 }
 
@@ -1941,11 +2084,11 @@ button.stats-row:hover .stats-label {
 }
 
 .sidebar.right .slider-label {
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
 
 .sidebar.right .slider-value {
-  color: var(--text-faint);
+  color: var(--text-dim);
   font-size: 11px;
 }
 
@@ -2042,13 +2185,52 @@ button.stats-row:hover .stats-label {
   cursor: default;
 }
 
-/* The right sidebar scrolls as a whole; flex must not shrink sections into one another. */
+/* Pinned sections stay in a separate dock; the remaining panels scroll below. */
 .sidebar.right:not(.collapsed) {
+  overflow: hidden;
+}
+
+.sidebar-pinned {
+  flex: 0 1 auto;
+  max-height: 50%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-pinned:has(+ .sidebar-scroll:empty) {
+  max-height: 100%;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
-.sidebar.right > .sidebar-panel:not(.fill) {
+.sidebar-pinned > .sidebar-panel,
+.sidebar-scroll > .sidebar-panel {
   flex-shrink: 0;
+}
+
+.panel-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-faint);
+  border-radius: 4px;
+}
+
+.panel-pin:hover,
+.panel-pin[aria-pressed="true"] {
+  color: var(--accent-text);
+  background: var(--accent-muted);
+}
+
+.panel-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ---- Darkroom ---- */
