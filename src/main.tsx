@@ -30,7 +30,7 @@ import { registerBuiltinFilterFields } from "./filters/builtin";
 import { registerLabels } from "./labels";
 import { registerThumbCrops } from "./state/thumbCrops";
 import { useDevelopStore } from "./state/develop";
-import { useAppStore } from "./state/store";
+import { useAppStore, visibleOf } from "./state/store";
 import { PeoplePanel, registerPeople } from "./people";
 import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
@@ -141,7 +141,19 @@ registerPanel({
 });
 registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
 registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
-registerPanel({ id: "stats", title: "Statistics", component: StatsPanel, side: "right", fill: true });
+registerPanel({
+  id: "stats",
+  title: "Statistics",
+  component: StatsPanel,
+  side: "right",
+  fill: true,
+  when: () => {
+    const state = useAppStore.getState();
+    return state.viewMode === "gallery"
+      && state.galleryLayout !== "darkroom"
+      && visibleOf(state, state.query).length > 1;
+  },
+});
 for (const panel of allPanels()) {
   registerCommand({
     id: `view.${panel.id}`,

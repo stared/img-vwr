@@ -269,7 +269,9 @@ kbd {
 }
 
 .sidebar-panel header:hover .panel-move,
-.sidebar-panel header:focus-within .panel-move {
+.sidebar-panel header:focus-within .panel-move,
+.sidebar-panel header:hover .panel-pin,
+.sidebar-panel header:focus-within .panel-pin {
   opacity: 1;
 }
 
@@ -1662,6 +1664,20 @@ button.stats-row:hover .stats-label {
   margin: 0;
 }
 
+.develop-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.develop-group h4 .develop-toggle {
+  margin: 0;
+  min-height: 24px;
+  padding: 2px 6px;
+}
+
 .develop-status {
   padding-top: 6px;
   color: var(--text-dim);
@@ -1842,6 +1858,9 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 2px;
   padding: 0 8px;
   color: var(--text-faint);
@@ -1852,6 +1871,7 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-fold {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -2213,19 +2233,19 @@ button.stats-row:hover .stats-label {
 }
 
 .panel-pin {
+  opacity: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
-  color: var(--text-faint);
+  color: var(--text-dim);
   border-radius: 4px;
 }
 
 .panel-pin:hover,
 .panel-pin[aria-pressed="true"] {
-  color: var(--accent-text);
-  background: var(--accent-muted);
+  color: var(--text);
 }
 
 .panel-pin:focus-visible {

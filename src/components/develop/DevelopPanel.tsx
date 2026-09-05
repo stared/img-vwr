@@ -20,7 +20,7 @@ import {
   type ParamSpec,
 } from "../../state/develop";
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+function Group({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   const contentId = useId();
   const folded = useDevelopStore((s) => s.folded[title] === true);
   const toggleFolded = useDevelopStore((s) => s.toggleFolded);
@@ -31,6 +31,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
           <span className="panel-disclosure" aria-hidden="true">{folded ? "▸" : "▾"}</span>
           {title}
         </button>
+        {action}
       </h4>
       <div id={contentId} hidden={folded}>{children}</div>
     </section>
@@ -134,6 +135,26 @@ export function DevelopPanel() {
     <div className="develop-panel">
       <div className="develop-toolbar">
         <div className="develop-actions">
+          <label className="develop-preview">
+            <input type="checkbox" checked={comparing} onChange={toggleComparing} />
+            Preview original
+          </label>
+          <button
+            className="develop-reset"
+            disabled={untouched}
+            onClick={() => void reset()}
+            title="Put every control back to what this image opened with"
+          >
+            Reset
+          </button>
+        </div>
+        {session.rendering && <div className="develop-status" role="status">Updating preview…</div>}
+      </div>
+
+      {autoError && <p className="develop-error" role="alert">{autoError}</p>}
+      {session.error !== null && <p className="develop-error" role="alert">{session.error}</p>}
+
+      <Group title="Tone" action={
           <button
             className="develop-toggle"
             disabled={autoPending}
@@ -146,35 +167,9 @@ export function DevelopPanel() {
             }}
             title="Automatically adjust exposure"
           >
-            {autoPending ? "Adjusting…" : "Auto tone"}
+            {autoPending ? "Adjusting…" : "Auto"}
           </button>
-          <button
-            className={comparing ? "develop-toggle on" : "develop-toggle"}
-            aria-pressed={comparing}
-            onClick={toggleComparing}
-            title="Compare with the image before your edits"
-          >
-            {comparing ? "Show edited" : "Show before"}
-          </button>
-          <button
-            className="develop-reset"
-            disabled={untouched}
-            onClick={() => void reset()}
-            title="Put every control back to what this image opened with"
-          >
-            Reset all
-          </button>
-        </div>
-        <div className="develop-status" role="status">
-          {comparing ? "Before · original settings" : untouched ? "Original settings" : "Edited"}
-          {session.rendering ? " · updating…" : ""}
-        </div>
-      </div>
-
-      {autoError && <p className="develop-error" role="alert">{autoError}</p>}
-      {session.error !== null && <p className="develop-error" role="alert">{session.error}</p>}
-
-      <Group title="Tone">
+      }>
         {/* Presets are sensor-pixels only: a finished JPEG already has the camera's rendering baked in. */}
         {presets.length > 0 && info.needsRender && (
           <label className="develop-field">

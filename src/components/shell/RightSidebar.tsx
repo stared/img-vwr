@@ -1,7 +1,7 @@
 import { titleWithChord } from "../../registry/keybindings";
 import { allPanels, type Panel } from "../../registry/panels";
 import { useDevelopStore } from "../../state/develop";
-import { useAppStore } from "../../state/store";
+import { useAppStore, useVisibleEntries } from "../../state/store";
 import { PanelSection } from "./PanelSection";
 import { SidebarResizer } from "./SidebarResizer";
 
@@ -24,6 +24,8 @@ export function RightSidebar() {
   useAppStore((s) => s.viewMode);
   useAppStore((s) => s.selectedIndex !== null);
   useDevelopStore((s) => s.session !== null);
+  // Statistics visibility also follows filtering and the number of visible photos.
+  useVisibleEntries();
 
   const all = ordered(allPanels("right"), order);
   const panels = all.filter((p) => p.when?.() ?? true);
