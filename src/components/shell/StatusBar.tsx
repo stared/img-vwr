@@ -42,7 +42,7 @@ export function StatusBar() {
             {stars !== null && <span className="status-stars">{"★".repeat(stars)}</span>}
             {tags.map((t) => (
               <span key={t}>
-                <TagDot tag={t} />
+                <TagDot tag={t} fill="all" />
                 {t}
               </span>
             ))}

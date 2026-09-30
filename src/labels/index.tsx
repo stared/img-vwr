@@ -78,7 +78,7 @@ function TagMenuItems({ close }: { close: () => void }) {
     .map(([tag]) => ({
       label: (
         <span className="menu-tag">
-          <TagDot tag={tag} />
+          <TagDot tag={tag} fill="all" />
           {tag}
         </span>
       ),
