@@ -1172,16 +1172,50 @@ button.stats-row:hover .stats-label {
   color: var(--accent);
 }
 
-.thumb-stars {
+.thumb-labels {
   position: absolute;
   left: 4px;
   top: 3px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   letter-spacing: 1px;
   color: var(--accent);
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+}
+
+.thumb-tags {
+  display: flex;
+  gap: 3px;
+  pointer-events: auto;
+}
+
+.tag-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.info-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  padding-right: 12px;
+  color: var(--text-dim);
+}
+
+.info-tags span:not(.tag-dot),
+.menu-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .thumb-hdr {
@@ -1279,6 +1313,18 @@ button.stats-row:hover .stats-label {
 }
 
 .status-labels {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-labels span:not(.tag-dot) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-stars {
   color: var(--accent);
 }
 
@@ -1905,6 +1951,13 @@ button.stats-row:hover .stats-label {
 
 .shot-panel .info-rating {
   padding: 0 12px;
+}
+
+.shot-labels {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
 }
 
 .exif-strip {

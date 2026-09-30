@@ -1,3 +1,4 @@
+import { TagDot } from "../../labels/TagDot";
 import { pairedName, siblingsOf } from "../../state/stacks";
 import { hdrOf, useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 
@@ -23,11 +24,8 @@ export function StatusBar() {
   const totalText = status === "loading" ? `${total}…` : `${total}`;
   const countText =
     visible.length === total ? `${totalText} images` : `${visible.length} of ${totalText}`;
-  const labelsText = labels
-    ? [labels.stars === null ? "" : "★".repeat(labels.stars), ...labels.tags]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+  const stars = labels?.stars ?? null;
+  const tags = labels?.tags ?? [];
 
   return (
     <footer className="statusbar">
@@ -39,7 +37,17 @@ export function StatusBar() {
             : `${scope.sourceId} · ${scope.label}`}
       </span>
       <span className="status-right">
-        {labelsText && <span className="status-labels">{labelsText}</span>}
+        {(stars !== null || tags.length > 0) && (
+          <span className="status-labels">
+            {stars !== null && <span className="status-stars">{"★".repeat(stars)}</span>}
+            {tags.map((t) => (
+              <span key={t}>
+                <TagDot tag={t} />
+                {t}
+              </span>
+            ))}
+          </span>
+        )}
         {entry && <span>{pairedName(entry, siblings)}</span>}
         {entry && chosen > 1 && (
           <button

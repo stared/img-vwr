@@ -5,6 +5,7 @@ import { registerCommand, type CommandContext } from "../registry/commands";
 import { registerFilterField } from "../registry/filters";
 import { registerSort } from "../registry/sorts";
 import { numberRangeSpec } from "../state/query";
+import { TagDot } from "./TagDot";
 import { chosenEntries, filesBehind, useAppStore } from "../state/store";
 
 /** A stacked raw+JPEG pair is one photograph; its labels go to both files. */
@@ -74,7 +75,15 @@ function TagMenuItems({ close }: { close: () => void }) {
   }
   const buckets = [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([tag]) => ({ label: tag, value: tag }));
+    .map(([tag]) => ({
+      label: (
+        <span className="menu-tag">
+          <TagDot tag={tag} />
+          {tag}
+        </span>
+      ),
+      value: tag,
+    }));
   return (
     <SelectMenuItems field="tag" buckets={buckets} empty="nothing tagged (yet)" close={close} />
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import type { ImageMeta } from "../../ipc";
 import { getFilterField } from "../../registry/filters";
@@ -48,7 +48,7 @@ export function SelectMenuItems({
   close,
 }: {
   field: string;
-  buckets: { label: string; value: string }[];
+  buckets: { label: ReactNode; value: string }[];
   empty: string;
   close: () => void;
 }) {

@@ -5,6 +5,7 @@ import type { FileEntry } from "../../ipc";
 import { fileUrl, requestMeta, requestThumbnails } from "../../ipc";
 import { hdrLabel } from "../../state/hdr";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { ThumbLabels } from "../../labels/TagDot";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
@@ -166,7 +167,6 @@ function MosaicCell({
   const error = useAppStore((s) => s.thumbErrors[entry.path]);
   const selected = useAppStore((s) => s.selection.includes(entry.path));
   const lead = useAppStore((s) => s.selectedIndex === index);
-  const stars = useAppStore((s) => s.labels[entry.path]?.stars ?? null);
   const openViewer = useAppStore((s) => s.openViewer);
   const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
   const crop = useAppStore((s) => s.crops[entry.path]);
@@ -184,7 +184,7 @@ function MosaicCell({
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >
-      {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
+      <ThumbLabels path={entry.path} />
       {hdr !== null && (
         <span
           className="thumb-hdr"

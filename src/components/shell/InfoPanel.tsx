@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
 import { imageStats, labelsSetStars } from "../../ipc";
+import { TagDot } from "../../labels/TagDot";
 import { titleWithChord } from "../../registry/keybindings";
 import { useDevelopStore } from "../../state/develop";
 import { DevelopHistogram } from "../develop/DevelopHistogram";
@@ -215,7 +216,7 @@ export function LabelsPanel() {
   };
 
   return (
-    <div className="shot-panel">
+    <div className="shot-panel shot-labels">
       <span className="info-rating">
         {[1, 2, 3, 4, 5].map((n) => (
           <button
@@ -231,7 +232,16 @@ export function LabelsPanel() {
           </button>
         ))}
       </span>
-      {tags.length > 0 && <p className="shot-line">{tags.join(", ")}</p>}
+      {tags.length > 0 && (
+        <span className="info-tags">
+          {tags.map((t) => (
+            <span key={t}>
+              <TagDot tag={t} />
+              {t}
+            </span>
+          ))}
+        </span>
+      )}
     </div>
   );
 }

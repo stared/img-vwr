@@ -5,6 +5,7 @@ import { effectiveDims } from "../../state/derived";
 import { hdrLabel } from "../../state/hdr";
 import { pairedName, photographKeyOf, siblingsOf, stackCaption } from "../../state/stacks";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { ThumbLabels } from "../../labels/TagDot";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 const REQUEST_DEBOUNCE_MS = 50;
@@ -69,7 +70,6 @@ export function Filmstrip({ height }: { height: number }) {
   const select = useAppStore((s) => s.select);
   const epoch = useAppStore((s) => s.epoch);
   const thumbs = useAppStore((s) => s.thumbs);
-  const labels = useAppStore((s) => s.labels);
   const crops = useAppStore((s) => s.crops);
   const meta = useAppStore((s) => s.meta);
   const allEntries = useAppStore((s) => s.entries);
@@ -130,7 +130,6 @@ export function Filmstrip({ height }: { height: number }) {
     >
       {cells.map(({ entry, index, key }) => {
         const thumb = thumbs[entry.path];
-        const stars = labels[entry.path]?.stars ?? null;
         const hdrSet = hdr.byFace.get(entry.path) ?? null;
         const spread = stacking && expandedStacks[key] !== undefined;
         const member = index === null;
@@ -194,7 +193,7 @@ export function Filmstrip({ height }: { height: number }) {
             }}
           >
             {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
-            {stars !== null && <span className="thumb-stars">{"★".repeat(stars)}</span>}
+            <ThumbLabels path={entry.path} />
             <span className="filmstrip-photo">
               {cropped !== null && <CropBadge />}
               {thumb !== undefined && siblings.length > 0 && !spread && (
