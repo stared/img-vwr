@@ -357,17 +357,45 @@ kbd {
   color: var(--text-faint);
 }
 
-.folder-recent .tree-label {
-  border-radius: 4px;
-}
-
 .folder-recent .open-folder {
   display: flex;
   justify-content: space-between;
+  border-radius: 4px;
 }
 
-.folder-recent .tree-label:hover {
+.folder-recent .open-folder:hover {
   background: var(--bg-overlay);
+}
+
+.folder-row + h4 {
+  margin-top: 8px;
+}
+
+.folder-pin {
+  opacity: 0;
+  display: flex;
+  padding: 0 6px;
+  color: var(--text-dim);
+}
+
+.crumbs-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.crumbs-row > .crumbs {
+  flex: 1;
+  min-width: 0;
+}
+
+.crumbs-row > .folder-pin,
+.folder-row:hover > .folder-pin,
+.folder-pin:focus-visible {
+  opacity: 1;
+}
+
+.folder-pin:hover {
+  color: var(--text);
 }
 
 .open-folder,

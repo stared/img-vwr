@@ -31,6 +31,7 @@ interface SavedSession {
   panelOrder: string[];
   pinnedPanels: string[];
   recentFolders: string[];
+  pinnedFolders: string[];
   sidebarWidth: number;
   rightbarWidth: number;
   sceneGapMin: number;
@@ -65,6 +66,7 @@ function snapshot(): SavedSession {
     panelOrder: s.panelOrder,
     pinnedPanels: s.pinnedPanels,
     recentFolders: s.recentFolders,
+    pinnedFolders: s.pinnedFolders,
     sidebarWidth: s.sidebarWidth,
     rightbarWidth: s.rightbarWidth,
     sceneGapMin: s.sceneGapMin,
@@ -202,6 +204,10 @@ export function restoreSession(): boolean {
       Array.isArray(o.recentFolders) && o.recentFolders.every(isString)
         ? o.recentFolders
         : app.recentFolders,
+    pinnedFolders:
+      Array.isArray(o.pinnedFolders) && o.pinnedFolders.every(isString)
+        ? [...new Set(o.pinnedFolders)]
+        : app.pinnedFolders,
     panelOrder:
       Array.isArray(o.panelOrder) && o.panelOrder.every(isString)
         ? o.panelOrder
