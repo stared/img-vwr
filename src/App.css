@@ -2404,8 +2404,15 @@ button.stats-row:hover .stats-label {
   overflow-y: hidden;
 }
 
-.filmstrip-cell {
+.filmstrip-track {
   position: relative;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.filmstrip-cell {
+  position: absolute;
+  top: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2436,7 +2443,6 @@ button.stats-row:hover .stats-label {
 /* The deck's prints step outside the cell; the margin makes room for them. */
 .filmstrip-cell.stacked {
   overflow: visible;
-  margin-left: 6px;
 }
 
 .filmstrip-cell.stacked img {

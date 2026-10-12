@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { hdrLabel } from "../../state/hdr";
-import { pairedName, photographKeyOf, siblingsOf, stackCaption } from "../../state/stacks";
+import { groupStacks, pairedName, photographKeyOf, stackCaption } from "../../state/stacks";
 import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbLabels } from "../../labels/TagDot";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
@@ -12,18 +12,43 @@ const REQUEST_DEBOUNCE_MS = 50;
 
 const OVERSCAN = 6;
 
-/** `pitch` and `origin` must be measured off the laid-out cells; recomputing them from height drifts from the CSS. */
+const GAP = 6;
+/** Matches `.filmstrip-cell.stacked`'s margin: the deck's prints need the room. */
+const STACK_MARGIN = 6;
+
+/** Left edge of every cell, plus the strip's full width; stacked cells carry extra margin, so the pitch is not uniform. */
+export function stripLayout(stacked: boolean[], cellWidth: number): { lefts: number[]; total: number } {
+  const lefts: number[] = [];
+  let x = 0;
+  for (const s of stacked) {
+    if (s) x += STACK_MARGIN;
+    lefts.push(x);
+    x += cellWidth + GAP;
+  }
+  return { lefts, total: Math.max(0, x - GAP) };
+}
+
+/** Cells overlapping the viewport, widened by `overscan` on each side. */
 export function stripRange(
+  lefts: number[],
+  cellWidth: number,
   view: { scrollLeft: number; clientWidth: number },
-  layout: { origin: number; pitch: number },
-  count: number,
   overscan = OVERSCAN,
 ): { first: number; last: number } {
-  if (layout.pitch <= 0 || count === 0) return { first: 0, last: 0 };
-  const at = (x: number) => (x - layout.origin) / layout.pitch;
+  // First cell whose right edge is past `x`.
+  const firstPast = (x: number) => {
+    let lo = 0;
+    let hi = lefts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((lefts[mid] ?? 0) + cellWidth <= x) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
   return {
-    first: Math.max(0, Math.floor(at(view.scrollLeft)) - overscan),
-    last: Math.min(count, Math.ceil(at(view.scrollLeft + view.clientWidth)) + overscan),
+    first: Math.max(0, firstPast(view.scrollLeft) - overscan),
+    last: Math.min(lefts.length, firstPast(view.scrollLeft + view.clientWidth) + 1 + overscan),
   };
 }
 
@@ -82,42 +107,75 @@ export function Filmstrip({ height }: { height: number }) {
     () => stripCells(entries, allEntries, expandedStacks, hdr.keyByStack, stacking),
     [entries, allEntries, expandedStacks, hdr, stacking],
   );
+  // One pass over the folder; a per-cell scan made a render quadratic.
+  const stacks = useMemo(
+    () => (stacking ? groupStacks(allEntries, hdr.keyByStack) : null),
+    [allEntries, hdr, stacking],
+  );
+  const placed = useMemo(
+    () =>
+      cells.map((cell) => {
+        const spread = stacking && expandedStacks[cell.key] !== undefined;
+        const siblings =
+          stacks && cell.index !== null
+            ? (stacks.get(cell.key) ?? []).filter((e) => e.path !== cell.entry.path)
+            : [];
+        return { ...cell, spread, siblings, stacked: siblings.length > 0 && !spread };
+      }),
+    [cells, stacks, stacking, expandedStacks],
+  );
+  const cellWidth = height - 12;
+  const { lefts, total } = useMemo(
+    () => stripLayout(placed.map((c) => c.stacked), cellWidth),
+    [placed, cellWidth],
+  );
 
-  // Found by class, not child position: a spread stack adds cells, so the visible index no longer counts children.
+  const [view, setView] = useState({ scrollLeft: 0, clientWidth: 0 });
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        setView({ scrollLeft: strip.scrollLeft, clientWidth: strip.clientWidth }),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(strip);
+    strip.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      strip.removeEventListener("scroll", measure);
+    };
+  }, []);
+  const { first, last } = stripRange(lefts, cellWidth, view);
+
+  // By position, not the DOM: the lead may not be mounted yet.
   useEffect(() => {
-    if (selectedIndex === null) return;
-    const cell = stripRef.current?.querySelector(".lead");
-    cell?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    const strip = stripRef.current;
+    const at = placed.findIndex((c) => c.index !== null && c.index === selectedIndex);
+    if (!strip || at < 0) return;
+    const left = lefts[at] ?? 0;
+    if (left < strip.scrollLeft || left + cellWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo({ left: left - (strip.clientWidth - cellWidth) / 2, behavior: "smooth" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex]);
 
   useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const request = () => {
+    const timer = setTimeout(() => {
       const { thumbs: have, thumbErrors } = useAppStore.getState();
-      // Measured off the laid-out cells; see `stripRange`.
-      const [a, b] = [strip.children[0], strip.children[1]] as (HTMLElement | undefined)[];
-      const { first, last } = stripRange(
-        strip,
-        {
-          origin: a?.offsetLeft ?? 0,
-          pitch: a && b ? b.offsetLeft - a.offsetLeft : (a?.offsetWidth ?? 0),
-        },
-        cells.length,
-      );
-      const wanted = cells
+      const wanted = placed
         .slice(first, last)
         .map((c) => c.entry.path)
         .filter((path) => !(path in have) && !(path in thumbErrors));
       if (wanted.length > 0) void requestThumbnails(wanted, epoch);
-    };
-    const timer = setTimeout(request, REQUEST_DEBOUNCE_MS);
-    strip.addEventListener("scroll", request, { passive: true });
-    return () => {
-      clearTimeout(timer);
-      strip.removeEventListener("scroll", request);
-    };
-  }, [cells, epoch, height]);
+    }, REQUEST_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [placed, first, last, epoch]);
 
   return (
     <div
@@ -125,16 +183,14 @@ export function Filmstrip({ height }: { height: number }) {
       ref={stripRef}
       style={{ height }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) select(null);
+        if (e.target === e.currentTarget || e.target === e.currentTarget.firstChild) select(null);
       }}
     >
-      {cells.map(({ entry, index, key }) => {
+      <div className="filmstrip-track" style={{ width: total }}>
+      {placed.slice(first, last).map(({ entry, index, key, spread, siblings }, i) => {
         const thumb = thumbs[entry.path];
         const hdrSet = hdr.byFace.get(entry.path) ?? null;
-        const spread = stacking && expandedStacks[key] !== undefined;
         const member = index === null;
-        const siblings =
-          stacking && !member ? siblingsOf(allEntries, entry, hdr.keyByStack) : [];
         // A collapsed pair is one photograph: a crop stored on either file crops the cell.
         const crop =
           crops[entry.path] ??
@@ -160,7 +216,7 @@ export function Filmstrip({ height }: { height: number }) {
             ]
               .filter(Boolean)
               .join(" ")}
-            style={{ width: height - 12, height: height - 12 }}
+            style={{ left: lefts[first + i], width: cellWidth, height: cellWidth }}
             title={
               member
                 ? `${entry.name} — in this stack; click to show it in front`
@@ -225,6 +281,7 @@ export function Filmstrip({ height }: { height: number }) {
           </button>
         );
       })}
+      </div>
     </div>
   );
 }

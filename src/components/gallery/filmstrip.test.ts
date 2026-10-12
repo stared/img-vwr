@@ -1,41 +1,40 @@
 import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "../../ipc";
-import { stripCells, stripRange } from "./Filmstrip";
+import { stripCells, stripLayout, stripRange } from "./Filmstrip";
 
-// The numbers Filmstrip's CSS actually produces at height 160: cells `height - 12` wide, 6 px gap, 8 px padding.
-const layout = { origin: 8, pitch: 154 };
+// Height 160: cells `height - 12` wide, 6 px gap.
+const W = 148;
+const uniform = (n: number) => stripLayout(Array(n).fill(false), W).lefts;
+
+describe("stripLayout", () => {
+  it("adds a stacked cell's margin to every cell after it", () => {
+    const { lefts, total } = stripLayout([false, true, false], W);
+    expect(lefts).toEqual([0, 160, 314]);
+    expect(total).toBe(314 + W);
+  });
+});
 
 describe("stripRange", () => {
   it("covers what is on screen, deep into a long strip", () => {
-    // Guards: a pitch guessed as `height + 6` (166) put the requested window nine cells past the visible one.
-    const scrollLeft = 117 * 154;
-    const { first, last } = stripRange({ scrollLeft, clientWidth: 1540 }, layout, 170);
+    const { first, last } = stripRange(uniform(170), W, { scrollLeft: 117 * 154, clientWidth: 1540 });
     expect(first).toBeLessThanOrEqual(117);
     expect(last).toBeGreaterThanOrEqual(127);
-    // And not the whole collection — this is a fetch list.
+    // Only what is near the viewport is mounted.
     expect(last - first).toBeLessThan(30);
   });
 
   it("starts at the beginning when the strip has not been scrolled", () => {
-    expect(stripRange({ scrollLeft: 0, clientWidth: 1540 }, layout, 170).first).toBe(0);
+    expect(stripRange(uniform(170), W, { scrollLeft: 0, clientWidth: 1540 }).first).toBe(0);
   });
 
   it("never runs past either end", () => {
-    expect(stripRange({ scrollLeft: -20, clientWidth: 100 }, layout, 10).first).toBe(0);
-    const far = stripRange({ scrollLeft: 99_000, clientWidth: 1540 }, layout, 10);
-    expect(far.last).toBe(10);
+    expect(stripRange(uniform(10), W, { scrollLeft: -20, clientWidth: 100 }).first).toBe(0);
+    expect(stripRange(uniform(10), W, { scrollLeft: 99_000, clientWidth: 1540 }).last).toBe(10);
   });
 
-  it("asks for nothing when there is nothing laid out to measure", () => {
-    expect(stripRange({ scrollLeft: 0, clientWidth: 800 }, { origin: 0, pitch: 0 }, 5)).toEqual({
-      first: 0,
-      last: 0,
-    });
-    expect(stripRange({ scrollLeft: 0, clientWidth: 800 }, layout, 0)).toEqual({
-      first: 0,
-      last: 0,
-    });
+  it("is empty for an empty strip", () => {
+    expect(stripRange([], W, { scrollLeft: 0, clientWidth: 800 })).toEqual({ first: 0, last: 0 });
   });
 });
 
