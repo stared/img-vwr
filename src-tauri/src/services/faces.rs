@@ -80,6 +80,7 @@ struct LastCluster {
     id: String,
     name: Option<String>,
     vectors: Vec<Arc<Vec<f32>>>,
+    photos: Vec<String>,
 }
 
 struct Identity {
@@ -719,16 +720,45 @@ impl FaceService {
                 implied,
             });
         }
-        *self.last_clusters.lock().unwrap() = out
+        let mut last = self.last_clusters.lock().unwrap();
+        keep_ordinals(&mut out, &last);
+        *last = out
             .iter()
             .zip(clusters.iter())
             .map(|(person, c)| LastCluster {
                 id: person.id.clone(),
                 name: c.name.clone(),
                 vectors: c.vectors.clone(),
+                photos: person.photos.clone(),
             })
             .collect();
         Ok(out)
+    }
+}
+
+/// Unnamed people keep the number of the previous cluster they mostly continue, so a re-cluster
+/// (every few seconds mid-scan) never re-points an active "person: 7" filter at someone else.
+fn keep_ordinals(out: &mut [PersonCluster], last: &[LastCluster]) {
+    let mut free: Vec<(&str, std::collections::HashSet<&str>)> = last
+        .iter()
+        .filter(|l| l.name.is_none())
+        .map(|l| (l.id.as_str(), l.photos.iter().map(String::as_str).collect()))
+        .collect();
+    let mut next = last.iter().filter_map(|l| l.id.parse::<u32>().ok()).max().unwrap_or(0) + 1;
+    for person in out.iter_mut().filter(|p| p.name.is_none()) {
+        let best = free
+            .iter()
+            .enumerate()
+            .map(|(i, (_, prev))| (i, person.photos.iter().filter(|p| prev.contains(p.as_str())).count(), prev.len()))
+            .filter(|&(_, shared, prev_len)| 2 * shared > person.photos.len().min(prev_len))
+            .max_by_key(|&(_, shared, _)| shared);
+        person.id = match best {
+            Some((i, _, _)) => free.swap_remove(i).0.to_string(),
+            None => {
+                next += 1;
+                (next - 1).to_string()
+            }
+        };
     }
 }
 
@@ -1095,8 +1125,45 @@ mod tests {
                 id: id.to_string(),
                 name: None,
                 vectors: vec![axis(*ax); 4],
+                photos: Vec::new(),
             })
             .collect();
+    }
+
+    fn person(id: &str, photos: &[&str]) -> PersonCluster {
+        PersonCluster {
+            id: id.into(),
+            name: None,
+            cover: String::new(),
+            chips: Vec::new(),
+            photos: photos.iter().map(|p| p.to_string()).collect(),
+            solo: Vec::new(),
+            few: Vec::new(),
+            background: Vec::new(),
+            implied: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn reclustering_keeps_each_unnamed_persons_number() {
+        let last: Vec<LastCluster> = [("1", vec!["a", "b", "c"]), ("2", vec!["x", "y"])]
+            .into_iter()
+            .map(|(id, photos)| LastCluster {
+                id: id.into(),
+                name: None,
+                vectors: Vec::new(),
+                photos: photos.into_iter().map(String::from).collect(),
+            })
+            .collect();
+        // The order flipped and both grew; a third person is new.
+        let mut out = vec![
+            person("1", &["x", "y", "z", "w"]),
+            person("2", &["a", "b", "c", "d"]),
+            person("3", &["q", "r"]),
+        ];
+        keep_ordinals(&mut out, &last);
+        let ids: Vec<&str> = out.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["2", "1", "3"]);
     }
 
     #[test]

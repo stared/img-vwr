@@ -79,9 +79,6 @@ function countTags(
   return tags;
 }
 
-const TAG_LEGEND =
-  "counts: alone in frame · sharing it with others · in the background (hollow)";
-
 function personLabel(person: PersonCluster): string {
   return person.name ?? `person ${person.id}`;
 }
@@ -251,7 +248,6 @@ export function PeoplePanel() {
                 key={person.id}
                 className={`person-chip ${active.has(person.id) ? "active" : ""}`}
                 onClick={() => toggleSelectFilter("person", person.id)}
-                title={`${TAG_LEGEND}${person.implied.length > 0 ? ` · +${person.implied.length} near-identical without the face` : ""}`}
               >
                 <img src={fileUrl(person.cover)} alt={personLabel(person)} draggable={false} />
                 <span
