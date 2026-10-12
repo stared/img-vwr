@@ -46,6 +46,7 @@ struct Sidecar {
 }
 
 const DETECT_EDGE: u32 = 1600;
+const INDEX_WORKERS_MAX: usize = 8;
 
 const CROP_MARGIN: f32 = 0.35;
 
@@ -57,6 +58,8 @@ const MIN_FACE_SHARE: f32 = 0.03;
 pub struct FaceService {
     faces: Mutex<HashMap<String, Arc<Vec<Face>>>>,
     indexing: AtomicBool,
+    /// Bumped by every index call; a pass stops once a newer one has asked.
+    index_generation: std::sync::atomic::AtomicU64,
     /// Sidecars: {thumb_key}.json under the cache root.
     sidecars_dir: PathBuf,
     /// Face crops: {thumb_key}-{i}.jpg under the cache root.
@@ -123,6 +126,7 @@ impl FaceService {
         Ok(Self {
             faces: Mutex::new(HashMap::new()),
             indexing: AtomicBool::new(false),
+            index_generation: std::sync::atomic::AtomicU64::new(0),
             sidecars_dir,
             crops_dir,
             face_model: Mutex::new(None),
@@ -253,17 +257,34 @@ impl FaceService {
         Ok(model)
     }
 
-    fn face_vector(&self, id_crop: &str) -> Result<Arc<Vec<f32>>, String> {
-        if let Some(v) = self.face_vectors.lock().unwrap().get(id_crop) {
-            return Ok(Arc::clone(v));
-        }
+    fn vector_file(&self, id_crop: &str) -> Result<PathBuf, String> {
         let stem = Path::new(id_crop)
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| format!("odd crop path: {id_crop}"))?;
-        let vec_file = self
+        Ok(self
             .face_vectors_dir
-            .join(format!("{stem}-{}.vec", imgvwr_embed::FACE_MODEL_ID));
+            .join(format!("{stem}-{}.vec", imgvwr_embed::FACE_MODEL_ID)))
+    }
+
+    /// Memory or disk only; None until the index pass has embedded this face.
+    fn ready_face_vector(&self, id_crop: &str) -> Option<Arc<Vec<f32>>> {
+        if let Some(v) = self.face_vectors.lock().unwrap().get(id_crop) {
+            return Some(Arc::clone(v));
+        }
+        let vector = Arc::new(read_face_vector(&self.vector_file(id_crop).ok()?)?);
+        self.face_vectors
+            .lock()
+            .unwrap()
+            .insert(id_crop.to_string(), Arc::clone(&vector));
+        Some(vector)
+    }
+
+    fn face_vector(&self, id_crop: &str) -> Result<Arc<Vec<f32>>, String> {
+        if let Some(v) = self.face_vectors.lock().unwrap().get(id_crop) {
+            return Ok(Arc::clone(v));
+        }
+        let vec_file = self.vector_file(id_crop)?;
         let vector = match read_face_vector(&vec_file) {
             Some(v) => v,
             None => {
@@ -272,7 +293,7 @@ impl FaceService {
                     .embed_face_file(Path::new(id_crop))
                     .map_err(|e| e.to_string())?;
                 if let Err(e) = write_face_vector(&vec_file, &v) {
-                    eprintln!("face vector cache write failed for {stem}: {e}");
+                    eprintln!("face vector cache write failed for {}: {e}", vec_file.display());
                 }
                 v
             }
@@ -285,26 +306,64 @@ impl FaceService {
         Ok(vector)
     }
 
-    /// Runs on the calling thread; the command wraps it in a background task.
+    /// Blocks the calling thread, which only reports progress; the command wraps it in a background task.
+    /// A newer call takes over: the running pass stops, and finished photos are already cached.
     pub fn index(&self, paths: &[String], mut on_progress: impl FnMut(u32, u32)) {
-        if self.indexing.swap(true, Ordering::SeqCst) {
-            return;
+        let generation = self.index_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let current = || self.index_generation.load(Ordering::SeqCst) == generation;
+        while self.indexing.swap(true, Ordering::SeqCst) {
+            if !current() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
         let _pass = IndexingPass(&self.indexing);
         let total = paths.len() as u32;
-        for (i, path) in paths.iter().enumerate() {
-            if let Err(e) = self.faces_of(path) {
-                eprintln!("face detection failed for {path}: {e}");
-                self.faces
-                    .lock()
-                    .unwrap()
-                    .insert(path.clone(), Arc::new(Vec::new()));
+        // Decode and resize are CPU-bound per photo; two cores stay free for the UI and thumbnails.
+        let workers = std::thread::available_parallelism()
+            .map_or(2, |n| n.get().saturating_sub(2))
+            .clamp(1, INDEX_WORKERS_MAX);
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                let tx = tx.clone();
+                let next = &next;
+                scope.spawn(move || {
+                    while let Some(path) = current()
+                        .then(|| paths.get(next.fetch_add(1, Ordering::Relaxed)))
+                        .flatten()
+                    {
+                        match self.faces_of(path) {
+                            // Embedded here, in parallel, so clustering never waits on the model.
+                            Ok(faces) => {
+                                for face in faces.iter().filter(|f| f.aligned) {
+                                    if let Err(e) = self.face_vector(&face.id_crop) {
+                                        eprintln!("face embedding failed for {path}: {e}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("face detection failed for {path}: {e}");
+                                self.faces
+                                    .lock()
+                                    .unwrap()
+                                    .insert(path.clone(), Arc::new(Vec::new()));
+                            }
+                        }
+                        let _ = tx.send(());
+                    }
+                });
             }
-            let done = i as u32 + 1;
-            if done.is_multiple_of(4) || done == total {
-                on_progress(done, total);
+            drop(tx);
+            let mut done = 0u32;
+            for () in rx {
+                done += 1;
+                if done.is_multiple_of(4) || done == total {
+                    on_progress(done, total);
+                }
             }
-        }
+        });
     }
 
     /// Never detects: an unindexed photo is simply not clustered yet.
@@ -433,6 +492,8 @@ impl FaceService {
     ) -> Result<Vec<PersonCluster>, String> {
         struct Cluster {
             centroid: Vec<f32>,
+            /// Cached |centroid|: recomputing it per face × cluster dominated clustering.
+            centroid_norm: f32,
             members: u32,
             faces: Vec<(String, String, Role)>, // (photo, crop, role)
             /// Kept for average-linkage merging.
@@ -471,13 +532,14 @@ impl FaceService {
                 if !face.aligned {
                     continue;
                 }
-                let Ok(vector) = self.face_vector(&face.id_crop) else {
+                // Never embeds: the index pass does, so clustering mid-scan returns at once.
+                let Some(vector) = self.ready_face_vector(&face.id_crop) else {
                     continue;
                 };
                 let role = role_of(face, &faces);
                 let mut best: Option<(usize, f32)> = None;
                 for (ci, c) in clusters.iter().enumerate() {
-                    let sim = imgvwr_embed::dot(&c.centroid, &vector) / norm(&c.centroid);
+                    let sim = imgvwr_embed::dot(&c.centroid, &vector) / c.centroid_norm;
                     if sim >= threshold && best.is_none_or(|(_, s)| sim > s) {
                         best = Some((ci, sim));
                     }
@@ -488,6 +550,7 @@ impl FaceService {
                         for (acc, v) in c.centroid.iter_mut().zip(vector.iter()) {
                             *acc += v;
                         }
+                        c.centroid_norm = norm(&c.centroid);
                         c.members += 1;
                         c.faces.push((path.clone(), face.crop.clone(), role));
                         c.vectors.push(Arc::clone(&vector));
@@ -497,6 +560,7 @@ impl FaceService {
                     }
                     None => clusters.push(Cluster {
                         centroid: vector.to_vec(),
+                        centroid_norm: norm(&vector),
                         members: 1,
                         faces: vec![(path.clone(), face.crop.clone(), role)],
                         vectors: vec![Arc::clone(&vector)],
@@ -860,29 +924,50 @@ fn warp_aligned(img: &image::DynamicImage, t: &Similarity2D) -> image::RgbImage 
 mod platform {
     use objc2::rc::Retained;
     use objc2::AnyThread as _;
-    use objc2_foundation::{NSArray, NSData, NSDictionary};
+    use objc2_core_foundation::CFData;
+    use objc2_core_graphics::{
+        CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
+    };
+    use objc2_foundation::{NSArray, NSDictionary};
     use objc2_vision::{
         VNDetectFaceLandmarksRequest, VNFaceLandmarkRegion2D, VNImageRequestHandler, VNRequest,
     };
 
     use super::{DetectedFace, FaceBox};
 
-    /// Vision gets the already-oriented pixels (as JPEG bytes), so boxes and landmarks come back in the crops' own geometry.
+    /// Vision gets the already-oriented pixels, so boxes and landmarks come back in the crops' own geometry.
     pub fn detect_faces(img: &image::DynamicImage) -> Result<Vec<DetectedFace>, String> {
-        let mut jpeg = Vec::new();
-        img.to_rgb8()
-            .write_to(
-                &mut std::io::Cursor::new(&mut jpeg),
-                image::ImageFormat::Jpeg,
-            )
-            .map_err(|e| e.to_string())?;
+        let rgba = img.to_rgba8();
+        // Index workers are plain threads with no pool of their own; Vision's autoreleased objects would pile up.
+        objc2::rc::autoreleasepool(|_| detect_rgba(&rgba))
+    }
 
-        // SAFETY: message sends on objects we own; the handler runs synchronously on this thread.
+    /// Pixels go in as a CGImage: a JPEG round-trip per photo was the slowest step of indexing.
+    fn detect_rgba(rgba: &image::RgbaImage) -> Result<Vec<DetectedFace>, String> {
+        let (w, h) = (rgba.width() as usize, rgba.height() as usize);
+        // SAFETY: CFData copies the bytes; the CGImage owns its provider; the handler runs synchronously on this thread.
         unsafe {
-            let data = NSData::with_bytes(&jpeg);
-            let handler = VNImageRequestHandler::initWithData_options(
+            let data = CFData::new(None, rgba.as_raw().as_ptr(), rgba.as_raw().len() as isize)
+                .ok_or("CFData allocation failed")?;
+            let provider = CGDataProvider::with_cf_data(Some(&data)).ok_or("no data provider")?;
+            let space = CGColorSpace::new_device_rgb().ok_or("no colour space")?;
+            let image = CGImage::new(
+                w,
+                h,
+                8,
+                32,
+                w * 4,
+                Some(&space),
+                CGBitmapInfo(CGImageAlphaInfo::NoneSkipLast.0),
+                Some(&provider),
+                std::ptr::null(),
+                false,
+                CGColorRenderingIntent::RenderingIntentDefault,
+            )
+            .ok_or("CGImage creation failed")?;
+            let handler = VNImageRequestHandler::initWithCGImage_options(
                 VNImageRequestHandler::alloc(),
-                &data,
+                &image,
                 &NSDictionary::new(),
             );
             let request = VNDetectFaceLandmarksRequest::new();

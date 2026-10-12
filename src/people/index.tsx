@@ -23,6 +23,8 @@ const PERSON_PROPAGATE = 0.92;
 
 /** Clusters below this many faces are noise, not people worth a chip. */
 const MIN_FACES = 3;
+/** While the scan runs, people re-cluster this often from the photos scanned so far. */
+const PARTIAL_REFRESH_MS = 5000;
 
 function PersonShape({ x, hollow, faded }: { x: number; hollow: boolean; faded: boolean }) {
   return (
@@ -104,7 +106,27 @@ function localJpegPaths(): string[] {
   return s.entries.filter((e) => !isRawEntry(e)).map((e) => e.path);
 }
 
+let refreshing = false;
+let rerun = false;
+
+/** Clustering reads only photos already scanned, so it is safe mid-scan; a call during a run queues one more. */
 async function refreshPeople(): Promise<void> {
+  if (refreshing) {
+    rerun = true;
+    return;
+  }
+  refreshing = true;
+  try {
+    do {
+      rerun = false;
+      await clusterPeople();
+    } while (rerun);
+  } finally {
+    refreshing = false;
+  }
+}
+
+async function clusterPeople(): Promise<void> {
   const paths = localJpegPaths();
   if (paths.length === 0) return;
   const epoch = useAppStore.getState().epoch;
@@ -144,8 +166,15 @@ export function PeoplePanel() {
   }, [scope, status, epoch, entryCount]);
 
   const clusteredFor = useRef<string | null>(null);
+  const partialAt = useRef(0);
   useEffect(() => {
-    if (progress === null || progress.done < progress.total) return;
+    if (progress === null) return;
+    if (progress.done < progress.total) {
+      if (performance.now() - partialAt.current < PARTIAL_REFRESH_MS) return;
+      partialAt.current = performance.now();
+      void refreshPeople();
+      return;
+    }
     const key = `${epoch}:${progress.total}`;
     if (clusteredFor.current === key) return;
     clusteredFor.current = key;
