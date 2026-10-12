@@ -316,32 +316,6 @@ kbd {
   color: var(--text-dim);
 }
 
-.panel-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.panel-action {
-  margin: 0 12px;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--text);
-  background: var(--accent);
-  border-radius: 6px;
-  text-align: center;
-}
-
-.panel-action:hover {
-  filter: brightness(1.1);
-}
-
-.panel-action kbd {
-  margin-left: 4px;
-  opacity: 0.7;
-}
-
 .source-form {
   padding: 2px 12px 10px;
 }
@@ -365,6 +339,40 @@ kbd {
 .folder-tree {
   padding: 0 6px 10px;
   font-size: 13px;
+}
+
+.folder-recent {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+}
+
+.folder-recent h4 {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.folder-recent .tree-label {
+  border-radius: 4px;
+}
+
+.folder-recent .open-folder {
+  display: flex;
+  justify-content: space-between;
+}
+
+.folder-recent .tree-label:hover {
+  background: var(--bg-overlay);
+}
+
+.open-folder,
+.open-folder kbd {
+  color: var(--text-dim);
 }
 
 .model-list {

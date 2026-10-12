@@ -80,3 +80,11 @@ pub struct FacesProgress {
     pub total: u32,
     pub epoch: u64,
 }
+
+/// A menu-bar click, relayed so the frontend runs it like any other command.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum MenuAction {
+    Command { id: String },
+    OpenFolder { path: String },
+}

@@ -26,6 +26,17 @@ async listSubdirs(path: string) : Promise<Result<DirEntry[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Mirrors the frontend's recent folders into File › Open Recent.
+ */
+async setRecentFolders(paths: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_recent_folders", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_metadata", { path }) };
@@ -310,6 +321,7 @@ embeddingProgress: EmbeddingProgress,
 embeddingStatus: EmbeddingStatus,
 facesProgress: FacesProgress,
 folderChanged: FolderChanged,
+menuAction: MenuAction,
 metaBatchReady: MetaBatchReady,
 scanBatch: ScanBatch,
 thumbnailFailed: ThumbnailFailed,
@@ -320,6 +332,7 @@ embeddingProgress: "embedding-progress",
 embeddingStatus: "embedding-status",
 facesProgress: "faces-progress",
 folderChanged: "folder-changed",
+menuAction: "menu-action",
 metaBatchReady: "meta-batch-ready",
 scanBatch: "scan-batch",
 thumbnailFailed: "thumbnail-failed",
@@ -523,6 +536,10 @@ luma: number[]; red: number[]; green: number[]; blue: number[];
  * Both vectors are N×N with structurally empty slots at zero.
  */
 triangleN: number; triUp: number[]; triDown: number[] }
+/**
+ * A menu-bar click, relayed so the frontend runs it like any other command.
+ */
+export type MenuAction = { kind: "command"; id: string } | { kind: "openFolder"; path: string }
 export type MetaBatchReady = { items: MetaEntry[]; epoch: number }
 export type MetaEntry = { path: string; meta: ImageMeta }
 export type Overlay = "none" | 

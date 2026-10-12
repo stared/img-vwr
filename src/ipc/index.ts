@@ -21,6 +21,7 @@ import type {
   ImageLabels,
   ImageMeta,
   ImageStats,
+  MenuAction,
   MetaEntry,
   PersonCluster,
   Crop,
@@ -54,6 +55,7 @@ export type {
   ImageLabels,
   ImageMeta,
   ImageStats,
+  MenuAction,
   MetaEntry,
   PersonCluster,
   Crop,
@@ -79,6 +81,10 @@ export async function scanFolder(path: string, recursive: boolean, epoch: number
 
 export async function listSubdirs(path: string): Promise<DirEntry[]> {
   return unwrap(await commands.listSubdirs(path));
+}
+
+export async function setRecentFolders(paths: string[]): Promise<void> {
+  unwrap(await commands.setRecentFolders(paths));
 }
 
 /** Move files to the platform Trash; only paths reported gone may be dropped from the collection. */

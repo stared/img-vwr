@@ -79,6 +79,13 @@ pub async fn list_subdirs(path: PathBuf) -> Result<Vec<DirEntry>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Mirrors the frontend's recent folders into File › Open Recent.
+#[tauri::command]
+#[specta::specta]
+pub fn set_recent_folders(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    crate::menu::set_recent(&app, &paths).map_err(|e| e.to_string())
+}
+
 /// Results arrive as `DirCountReady` events, one per folder.
 #[tauri::command]
 #[specta::specta]

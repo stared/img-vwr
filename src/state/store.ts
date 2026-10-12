@@ -111,6 +111,8 @@ export interface AppState {
   /** Right-column section order, panel ids; unknown ids keep registration order after these. Persisted. */
   panelOrder: string[];
   pinnedPanels: string[];
+  /** Most recent first; a folder only passed through on the way down is not kept. */
+  recentFolders: string[];
   /** Sidebar widths, px — dragged at the inner edge. Persisted. */
   sidebarWidth: number;
   rightbarWidth: number;
@@ -295,6 +297,7 @@ export const initialState: AppState = {
   panelFolds: {},
   panelOrder: [],
   pinnedPanels: [],
+  recentFolders: [],
   sidebarWidth: 230,
   // Wide enough for the Shot block's one-line exposure row at worst case (five-digit ISO, negative EV).
   rightbarWidth: 310,
@@ -630,6 +633,14 @@ function pannedBy(state: ViewerState, dx: number, dy: number): Partial<AppState>
 
 /* Scan batches arrive faster than a huge collection re-sorts; coalesced so the visible list refreshes a few times per second. First and final slices flush immediately. */
 const SCAN_FLUSH_MS = 250;
+const RECENT_FOLDERS = 6;
+
+function withRecent(recent: string[], path: string): string[] {
+  const [head, ...rest] = recent;
+  const descended = head !== undefined && path.startsWith(head + "/");
+  const kept = descended ? rest : recent;
+  return [path, ...kept.filter((p) => p !== path)].slice(0, RECENT_FOLDERS);
+}
 let scanBuffer: { epoch: number; entries: FileEntry[]; done: boolean } | null = null;
 let scanFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -648,6 +659,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set({
       ...scopeLoading(scope, EPOCH_PENDING),
       query: { ...query, sort: sortForScope(scope, query.sort) },
+      recentFolders: withRecent(get().recentFolders, path),
     });
     const epoch = await newEpoch();
     // Another scope was opened while the epoch was being fetched.

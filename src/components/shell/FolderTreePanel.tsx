@@ -3,9 +3,38 @@ import { useEffect, useState } from "react";
 import type { DirEntry } from "../../ipc";
 import { listSubdirs, requestDirCounts } from "../../ipc";
 import { executeCommand } from "../../registry/commands";
+import { chordsForCommand, formatChord } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
 
 const CRUMB_SEGMENTS = 2;
+function OpenFolderRow() {
+  return (
+    <button
+      className="tree-label open-folder"
+      onClick={() => executeCommand("folder.open", { store: useAppStore })}
+    >
+      Open Folder…
+      <kbd>{chordsForCommand("folder.open").map(formatChord)[0]}</kbd>
+    </button>
+  );
+}
+
+/** Folders visited before this one; the current one is shown above as the tree. */
+function RecentFolders({ current }: { current: string | null }) {
+  const openFolder = useAppStore((s) => s.openFolder);
+  const recent = useAppStore((s) => s.recentFolders).filter((p) => p !== current);
+  return (
+    <section className="folder-recent">
+      {recent.length > 0 && <h4>Recent</h4>}
+      {recent.map((path) => (
+        <button key={path} className="tree-label" onClick={() => void openFolder(path, false)} title={path}>
+          {path.split("/").filter(Boolean).pop()}
+        </button>
+      ))}
+      <OpenFolderRow />
+    </section>
+  );
+}
 
 export function FolderTreePanel() {
   const folderPath = useAppStore((s) => (s.scope?.kind === "folder" ? s.scope.path : null));
@@ -38,14 +67,8 @@ export function FolderTreePanel() {
 
   if (!folderPath) {
     return (
-      <div className="panel-empty">
-        <p className="panel-hint">No folder open.</p>
-        <button
-          className="panel-action"
-          onClick={() => executeCommand("folder.open", { store: useAppStore })}
-        >
-          Open Folder <kbd>⌘O</kbd>
-        </button>
+      <div className="folder-tree">
+        <RecentFolders current={null} />
       </div>
     );
   }
@@ -104,6 +127,7 @@ export function FolderTreePanel() {
           </div>
         );
       })}
+      <RecentFolders current={folderPath} />
     </div>
   );
 }

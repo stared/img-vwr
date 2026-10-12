@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod menu;
 mod services;
 
 use std::sync::Arc;
@@ -27,6 +28,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             commands::scan_folder,
             commands::list_subdirs,
+            commands::set_recent_folders,
             commands::get_metadata,
             commands::delete_files,
             commands::copy_files,
@@ -70,7 +72,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             events::FolderChanged,
             events::EmbeddingStatus,
             events::EmbeddingProgress,
-            events::FacesProgress
+            events::FacesProgress,
+            events::MenuAction
         ])
 }
 
@@ -131,6 +134,7 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+            menu::install(app.handle())?;
             let cache_root = app.path().app_cache_dir()?;
             let scenes = Arc::new(scene_registry());
             app.manage(Arc::new(ThumbnailService::new(

@@ -12,7 +12,8 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { getView } from "./registry/views";
-import { developSetFusions, events, requestMeta, type FusionRecipe } from "./ipc";
+import { developSetFusions, events, requestMeta, setRecentFolders, type FusionRecipe } from "./ipc";
+import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
@@ -101,6 +102,11 @@ function App() {
     return startSessionPersistence();
   }, []);
 
+  const recentFolders = useAppStore((s) => s.recentFolders);
+  useEffect(() => {
+    void setRecentFolders(recentFolders);
+  }, [recentFolders]);
+
   useEffect(() => {
     const { scanBatch, folderChanged, thumbReady, thumbFailed, dirCountReady, metaBatchReady } =
       useAppStore.getState();
@@ -123,6 +129,10 @@ function App() {
       events.metaBatchReady.listen(({ payload }) =>
         metaBatchReady(payload.items, payload.epoch),
       ),
+      events.menuAction.listen(({ payload }) => {
+        if (payload.kind === "command") executeCommand(payload.id, { store: useAppStore });
+        else void useAppStore.getState().openFolder(payload.path, false);
+      }),
       events.facesProgress.listen(({ payload }) => {
         const s = useAppStore.getState();
         if (payload.epoch === s.epoch) {
