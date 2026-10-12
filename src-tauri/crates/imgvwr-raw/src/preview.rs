@@ -30,7 +30,7 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
 
     let mut queue: Vec<u32> = vec![u32_at(4)?];
     let mut seen = std::collections::HashSet::new();
-    let mut best: Option<(u32, u32)> = None;
+    let mut best: Option<&[u8]> = None;
     while let Some(ifd) = queue.pop() {
         if ifd == 0 || !seen.insert(ifd) || seen.len() > 64 {
             continue;
@@ -39,6 +39,9 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
         let Some(count) = u16_at(ifd) else { continue };
         let mut jpeg_off = None;
         let mut jpeg_len = None;
+        // Canon keeps its full-size preview in IFD0 as a single JPEG strip.
+        let mut strip_off = None;
+        let mut strip_len = None;
         for i in 0..count as usize {
             let e = ifd + 2 + i * 12;
             let (Some(tag), Some(typ), Some(n), Some(value)) =
@@ -61,12 +64,19 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
                 }
                 0x0201 => jpeg_off = Some(value),
                 0x0202 => jpeg_len = Some(value),
+                0x0111 if n == 1 => strip_off = Some(value),
+                0x0117 if n == 1 => strip_len = Some(value),
                 _ => {}
             }
         }
-        if let (Some(off), Some(len)) = (jpeg_off, jpeg_len) {
-            if best.map(|(_, l)| len > l).unwrap_or(true) {
-                best = Some((off, len));
+        for (off, len) in [(jpeg_off, jpeg_len), (strip_off, strip_len)] {
+            let (Some(off), Some(len)) = (off, len) else { continue };
+            let Some(bytes) = data.get(off as usize..(off as usize).saturating_add(len as usize))
+            else {
+                continue;
+            };
+            if is_displayable_jpeg(bytes) && best.map_or(true, |b| bytes.len() > b.len()) {
+                best = Some(bytes);
             }
         }
         // The next IFD in the chain (IFD1 is where TIFF thumbnails live).
@@ -75,12 +85,23 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
         }
     }
 
-    let (off, len) = best?;
-    let bytes = data.get(off as usize..(off as usize).checked_add(len as usize)?)?;
+    best.map(<[u8]>::to_vec)
+}
+
+/// Baseline or progressive only: raw sensor data is often stored as lossless JPEG (SOF3), which no image decoder shows.
+fn is_displayable_jpeg(bytes: &[u8]) -> bool {
     if bytes.get(0..2) != Some(&[0xff, 0xd8]) {
-        return None;
+        return false;
     }
-    Some(bytes.to_vec())
+    let mut i = 2;
+    while let Some(&[0xff, marker, hi, lo]) = bytes.get(i..i + 4) {
+        match marker {
+            0xc0..=0xc2 => return true,
+            0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf | 0xda => return false,
+            _ => i += 2 + usize::from(u16::from_be_bytes([hi, lo])),
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -110,13 +131,13 @@ mod tests {
         d[s2..s2 + 2].copy_from_slice(&0x0202u16.to_le_bytes());
         d[s2 + 2..s2 + 4].copy_from_slice(&4u16.to_le_bytes());
         d[s2 + 4..s2 + 8].copy_from_slice(&1u32.to_le_bytes());
-        d[s2 + 8..s2 + 12].copy_from_slice(&4u32.to_le_bytes());
-        d[128..132].copy_from_slice(&[0xff, 0xd8, 0xff, 0xd9]);
+        d[s2 + 8..s2 + 12].copy_from_slice(&8u32.to_le_bytes());
+        d[128..136].copy_from_slice(&[0xff, 0xd8, 0xff, 0xc0, 0, 2, 0xff, 0xd9]);
 
         let tmp = std::env::temp_dir().join("imgvwr_preview_test.tif");
         std::fs::write(&tmp, &d).unwrap();
         let got = embedded_jpeg(&tmp).expect("finds jpeg");
-        assert_eq!(got, vec![0xff, 0xd8, 0xff, 0xd9]);
+        assert_eq!(got, vec![0xff, 0xd8, 0xff, 0xc0, 0, 2, 0xff, 0xd9]);
         std::fs::remove_file(&tmp).ok();
     }
 
