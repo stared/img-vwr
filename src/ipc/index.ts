@@ -172,10 +172,6 @@ export async function facesRename(
 }
 
 /** Every name ever given, not only names in the current clustering. */
-export async function facesNames(): Promise<string[]> {
-  return unwrap(await commands.facesNames());
-}
-
 /** Computed from the cached thumbnail, not the full image. */
 export async function imageStats(path: string): Promise<ImageStats> {
   return unwrap(await commands.imageStats(path));

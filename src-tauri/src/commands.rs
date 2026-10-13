@@ -292,7 +292,8 @@ pub async fn faces_people(
     let faces = Arc::clone(faces.inner());
     let embeddings = Arc::clone(embeddings.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        faces.people(&embeddings, &paths, threshold, merge, propagate)
+        // Inside the rayon pool, so clustering's per-face parallel searches skip the cold hand-off.
+        rayon::scope(|_| faces.people(&embeddings, &paths, threshold, merge, propagate))
     })
     .await
     .map_err(|e| e.to_string())?

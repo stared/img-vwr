@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   facesIndex,
-  facesNames,
   facesPeople,
   facesRename,
   fileUrl,
@@ -148,7 +147,6 @@ export function PeoplePanel() {
   const setSelectFilter = useAppStore((s) => s.setSelectFilter);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [knownNames, setKnownNames] = useState<string[]>([]);
 
   // Photos appearing on disk later re-fire this through the entryCount dependency.
   const indexedFor = useRef<string | null>(null);
@@ -210,7 +208,6 @@ export function PeoplePanel() {
   function startEditing(person: PersonCluster): void {
     setDraft(person.name ?? "");
     setEditing(person.id);
-    facesNames().then(setKnownNames, () => setKnownNames([]));
   }
 
   return (
@@ -233,7 +230,7 @@ export function PeoplePanel() {
                   className="person-name-input"
                   value={draft}
                   autoFocus
-                  list="person-name-options"
+                  autoComplete="off"
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void commitName(person);
@@ -264,11 +261,6 @@ export function PeoplePanel() {
               </button>
             ),
           )}
-          <datalist id="person-name-options">
-            {knownNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use rayon::prelude::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -503,20 +504,20 @@ impl FaceService {
             name: Option<String>,
         }
 
-        /// Average pairwise similarity, NOT centroid-vs-centroid: growing centroids converge on the generic-face component.
-        fn linkage(a: &Cluster, b: &Cluster) -> f32 {
-            let sample = |c: &Cluster| -> Vec<Arc<Vec<f32>>> {
-                let step = (c.vectors.len() / 12).max(1);
-                c.vectors.iter().step_by(step).take(12).cloned().collect()
-            };
-            let (sa, sb) = (sample(a), sample(b));
-            let mut sum = 0f32;
-            for va in &sa {
-                for vb in &sb {
-                    sum += imgvwr_embed::dot(va, vb);
+        /// Mean of the linkage sample (12 spread members). The average pairwise similarity of two
+        /// samples equals the dot of their means, so each pair costs one dot instead of 144.
+        fn sample_mean(vectors: &[Arc<Vec<f32>>]) -> Vec<f32> {
+            let step = (vectors.len() / 12).max(1);
+            let sample: Vec<&Arc<Vec<f32>>> = vectors.iter().step_by(step).take(12).collect();
+            let mut mean = vec![0f32; sample.first().map_or(0, |v| v.len())];
+            for v in &sample {
+                for (m, x) in mean.iter_mut().zip(v.iter()) {
+                    *m += x;
                 }
             }
-            sum / (sa.len() * sb.len()) as f32
+            let n = sample.len().max(1) as f32;
+            mean.iter_mut().for_each(|m| *m /= n);
+            mean
         }
         let mut clusters: Vec<Cluster> = Vec::new();
         let mut faceless: Vec<String> = Vec::new();
@@ -538,13 +539,13 @@ impl FaceService {
                     continue;
                 };
                 let role = role_of(face, &faces);
-                let mut best: Option<(usize, f32)> = None;
-                for (ci, c) in clusters.iter().enumerate() {
-                    let sim = imgvwr_embed::dot(&c.centroid, &vector) / c.centroid_norm;
-                    if sim >= threshold && best.is_none_or(|(_, s)| sim > s) {
-                        best = Some((ci, sim));
-                    }
-                }
+                // Thousands of clusters per face: searched across cores, ties going to the earliest as before.
+                let best: Option<(usize, f32)> = clusters
+                    .par_iter()
+                    .enumerate()
+                    .map(|(ci, c)| (ci, imgvwr_embed::dot(&c.centroid, &vector) / c.centroid_norm))
+                    .filter(|&(_, sim)| sim >= threshold)
+                    .reduce_with(|a, b| if b.1 > a.1 || (b.1 == a.1 && b.0 < a.0) { b } else { a });
                 match best {
                     Some((ci, sim)) => {
                         let c = &mut clusters[ci];
@@ -573,28 +574,36 @@ impl FaceService {
         }
 
         // The greedy pass fragments one person (stage light vs daylight); merge fragments on average pairwise similarity.
+        let mut means: Vec<Vec<f32>> = clusters.iter().map(|c| sample_mean(&c.vectors)).collect();
         loop {
             let mut merged_any = false;
             let mut i = 0;
             while i < clusters.len() {
                 let mut j = i + 1;
                 while j < clusters.len() {
-                    if linkage(&clusters[i], &clusters[j]) >= merge {
-                        let absorbed = clusters.remove(j);
-                        let host = &mut clusters[i];
-                        for (acc, v) in host.centroid.iter_mut().zip(absorbed.centroid.iter()) {
-                            *acc += v;
-                        }
-                        host.members += absorbed.members;
-                        host.faces.extend(absorbed.faces);
-                        host.vectors.extend(absorbed.vectors);
-                        if absorbed.best.0 > host.best.0 {
-                            host.best = absorbed.best;
-                        }
-                        merged_any = true;
-                    } else {
-                        j += 1;
+                    // The first partner at or after j, as the sequential scan would meet it.
+                    let host_mean = &means[i];
+                    let Some(offset) = means[j..]
+                        .par_iter()
+                        .position_first(|m| imgvwr_embed::dot(host_mean, m) >= merge)
+                    else {
+                        break;
+                    };
+                    j += offset;
+                    means.remove(j);
+                    let absorbed = clusters.remove(j);
+                    let host = &mut clusters[i];
+                    for (acc, v) in host.centroid.iter_mut().zip(absorbed.centroid.iter()) {
+                        *acc += v;
                     }
+                    host.members += absorbed.members;
+                    host.faces.extend(absorbed.faces);
+                    host.vectors.extend(absorbed.vectors);
+                    if absorbed.best.0 > host.best.0 {
+                        host.best = absorbed.best;
+                    }
+                    means[i] = sample_mean(&host.vectors);
+                    merged_any = true;
                 }
                 i += 1;
             }
@@ -663,6 +672,19 @@ impl FaceService {
             )
         });
         let mut out = Vec::new();
+        // Fetched once: per person × candidate × photo, the locked lookup dominated clustering.
+        let faceless_vectors: Vec<(&String, Arc<Vec<f32>>)> = faceless
+            .iter()
+            .filter_map(|p| Some((p, embeddings.known_vector_for_path(p)?)))
+            .collect();
+        let photo_vectors: HashMap<&str, Arc<Vec<f32>>> = if faceless_vectors.is_empty() {
+            HashMap::new()
+        } else {
+            paths
+                .iter()
+                .filter_map(|p| Some((p.as_str(), embeddings.known_vector_for_path(p)?)))
+                .collect()
+        };
         for (i, c) in clusters.iter().enumerate() {
             // Per photo, the BEST role this person has in it.
             let mut photos: Vec<String> = Vec::new();
@@ -685,14 +707,11 @@ impl FaceService {
             };
             // A faceless photo near-identical to a member belongs to the same moment, so the same person is in it.
             let mut implied = Vec::new();
-            'candidates: for candidate in &faceless {
-                let Some(cv) = embeddings.known_vector_for_path(candidate) else {
-                    continue;
-                };
+            'candidates: for (candidate, cv) in &faceless_vectors {
                 for photo in &photos {
-                    if let Some(pv) = embeddings.known_vector_for_path(photo) {
-                        if imgvwr_embed::dot(&cv, &pv) >= propagate {
-                            implied.push(candidate.clone());
+                    if let Some(pv) = photo_vectors.get(photo.as_str()) {
+                        if imgvwr_embed::dot(cv, pv) >= propagate {
+                            implied.push((*candidate).clone());
                             continue 'candidates;
                         }
                     }
@@ -739,21 +758,31 @@ impl FaceService {
 /// Unnamed people keep the number of the previous cluster they mostly continue, so a re-cluster
 /// (every few seconds mid-scan) never re-points an active "person: 7" filter at someone else.
 fn keep_ordinals(out: &mut [PersonCluster], last: &[LastCluster]) {
-    let mut free: Vec<(&str, std::collections::HashSet<&str>)> = last
-        .iter()
-        .filter(|l| l.name.is_none())
-        .map(|l| (l.id.as_str(), l.photos.iter().map(String::as_str).collect()))
-        .collect();
+    // Photo → previous unnamed clusters containing it: one pass, then each new cluster just counts votes.
+    let mut holders: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (k, l) in last.iter().enumerate().filter(|(_, l)| l.name.is_none()) {
+        for photo in &l.photos {
+            holders.entry(photo.as_str()).or_default().push(k);
+        }
+    }
+    let mut claimed = vec![false; last.len()];
     let mut next = last.iter().filter_map(|l| l.id.parse::<u32>().ok()).max().unwrap_or(0) + 1;
     for person in out.iter_mut().filter(|p| p.name.is_none()) {
-        let best = free
-            .iter()
-            .enumerate()
-            .map(|(i, (_, prev))| (i, person.photos.iter().filter(|p| prev.contains(p.as_str())).count(), prev.len()))
-            .filter(|&(_, shared, prev_len)| 2 * shared > person.photos.len().min(prev_len))
-            .max_by_key(|&(_, shared, _)| shared);
+        let mut votes: HashMap<usize, usize> = HashMap::new();
+        for photo in &person.photos {
+            for &k in holders.get(photo.as_str()).into_iter().flatten() {
+                *votes.entry(k).or_default() += 1;
+            }
+        }
+        let best = votes
+            .into_iter()
+            .filter(|&(k, shared)| !claimed[k] && 2 * shared > person.photos.len().min(last[k].photos.len()))
+            .max_by_key(|&(k, shared)| (shared, std::cmp::Reverse(k)));
         person.id = match best {
-            Some((i, _, _)) => free.swap_remove(i).0.to_string(),
+            Some((k, _)) => {
+                claimed[k] = true;
+                last[k].id.clone()
+            }
             None => {
                 next += 1;
                 (next - 1).to_string()
