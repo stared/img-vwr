@@ -171,7 +171,6 @@ export async function facesRename(
   unwrap(await commands.facesRename(clusterId, name, merge));
 }
 
-/** Every name ever given, not only names in the current clustering. */
 /** Computed from the cached thumbnail, not the full image. */
 export async function imageStats(path: string): Promise<ImageStats> {
   return unwrap(await commands.imageStats(path));
