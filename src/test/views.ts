@@ -1,4 +1,4 @@
-import { getView, registerView } from "./views";
+import { getView, registerView } from "../registry/views";
 
 /** The built-in views' contracts without their components, for tests of view-dependent rules. */
 export function registerTestViews(): void {

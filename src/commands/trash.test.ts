@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { registerTestViews } from "../registry/testViews";
+import { registerTestViews } from "../test/views";
 
 import type { FileEntry } from "../ipc";
 import { filesBehind, initialState } from "../state/store";

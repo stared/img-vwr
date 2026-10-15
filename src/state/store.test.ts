@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { registerTestViews } from "../registry/testViews";
+import { registerTestViews } from "../test/views";
 
 import type { Channel } from "../registry/channels";
 import { clearSortsForTest, registerSort } from "../registry/sorts";

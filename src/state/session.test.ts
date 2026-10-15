@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { registerTestViews } from "../registry/testViews";
+import { registerTestViews } from "../test/views";
 
 import { useDevelopStore } from "./develop";
 import { restoreSession } from "./session";
