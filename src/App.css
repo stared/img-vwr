@@ -9,11 +9,9 @@
 @import "./styles/status-bar.css";
 @import "./styles/palette.css";
 @import "./styles/shortcuts.css";
-@import "./styles/timeline.css";
 @import "./styles/develop-panel.css";
 @import "./styles/sliders.css";
 @import "./styles/darkroom.css";
-@import "./styles/mosaic.css";
 @import "./styles/cropped.css";
 @import "./styles/export.css";
 @import "./styles/loupe.css";

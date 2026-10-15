@@ -4,6 +4,7 @@ import type { FileEntry } from "../../ipc";
 import { api, fileUrl } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { useTimelineSettings } from "./settings";
 import type { TimeWindow } from "./timeline";
 import { fitWindow, packLanes, packSpan, pannedWindow, timeTicks, zoomedWindow } from "./timeline";
 
@@ -27,8 +28,8 @@ export function TimelineGallery() {
   const entries = useVisibleEntries();
   const meta = useAppStore((s) => s.meta);
   const epoch = useAppStore((s) => s.epoch);
-  const vertical = useAppStore((s) => s.timelineOrientation === "vertical");
-  const thumbPref = useAppStore((s) => s.timelineThumbPx);
+  const vertical = useTimelineSettings((s) => s.orientation === "vertical");
+  const thumbPref = useTimelineSettings((s) => s.thumbPx);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewSize, setViewSize] = useState({ main: 0, cross: 0 });

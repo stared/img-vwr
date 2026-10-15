@@ -60,8 +60,6 @@ export type ViewMode = "gallery" | "viewer";
 /** A registered view's id. */
 export type GalleryLayout = string;
 
-export type MosaicPacking = "order" | "packed";
-export type TimelineOrientation = "vertical" | "horizontal";
 
 export type { FolderStatus, Scope } from "./collection";
 export { scanBatchArrived, sortForScope } from "./collection";
@@ -96,13 +94,6 @@ export interface AppState {
   rightbarWidth: number;
   viewMode: ViewMode;
   galleryLayout: GalleryLayout;
-  timelineOrientation: TimelineOrientation;
-  /** Thumbnail edge on the timeline, px — presentation only, never zoom. */
-  timelineThumbPx: number;
-  /** The mosaic's target row height, px — presentation only. */
-  mosaicRowPx: number;
-  /** "order" keeps the sort's order (rows vary in scale to justify); "packed" repacks so everything reads at one scale. */
-  mosaicPacking: MosaicPacking;
   gridColumns: number;
   /** Moves the lead one visual row (+1 down, -1 up); registered by the mounted view, which alone knows its geometry; null when it has no second dimension. */
   rowNavigator: ((direction: 1 | -1) => void) | null;
@@ -168,10 +159,6 @@ interface AppActions {
   setSidebarWidth: (px: number) => void;
   setRightbarWidth: (px: number) => void;
   setGalleryLayout: (layout: GalleryLayout) => void;
-  setTimelineOrientation: (orientation: TimelineOrientation) => void;
-  setTimelineThumbPx: (px: number) => void;
-  setMosaicRowPx: (px: number) => void;
-  setMosaicPacking: (packing: MosaicPacking) => void;
   setGridColumns: (columns: number) => void;
   setRowNavigator: (navigator: ((direction: 1 | -1) => void) | null) => void;
   /** Fresh banded similarities for exactly this visible list. */
@@ -244,10 +231,6 @@ export const initialState: AppState = {
   rightbarWidth: 310,
   viewMode: "gallery",
   galleryLayout: "grid",
-  timelineOrientation: "vertical",
-  timelineThumbPx: 64,
-  mosaicRowPx: 180,
-  mosaicPacking: "order",
   gridColumns: 6,
   rowNavigator: null,
   // On by default: a raw+JPEG folder otherwise shows every photograph twice.
@@ -495,11 +478,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   // Held: the darkroom collapses pairs and the grid does not, so the list is a different length on either side.
   setGalleryLayout: (layout) => set((s) => withSelectionHeld(s, { galleryLayout: layout })),
 
-  setTimelineOrientation: (orientation) => set({ timelineOrientation: orientation }),
 
-  setTimelineThumbPx: (px) => set({ timelineThumbPx: px }),
-  setMosaicRowPx: (px) => set({ mosaicRowPx: px }),
-  setMosaicPacking: (packing) => set({ mosaicPacking: packing }),
 
   setGridColumns: (columns) => set({ gridColumns: columns }),
 

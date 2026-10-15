@@ -6,9 +6,7 @@ import type { StackLead } from "./stacks";
 import {
   useAppStore,
   type GalleryLayout,
-  type MosaicPacking,
   type Scope,
-  type TimelineOrientation,
 } from "./store";
 
 /* Saves the setup (scope, layout, filters), never contents or selection; transient state falls back to defaults on restore. */
@@ -22,10 +20,6 @@ interface SavedSession {
   stacking: boolean;
   stackLead: StackLead;
   gridColumns: number;
-  timelineOrientation: TimelineOrientation;
-  timelineThumbPx: number;
-  mosaicRowPx: number;
-  mosaicPacking: MosaicPacking;
   inspectorVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
@@ -55,10 +49,6 @@ function snapshot(): SavedSession {
     stacking: s.stacking,
     stackLead: s.stackLead,
     gridColumns: s.gridColumns,
-    timelineOrientation: s.timelineOrientation,
-    timelineThumbPx: s.timelineThumbPx,
-    mosaicRowPx: s.mosaicRowPx,
-    mosaicPacking: s.mosaicPacking,
     inspectorVisible: s.inspectorVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
@@ -166,14 +156,6 @@ export function restoreSession(): boolean {
     stacking: isBool(o.stacking) ? o.stacking : app.stacking,
     stackLead: oneOf(o.stackLead, ["jpg", "raw"] as const) ? o.stackLead : app.stackLead,
     gridColumns: isNum(o.gridColumns) ? o.gridColumns : app.gridColumns,
-    timelineOrientation: oneOf(o.timelineOrientation, ["vertical", "horizontal"] as const)
-      ? o.timelineOrientation
-      : app.timelineOrientation,
-    timelineThumbPx: isNum(o.timelineThumbPx) ? o.timelineThumbPx : app.timelineThumbPx,
-    mosaicRowPx: isNum(o.mosaicRowPx) ? o.mosaicRowPx : app.mosaicRowPx,
-    mosaicPacking: oneOf(o.mosaicPacking, ["order", "packed"] as const)
-      ? o.mosaicPacking
-      : app.mosaicPacking,
     inspectorVisible: isBool(o.inspectorVisible) ? o.inspectorVisible : app.inspectorVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,

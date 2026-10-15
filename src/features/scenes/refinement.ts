@@ -4,7 +4,7 @@ import { api, type FileEntry } from "../../ipc";
 import { SCENE_BAND } from "./scenes";
 import { useEmbedStore } from "../../state/embeddings";
 import { useAppStore } from "../../state/store";
-import { useScenesStore } from "./store";
+import { useSceneSims } from "./store";
 
 /** Feeds scene grouping embedding similarities when a model is already loaded; without one, scenes stay time-only. */
 /** Runs only while the scenes view is mounted. */
@@ -37,7 +37,7 @@ export function useSceneRefinement(visible: FileEntry[]): void {
       SCENE_BAND,
     )
       .then((bands) => {
-        if (!stale) useScenesStore.setState({ sims: { entries: visible, bands } });
+        if (!stale) useSceneSims.setState({ sims: { entries: visible, bands } });
       })
       .catch(() => {
         // "No model loaded" and friends — scenes stay time-only.

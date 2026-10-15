@@ -1,6 +1,6 @@
 import type { Crop, FileEntry, ImageMeta } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
-import { croppedBoxRatio } from "./CroppedThumb";
+import { croppedBoxRatio } from "../../components/gallery/CroppedThumb";
 
 const DEFAULT_ASPECT = 3 / 2;
 

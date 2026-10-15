@@ -9,7 +9,7 @@ import { useAppStore } from "../../state/store";
 import { registerSceneCommands } from "./commands";
 import { useSceneRefinement } from "./refinement";
 import { groupScenes, sceneGapLabel, sceneLabel, sliderFromTau, tauFromSlider } from "./scenes";
-import { useScenesStore } from "./store";
+import { useSceneSettings, useSceneSims } from "./store";
 
 /** Moments inferred from capture time, sharpened by picture content once a model is loaded. */
 function useSceneGroups(entries: FileEntry[]): GridGroup[] {
@@ -18,9 +18,9 @@ function useSceneGroups(entries: FileEntry[]): GridGroup[] {
   const remote = useAppStore((s) => s.scope?.kind === "source");
   const allEntries = useAppStore((s) => s.entries);
   const meta = useAppStore((s) => s.meta);
-  const gapMin = useScenesStore((s) => s.gapMin);
-  const contentWeight = useScenesStore((s) => s.contentWeight);
-  const sims = useScenesStore((s) => s.sims);
+  const gapMin = useSceneSettings((s) => s.gapMin);
+  const contentWeight = useSceneSettings((s) => s.contentWeight);
+  const sims = useSceneSims((s) => s.sims);
   useSceneRefinement(entries);
 
   // getState() keeps received meta out of the effect's deps, so streaming results don't re-fire the request.
@@ -44,10 +44,10 @@ function useSceneGroups(entries: FileEntry[]): GridGroup[] {
 }
 
 export function SceneKnobs() {
-  const sceneGapMin = useScenesStore((s) => s.gapMin);
-  const setSceneGap = (gapMin: number) => useScenesStore.setState({ gapMin });
-  const contentWeight = useScenesStore((s) => s.contentWeight);
-  const setContentWeight = (weight: number) => useScenesStore.setState({ contentWeight: weight });
+  const sceneGapMin = useSceneSettings((s) => s.gapMin);
+  const setSceneGap = (gapMin: number) => useSceneSettings.setState({ gapMin });
+  const contentWeight = useSceneSettings((s) => s.contentWeight);
+  const setContentWeight = (weight: number) => useSceneSettings.setState({ contentWeight: weight });
   return (
         <div className="menu-knobs">
           <Columns />

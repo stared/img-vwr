@@ -5,7 +5,8 @@ import type { FileEntry } from "../../ipc";
 import { api, fileUrl } from "../../ipc";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { PhotoBadges } from "../../registry/badges";
-import { CropBadge, CroppedThumb } from "./CroppedThumb";
+import { useMosaicSettings } from "./settings";
+import { CropBadge, CroppedThumb } from "../../components/gallery/CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
 const OVERSCAN_ROWS = 3;
@@ -19,8 +20,8 @@ export function MosaicGallery() {
   const allEntries = useAppStore((s) => s.entries);
   const meta = useAppStore((s) => s.meta);
   const crops = useAppStore((s) => s.crops);
-  const rowPx = useAppStore((s) => s.mosaicRowPx);
-  const packing = useAppStore((s) => s.mosaicPacking);
+  const rowPx = useMosaicSettings((s) => s.rowPx);
+  const packing = useMosaicSettings((s) => s.packing);
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
   const scrollRef = useRef<HTMLDivElement>(null);

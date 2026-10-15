@@ -4,14 +4,14 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { GalleryGrid, noGroups } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
-import { MosaicGallery } from "./components/gallery/MosaicGallery";
-import { TimelineGallery } from "./components/gallery/TimelineGallery";
-import { DarkroomKnobs, GridKnobs, MosaicKnobs, TimelineKnobs } from "./components/gallery/viewKnobs";
+import { DarkroomKnobs, GridKnobs } from "./components/gallery/viewKnobs";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
 import { registerMap } from "./features/map";
+import { registerMosaic } from "./features/mosaic";
 import { registerScenes } from "./features/scenes";
+import { registerTimeline } from "./features/timeline";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
 import { DevelopLoupe } from "./components/develop/DevelopLoupe";
@@ -49,27 +49,9 @@ registerView({
   stacks: false,
   Knobs: GridKnobs,
 });
-registerView({
-  id: "mosaic",
-  label: "Mosaic",
-  hint: "edge-to-edge photographs",
-  component: MosaicGallery,
-  keywords: ["packed", "wall", "justified"],
-  zoomable: false,
-  stacks: false,
-  Knobs: MosaicKnobs,
-});
+registerMosaic();
 registerScenes();
-registerView({
-  id: "timeline",
-  label: "Timeline",
-  hint: "photographs positioned by capture time",
-  component: TimelineGallery,
-  keywords: ["date", "taken", "time", "chronological"],
-  zoomable: false,
-  stacks: false,
-  Knobs: TimelineKnobs,
-});
+registerTimeline();
 registerMap();
 registerView({
   id: "darkroom",
