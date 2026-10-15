@@ -4,14 +4,12 @@ The camera look (`imgvwr-develop/src/look.rs` + generated `look_data.rs`)
 renders a neutral raw decode the way the camera's own JPEG engine would.
 It is fitted, not designed — this directory holds the fitting pipeline.
 
-Two generations live here. `fit_look.py` is the original stage-wise fit
-(curve, then matrix, then per-image oracle, then ridge predictors, then
-LUT — each stage frozen before the next). `fit_joint.py` is its
-replacement: the same pipeline expressed differentiably in PyTorch and
-fitted **end to end** — matrix, three per-channel curves, 17³ lattice,
-per-image latents and the tuning predictor all get gradients at once, with
-multiple restarts from both the shipped model and random inits. The joint
-fit beats the stage-wise one on every folder.
+`fit_joint.py` expresses the pipeline differentiably in PyTorch and fits it
+**end to end** — matrix, three per-channel curves, 17³ lattice, per-image
+latents and the tuning predictor all get gradients at once, with multiple
+restarts from both the shipped model and random inits. Earlier stage-wise,
+Adobe-DCP and side-analysis scripts are in git history; their results are
+in the ladder below.
 
 ## Regenerating
 
@@ -35,9 +33,7 @@ fit beats the stage-wise one on every folder.
    ```
 
    The scripts expect `samples2.npz` / `images2.json` / `features2.json`
-   built from the dump (see `prep_samples2.py` / `extract_features2.py`
-   headers in the session scratchpad, or re-derive: 3000 random pixels per
-   image plus per-image metering stats).
+   built from the dump by `prep_samples2.py` and `extract_features2.py`.
 
 3. Fit (a sweep of restarts; ~30 s per restart on an M-series GPU):
 
@@ -60,11 +56,6 @@ fit beats the stage-wise one on every folder.
    ```sh
    cargo run --release -p imgvwr-develop --example verify_look -- <shoots>...
    ```
-
-Side analyses: `fit_predictors.py` (ridge/k-NN/LightGBM/MLP bake-off for
-the tuning predictor), `localized_sweep.py` (block-max error over every
-pair — catches categorical bugs mean error hides), `spatial_ceiling.py`
-(how much of the residual a coarse spatial gain field would explain).
 
 ## The measured ladder (2026-08-14, 1052 usable Z6 III pairs, five shoots)
 
