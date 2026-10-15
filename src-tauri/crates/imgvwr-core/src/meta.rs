@@ -128,7 +128,7 @@ pub fn read_camera_decisions(path: &Path) -> CameraDecisions {
         ..Default::default()
     };
 
-    if let Some(file) = File::open(path).ok() {
+    if let Ok(file) = File::open(path) {
         if let Ok(exif) = exif::Reader::new().read_from_container(&mut BufReader::new(file)) {
             let signed = |tag: exif::Tag| {
                 exif.get_field(tag, exif::In::PRIMARY).and_then(|f| match &f.value {

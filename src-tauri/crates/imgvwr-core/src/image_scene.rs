@@ -74,7 +74,7 @@ impl SceneImage for RadianceScene {
 
         let gains = white_balance_gains(self.as_shot(), req.white_balance);
         if gains != [1.0, 1.0, 1.0] {
-            for px in rgb.chunks_exact_mut(3) {
+            for px in rgb.as_chunks_mut::<3>().0 {
                 px[0] *= gains[0];
                 px[1] *= gains[1];
                 px[2] *= gains[2];
@@ -212,7 +212,7 @@ impl SceneImage for ImageCrateScene {
 
         let gains = white_balance_gains(self.as_shot(), req.white_balance);
         if gains != [1.0, 1.0, 1.0] {
-            for px in rgb.chunks_exact_mut(3) {
+            for px in rgb.as_chunks_mut::<3>().0 {
                 px[0] *= gains[0];
                 px[1] *= gains[1];
                 px[2] *= gains[2];
@@ -324,7 +324,7 @@ mod tests {
         let out = resample_to_linear(&src, 8, 8, (0, 0, 8, 8), 2, 2);
         assert_eq!(out.len(), 2 * 2 * 3);
         let expect = srgb_to_linear(128.0 / 255.0);
-        for px in out.chunks_exact(3) {
+        for px in out.as_chunks::<3>().0 {
             assert!((px[0] - expect).abs() < 1e-5, "{px:?}");
         }
     }

@@ -167,7 +167,7 @@ fn neutral_candidates(scene: &dyn SceneImage, wb: WhiteBalance) -> Vec<(f32, f32
         })
         .unwrap();
     let mut scored: Vec<(f32, f32, f32)> = Vec::new();
-    for (i, px) in img.rgb.chunks_exact(3).enumerate() {
+    for (i, px) in img.rgb.as_chunks::<3>().0.iter().enumerate() {
         let y = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
         if !(0.05..0.5).contains(&y) {
             continue;
@@ -267,6 +267,6 @@ fn render_filter(filter: &objc2_core_image::CIRAWFilter, w: u32, h: u32) -> Vec<
             kCIFormatRGBAf,
             Some(&cs),
         );
-        rgba.chunks_exact(4).flat_map(|p| p[..3].to_vec()).collect()
+        rgba.as_chunks::<4>().0.iter().flat_map(|p| p[..3].to_vec()).collect()
     }
 }

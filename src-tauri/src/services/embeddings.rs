@@ -419,11 +419,11 @@ mod tests {
         );
 
         assert_eq!(
-            service.rank("model-a", &[1.0, 0.0], &[path.clone()]),
+            service.rank("model-a", &[1.0, 0.0], std::slice::from_ref(&path)),
             vec![(path.clone(), 1.0)]
         );
         assert_eq!(
-            service.rank("model-b", &[1.0, 0.0], &[path.clone()]),
+            service.rank("model-b", &[1.0, 0.0], std::slice::from_ref(&path)),
             vec![(path, 0.0)]
         );
     }

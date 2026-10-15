@@ -253,67 +253,6 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     acc.iter().sum::<f32>() + tail
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The Metal-residency crash cannot be regression-tested (needs a loaded model and a GPU);
-    /// what is pinned is the property that made it possible — `busy` admits exactly one caller.
-    #[test]
-    fn inference_admits_one_caller_at_a_time() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::{Arc, Mutex};
-
-        let gpu = Arc::new(Mutex::new(()));
-        let inside = Arc::new(AtomicUsize::new(0));
-        let ever_overlapped = Arc::new(AtomicUsize::new(0));
-
-        let threads: Vec<_> = (0..8)
-            .map(|_| {
-                let (gpu, inside, seen) =
-                    (Arc::clone(&gpu), Arc::clone(&inside), Arc::clone(&ever_overlapped));
-                std::thread::spawn(move || {
-                    for _ in 0..200 {
-                        let _turn = gpu.lock().unwrap_or_else(|e| e.into_inner());
-                        let n = inside.fetch_add(1, Ordering::SeqCst) + 1;
-                        seen.fetch_max(n, Ordering::SeqCst);
-                        std::hint::spin_loop();
-                        inside.fetch_sub(1, Ordering::SeqCst);
-                    }
-                })
-            })
-            .collect();
-        for t in threads {
-            t.join().unwrap();
-        }
-        assert_eq!(
-            ever_overlapped.load(Ordering::SeqCst),
-            1,
-            "two forward passes were in flight together"
-        );
-    }
-
-    #[test]
-    fn l2_normalize_gives_unit_length() {
-        let v = l2_normalize(vec![3.0, 4.0]);
-        assert!((dot(&v, &v) - 1.0).abs() < 1e-6);
-        assert!((v[0] - 0.6).abs() < 1e-6);
-    }
-
-    #[test]
-    fn l2_normalize_survives_zero_vector() {
-        assert_eq!(l2_normalize(vec![0.0, 0.0]), vec![0.0, 0.0]);
-    }
-
-    #[test]
-    fn catalog_ids_are_unique_and_resolvable() {
-        for spec in MODELS {
-            assert!(std::ptr::eq(model_spec(spec.id).unwrap(), spec));
-        }
-        assert!(model_spec("nope").is_none());
-    }
-}
-
 /// ArcFace-family identity vectors ("same face") — a generic image embedding groups by lighting and hair instead.
 /// insightface buffalo_l (ResNet-50, WebFace600K) via onnxruntime: on unaligned crops the small MobileFaceNet's same/different-person similarities overlap.
 pub struct FaceEmbedder {
@@ -390,5 +329,66 @@ impl FaceEmbedder {
             .map_err(|e| EmbedError::Image(e.to_string()))?;
         let n = raw.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-12);
         Ok(raw.iter().map(|v| v / n).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Metal-residency crash cannot be regression-tested (needs a loaded model and a GPU);
+    /// what is pinned is the property that made it possible — `busy` admits exactly one caller.
+    #[test]
+    fn inference_admits_one_caller_at_a_time() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        let gpu = Arc::new(Mutex::new(()));
+        let inside = Arc::new(AtomicUsize::new(0));
+        let ever_overlapped = Arc::new(AtomicUsize::new(0));
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let (gpu, inside, seen) =
+                    (Arc::clone(&gpu), Arc::clone(&inside), Arc::clone(&ever_overlapped));
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        let _turn = gpu.lock().unwrap_or_else(|e| e.into_inner());
+                        let n = inside.fetch_add(1, Ordering::SeqCst) + 1;
+                        seen.fetch_max(n, Ordering::SeqCst);
+                        std::hint::spin_loop();
+                        inside.fetch_sub(1, Ordering::SeqCst);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(
+            ever_overlapped.load(Ordering::SeqCst),
+            1,
+            "two forward passes were in flight together"
+        );
+    }
+
+    #[test]
+    fn l2_normalize_gives_unit_length() {
+        let v = l2_normalize(vec![3.0, 4.0]);
+        assert!((dot(&v, &v) - 1.0).abs() < 1e-6);
+        assert!((v[0] - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn l2_normalize_survives_zero_vector() {
+        assert_eq!(l2_normalize(vec![0.0, 0.0]), vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn catalog_ids_are_unique_and_resolvable() {
+        for spec in MODELS {
+            assert!(std::ptr::eq(model_spec(spec.id).unwrap(), spec));
+        }
+        assert!(model_spec("nope").is_none());
     }
 }
