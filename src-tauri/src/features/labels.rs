@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use serde::Serialize;
+use tauri::State;
 
 /// `stars` is genuinely absent until rated; `tags` is the full (possibly empty) set.
 #[derive(Debug, Clone, Serialize, specta::Type)]
@@ -158,6 +159,46 @@ fn empty_labels() -> ImageLabels {
         stars: None,
         tags: Vec::new(),
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_for_paths(
+    service: State<'_, Arc<LabelService>>,
+    paths: Vec<String>,
+) -> Result<HashMap<String, ImageLabels>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.for_paths(&paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+// Label writes answer for every path given, so the frontend can install the result as-is.
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_set_stars(
+    service: State<'_, Arc<LabelService>>,
+    paths: Vec<String>,
+    stars: Option<u8>,
+) -> Result<HashMap<String, ImageLabels>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.set_stars(&paths, stars))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn labels_toggle_tag(
+    service: State<'_, Arc<LabelService>>,
+    paths: Vec<String>,
+    tag: String,
+) -> Result<HashMap<String, ImageLabels>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.toggle_tag(&paths, &tag))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]

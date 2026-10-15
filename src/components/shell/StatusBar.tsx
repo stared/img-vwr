@@ -1,4 +1,4 @@
-import { TagDot } from "../../labels/TagDot";
+import { PhotoBadges } from "../../registry/badges";
 import { pairedName, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 
@@ -13,7 +13,6 @@ export function StatusBar() {
   const img = useAppStore((s) => s.viewerImg);
   const visible = useVisibleEntries();
   const entry = useSelectedEntry();
-  const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
   const allEntries = useAppStore((s) => s.entries);
   const stacking = useAppStore((s) => s.stacking);
   const siblings = entry && stacking ? siblingsOf(allEntries, entry) : [];
@@ -23,8 +22,6 @@ export function StatusBar() {
   const totalText = status === "loading" ? `${total}…` : `${total}`;
   const countText =
     visible.length === total ? `${totalText} images` : `${visible.length} of ${totalText}`;
-  const stars = labels?.stars ?? null;
-  const tags = labels?.tags ?? [];
 
   return (
     <footer className="statusbar">
@@ -36,17 +33,7 @@ export function StatusBar() {
             : `${scope.sourceId} · ${scope.label}`}
       </span>
       <span className="status-right">
-        {(stars !== null || tags.length > 0) && (
-          <span className="status-labels">
-            {stars !== null && <span className="status-stars">{"★".repeat(stars)}</span>}
-            {tags.map((t) => (
-              <span key={t}>
-                <TagDot tag={t} fill="all" />
-                {t}
-              </span>
-            ))}
-          </span>
-        )}
+        {entry && <PhotoBadges path={entry.path} place="status" />}
         {entry && <span>{pairedName(entry, siblings)}</span>}
         {entry && chosen > 1 && (
           <button

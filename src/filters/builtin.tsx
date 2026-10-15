@@ -7,7 +7,7 @@ import {
 import { registerFilterField } from "../registry/filters";
 import { aspectLabelOf, effectiveDims, takenMs } from "../state/derived";
 import { dateRangeSpec, numberRangeSpec } from "../state/query";
-import { useAppStore } from "../state/store";
+import { META, useAppStore } from "../state/store";
 
 function rangeMenu(field: string) {
   return function RangeMenu({ close }: { close: () => void }) {
@@ -31,7 +31,7 @@ export function registerBuiltinFilterFields(): void {
     label: "format",
     hint: "›",
     appliesTo: () => true,
-    reads: "entry",
+    reads: [],
     Menu: FormatMenuItems,
   });
   registerFilterField({
@@ -39,8 +39,8 @@ export function registerBuiltinFilterFields(): void {
     id: "camera",
     label: "camera",
     appliesTo: () => true,
-    reads: "meta",
-    value: (_entry, { meta }) => meta?.exif?.camera ?? null,
+    reads: [META],
+    value: (_entry, data) => data.get(META)?.exif?.camera ?? null,
     Menu: CameraMenuItems,
   });
   registerFilterField({
@@ -48,8 +48,9 @@ export function registerBuiltinFilterFields(): void {
     id: "aspect",
     label: "aspect",
     appliesTo: () => true,
-    reads: "meta",
-    value: (_entry, { meta }) => {
+    reads: [META],
+    value: (_entry, data) => {
+      const meta = data.get(META);
       const dims = meta ? effectiveDims(meta) : null;
       return dims ? aspectLabelOf(dims) : null;
     },
@@ -60,8 +61,11 @@ export function registerBuiltinFilterFields(): void {
     id: "taken",
     label: "taken",
     appliesTo: () => true,
-    reads: "meta",
-    spec: dateRangeSpec((_entry, { meta }) => (meta ? takenMs(meta) : null)),
+    reads: [META],
+    spec: dateRangeSpec((_entry, data) => {
+      const meta = data.get(META);
+      return meta ? takenMs(meta) : null;
+    }),
     Menu: rangeMenu("taken"),
   });
   registerFilterField({
@@ -69,7 +73,7 @@ export function registerBuiltinFilterFields(): void {
     id: "modified",
     label: "modified",
     appliesTo: () => true,
-    reads: "entry",
+    reads: [],
     spec: dateRangeSpec((entry) => entry.modifiedMs),
     Menu: rangeMenu("modified"),
   });
@@ -78,7 +82,7 @@ export function registerBuiltinFilterFields(): void {
     id: "size",
     label: "size",
     appliesTo: () => true,
-    reads: "entry",
+    reads: [],
     // Exact file size is never a useful question; ranges only.
     spec: numberRangeSpec((entry) => entry.size, {
       unit: "MB",
@@ -93,9 +97,10 @@ export function registerBuiltinFilterFields(): void {
     id: "edge",
     label: "longest edge",
     appliesTo: () => true,
-    reads: "meta",
+    reads: [META],
     spec: numberRangeSpec(
-      (_entry, { meta }) => {
+      (_entry, data) => {
+        const meta = data.get(META);
         const dims = meta ? effectiveDims(meta) : null;
         return dims ? Math.max(dims.width, dims.height) : null;
       },

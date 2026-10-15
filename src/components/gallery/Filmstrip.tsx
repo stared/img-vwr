@@ -4,7 +4,7 @@ import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { groupStacks, pairedName, stackCaption, stackKeyOf } from "../../state/stacks";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { ThumbLabels } from "../../labels/TagDot";
+import { PhotoBadges } from "../../registry/badges";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 const REQUEST_DEBOUNCE_MS = 50;
@@ -241,7 +241,7 @@ export function Filmstrip({ height }: { height: number }) {
               useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            <ThumbLabels path={entry.path} />
+            <PhotoBadges path={entry.path} place="cell" />
             <span className="filmstrip-photo">
               {cropped !== null && <CropBadge />}
               {thumb !== undefined && siblings.length > 0 && !spread && (

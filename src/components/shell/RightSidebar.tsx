@@ -28,7 +28,7 @@ export function RightSidebar() {
   useVisibleEntries();
 
   const all = ordered(allPanels("right"), order);
-  const panels = all.filter((p) => p.when?.() ?? true);
+  const panels = all.filter((p) => p.when());
 
   if (all.length === 0) return null;
 

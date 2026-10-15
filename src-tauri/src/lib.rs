@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod features;
 mod menu;
 mod services;
 
@@ -11,7 +12,7 @@ use tauri_specta::{collect_commands, collect_events, Builder};
 use imgvwr_core::SceneRegistry;
 use services::develop::DevelopService;
 use services::embeddings::EmbeddingService;
-use services::labels::LabelService;
+use features::labels::LabelService;
 use services::thumbnails::ThumbnailService;
 use services::watcher::WatchService;
 
@@ -45,9 +46,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::faces_people,
             commands::faces_rename,
             commands::image_stats,
-            commands::labels_for_paths,
-            commands::labels_set_stars,
-            commands::labels_toggle_tag,
+            features::labels::labels_for_paths,
+            features::labels::labels_set_stars,
+            features::labels::labels_toggle_tag,
             commands::develop_state,
             commands::develop_presets,
             commands::develop_auto_exposure,

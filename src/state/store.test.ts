@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import type { Channel } from "../registry/channels";
 import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
@@ -18,6 +19,8 @@ import {
   withSelectionHeld,
   type Scope,
 } from "./store";
+
+const SCORES: Channel<number | null> = { missing: null, read: () => ({}), subscribe: () => () => {} };
 
 const SOURCE_SCOPE: Scope = { kind: "source", sourceId: "tsrc", arg: "x", label: "x" };
 const OTHER_SOURCE_SCOPE: Scope = { kind: "source", sourceId: "plain", arg: "y", label: "y" };
@@ -42,7 +45,7 @@ beforeAll(() => {
         hints: { asc: "as delivered", desc: "reversed" },
         defaultDir: "asc",
         appliesTo: sourceScope("tsrc"),
-        reads: "entry",
+        reads: [],
         missing: "last",
         param: null,
         value: (_entry, ctx) => ctx.sourceIndex,
@@ -57,7 +60,7 @@ beforeAll(() => {
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
     appliesTo: () => true,
-    reads: "scores",
+    reads: [SCORES],
     missing: "hide",
     param: {
       segments: () => [{ kind: "text", text: "closest to x" }],
@@ -66,7 +69,7 @@ beforeAll(() => {
       isSet: () => true,
       clear: () => {},
     },
-    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
+    value: (_entry, data) => data.get(SCORES),
   });
   registerSource({
     id: "plain",
@@ -182,7 +185,6 @@ function showing(selected: number[], anchor: number | null = null) {
     selectionAnchor: anchor === null ? (chosen[0] ?? null) : (entries[anchor]?.path ?? null),
     meta: {},
     similarity: null,
-    labels: {},
     peopleByPath: {},
     thumbs: {},
     thumbErrors: {},
@@ -398,7 +400,6 @@ describe("a selection follows its photograph across a collapse", () => {
     query: defaultQuery,
     meta: {},
     similarity: null,
-    labels: {},
     peopleByPath: {},
     stacking: true,
     // Raw-led so the collapse genuinely swaps which file is showing — the harder case.

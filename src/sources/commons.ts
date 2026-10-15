@@ -135,7 +135,7 @@ export const commonsSource: ImageSource = {
       hints: { asc: "best match", desc: "reversed" },
       defaultDir: "asc",
       appliesTo: sourceScope("commons"),
-      reads: "entry",
+      reads: [],
       missing: "last",
       param: null,
       value: (_entry, ctx) => ctx.sourceIndex,

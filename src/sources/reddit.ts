@@ -92,7 +92,7 @@ export const redditSource: ImageSource = {
       hints: { asc: "front page", desc: "reversed" },
       defaultDir: "asc",
       appliesTo: sourceScope("reddit"),
-      reads: "entry",
+      reads: [],
       missing: "last",
       param: null,
       value: (_entry, ctx) => ctx.sourceIndex,

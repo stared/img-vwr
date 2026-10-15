@@ -17,17 +17,17 @@ import { DevelopLoupe } from "./components/develop/DevelopLoupe";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
 import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
-import { ColorsPanel, HistogramPanel, LabelsPanel, ShotPanel } from "./components/shell/InfoPanel";
+import { ColorsPanel, HistogramPanel, ShotPanel } from "./components/shell/InfoPanel";
 import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
-import { allPanels, registerPanel } from "./registry/panels";
+import { allPanels, always, registerPanel } from "./registry/panels";
 import { allViews, registerView } from "./registry/views";
 import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
-import { registerLabels } from "./labels";
+import { registerLabels } from "./features/labels";
 import { registerThumbCrops } from "./state/thumbCrops";
 import { useDevelopStore } from "./state/develop";
 import { useAppStore, visibleOf } from "./state/store";
@@ -104,48 +104,35 @@ registerSceneCommands();
 registerCopyCommands();
 registerTrashCommands();
 registerSortCommands();
-registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
+const left = { side: "left" as const, fill: false, when: always };
+registerPanel({ ...left, id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon />, order: 10 });
 for (const source of allSources()) {
   registerPanel({
+    ...left,
     id: `source-${source.id}`,
     title: source.sidebarTitle,
     component: makeSourcePanel(source),
     icon: SOURCE_ICONS[source.id] ?? source.glyph,
+    order: 20,
   });
 }
-registerPanel({
-  id: "similarity",
-  title: "Similarity",
-  component: SimilarityPanel,
-  icon: <SimilarityIcon />,
-});
-registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
-// Right-panel registration order is the default section order.
+registerPanel({ ...left, id: "similarity", title: "Similarity", component: SimilarityPanel, icon: <SimilarityIcon />, order: 30 });
+registerPanel({ ...left, id: "people", title: "People", component: PeoplePanel, icon: "☺", order: 40 });
+// Right panels: the order numbers are the default section order (labels registers at 50).
+const right = { side: "right" as const, icon: null, fill: false };
 const selected = () => useAppStore.getState().selectedIndex !== null;
 const inSession = () => useDevelopStore.getState().session !== null;
-registerPanel({ id: "shot", title: "Shot", component: ShotPanel, side: "right", when: selected });
-registerPanel({ id: "loupe", title: "Loupe", component: DevelopLoupe, side: "right", when: inSession });
+registerPanel({ ...right, id: "shot", title: "Shot", component: ShotPanel, order: 10, when: selected });
+registerPanel({ ...right, id: "loupe", title: "Loupe", component: DevelopLoupe, order: 20, when: inSession });
+registerPanel({ ...right, id: "histogram", title: "Histogram", component: HistogramPanel, order: 30, when: inSession });
+registerPanel({ ...right, id: "develop", title: "Develop", component: DevelopPanel, order: 40, when: inSession });
+registerPanel({ ...right, id: "colors", title: "Colors", component: ColorsPanel, order: 60, when: selected });
 registerPanel({
-  id: "histogram",
-  title: "Histogram",
-  component: HistogramPanel,
-  side: "right",
-  when: inSession,
-});
-registerPanel({
-  id: "develop",
-  title: "Develop",
-  component: DevelopPanel,
-  side: "right",
-  when: inSession,
-});
-registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
-registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
-registerPanel({
+  ...right,
   id: "stats",
   title: "Statistics",
   component: StatsPanel,
-  side: "right",
+  order: 70,
   fill: true,
   when: () => {
     const state = useAppStore.getState();
@@ -154,7 +141,7 @@ registerPanel({
       && visibleOf(state, state.query).length > 1;
   },
 });
-for (const panel of allPanels()) {
+for (const panel of allPanels("left")) {
   registerCommand({
     id: `view.${panel.id}`,
     title: `Show ${panel.title}`,

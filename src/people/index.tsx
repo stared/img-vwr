@@ -7,9 +7,13 @@ import {
   fileUrl,
   type PersonCluster,
 } from "../ipc";
+import { storeChannel } from "../registry/channels";
 import { registerFilterField } from "../registry/filters";
 import { isRawEntry } from "../state/stacks";
-import { useAppStore } from "../state/store";
+import { useAppStore, type AppState } from "../state/store";
+
+/** path → names of the people in it; empty, never unknown. */
+const PEOPLE = storeChannel<AppState, string[]>(useAppStore, (s) => s.peopleByPath, []);
 
 /** Same-person cosine threshold in the ArcFace identity space, not the Similarity panel's model. */
 const PERSON_SIM = 0.45;
@@ -302,8 +306,8 @@ export function registerPeople(): void {
     id: "person",
     label: "person",
     appliesTo: (scope) => scope?.kind === "folder",
-    reads: "people",
+    reads: [PEOPLE],
     Menu: PersonMenuItems,
-    values: (_entry, { people }) => people,
+    values: (_entry, data) => data.get(PEOPLE),
   });
 }

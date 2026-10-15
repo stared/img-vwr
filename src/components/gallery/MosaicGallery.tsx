@@ -4,7 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileEntry } from "../../ipc";
 import { fileUrl, requestMeta, requestThumbnails } from "../../ipc";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { ThumbLabels } from "../../labels/TagDot";
+import { PhotoBadges } from "../../registry/badges";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
 
@@ -182,7 +182,7 @@ function MosaicCell({
         useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
       }}
     >
-      <ThumbLabels path={entry.path} />
+      <PhotoBadges path={entry.path} place="cell" />
       {crop !== undefined && <CropBadge />}
       {cacheFile !== undefined ? (
         // The cell's shape is already the crop's, so the frame aspect is recovered by inverting croppedBoxRatio.

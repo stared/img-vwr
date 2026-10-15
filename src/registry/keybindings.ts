@@ -44,7 +44,7 @@ export function eventMatchesChord(e: KeyboardEvent, chord: Chord): boolean {
 /** One chord bound to one command; order decides which wins. */
 export type Keybinding = readonly [chord: string, commandId: string];
 
-export const defaultKeybindings: readonly Keybinding[] = [
+export const defaultKeybindings: Keybinding[] = [
   ["mod+k", "palette.open"],
   ["mod+p", "palette.open"],
   ["mod+o", "folder.open"],
@@ -101,14 +101,12 @@ export const defaultKeybindings: readonly Keybinding[] = [
   ["mod+0", "viewer.zoomFit"],
   ["mod+1", "viewer.zoomActual"],
   ["shift+?", "help.shortcuts"],
-  ["0", "labels.stars.0"],
-  ["1", "labels.stars.1"],
-  ["2", "labels.stars.2"],
-  ["3", "labels.stars.3"],
-  ["4", "labels.stars.4"],
-  ["5", "labels.stars.5"],
-  ["t", "labels.tag"],
 ];
+
+/** A feature's own chords, appended after the built-ins so their fallbacks keep priority. */
+export function registerKeybindings(bindings: readonly Keybinding[]): void {
+  defaultKeybindings.push(...bindings);
+}
 
 /**
  * Every command bound to this event, in table order. The caller runs the

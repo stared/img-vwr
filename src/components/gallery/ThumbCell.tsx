@@ -3,7 +3,7 @@ import { fileUrl } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { pairedName, siblingsOf } from "../../state/stacks";
 import { selectMode, stacksCollapse, useAppStore } from "../../state/store";
-import { ThumbLabels } from "../../labels/TagDot";
+import { PhotoBadges } from "../../registry/badges";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 interface ThumbCellProps {
@@ -40,7 +40,7 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
       }}
     >
       <div className="thumb-frame" style={{ height: size }}>
-        <ThumbLabels path={entry.path} />
+        <PhotoBadges path={entry.path} place="cell" />
         {crop !== undefined && <CropBadge />}
         {cacheFile !== undefined ? (
           crop !== undefined && dims !== null ? (

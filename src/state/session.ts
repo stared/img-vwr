@@ -1,5 +1,6 @@
 import { CAPTION_CYCLE, useDevelopStore, type CaptionMode } from "./develop";
-import { defaultQuery, usesScores, type Filter, type Query, type Sort } from "./query";
+import { getSort } from "../registry/sorts";
+import { defaultQuery, type Filter, type Query, type Sort } from "./query";
 import type { StackLead } from "./stacks";
 import {
   useAppStore,
@@ -51,8 +52,8 @@ function snapshot(): SavedSession {
   return {
     scope: s.scope,
     galleryLayout: s.galleryLayout,
-    // A scores-backed sort reads a model run that died with the window; restoring it would sort by nothing.
-    query: usesScores(s.query) ? { ...s.query, sort: defaultQuery.sort } : s.query,
+    // A parameterized sort (e.g. closest-to) reads a run that died with the window; restoring it would sort by nothing.
+    query: getSort(s.query.sort.key)?.param ? { ...s.query, sort: defaultQuery.sort } : s.query,
     stacking: s.stacking,
     stackLead: s.stackLead,
     gridColumns: s.gridColumns,

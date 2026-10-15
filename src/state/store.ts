@@ -1,3 +1,4 @@
+import { useCallback, useSyncExternalStore } from "react";
 import { create } from "zustand";
 
 import type { Size, Viewport } from "../components/viewer/viewport";
@@ -14,12 +15,12 @@ import type {
   Crop,
   EmbedModelInfo,
   FileEntry,
-  ImageLabels,
   ImageMeta,
   MetaEntry,
   PersonCluster,
 } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
+import { storeChannel, type Channel, type ChannelMaps } from "../registry/channels";
 import { getSource } from "../registry/sources";
 import {
   EPOCH_PENDING,
@@ -44,11 +45,8 @@ import {
 } from "./stacks";
 import {
   applyQuery,
+  channelsRead,
   defaultQuery,
-  usesLabels,
-  usesMeta,
-  usesPeople,
-  usesScores,
   withFormatToggled,
   withNameFilter,
   withoutFilters,
@@ -99,8 +97,6 @@ export interface AppState {
   /** folder path → direct image count, streamed from background counting. */
   dirCounts: Record<string, number>;
   meta: Record<string, ImageMeta>;
-  /** path → user labels (stars, tags), loaded per scope; absent = unlabeled. */
-  labels: Record<string, ImageLabels>;
   /** path → stored develop crop, for miniatures; absent = whole frame. */
   crops: Record<string, Crop>;
   inspectorVisible: boolean;
@@ -198,11 +194,7 @@ interface AppActions {
   thumbFailed: (path: string, error: string, epoch: number) => void;
   dirCountReady: (path: string, count: number) => void;
   metaBatchReady: (items: MetaEntry[], epoch: number) => void;
-  /** Install the scope's stored labels (epoch-guarded, like meta). */
-  labelsLoaded: (labels: Record<string, ImageLabels>, epoch: number) => void;
-  /** Mirror the label store's response for exactly the paths it answered for. */
-  labelsApplied: (labels: Record<string, ImageLabels>) => void;
-  /** Install stored crops for a scope's paths (epoch-guarded, like labels). */
+  /** Install stored crops for a scope's paths (epoch-guarded, like meta). */
   cropsLoaded: (crops: Record<string, Crop>, epoch: number) => void;
   /** One photograph's crop changed in the darkroom; null = back to whole. */
   cropApplied: (path: string, crop: Crop | null) => void;
@@ -289,7 +281,6 @@ export const initialState: AppState = {
   thumbErrors: {},
   dirCounts: {},
   meta: {},
-  labels: {},
   crops: {},
   inspectorVisible: true,
   panelFolds: {},
@@ -442,10 +433,6 @@ type VisibleInputs = Pick<
   | "selectedIndex"
   | "selection"
   | "selectionAnchor"
-  | "meta"
-  | "similarity"
-  | "labels"
-  | "peopleByPath"
   | "stacking"
   | "stackLead"
   | "preferredMember"
@@ -566,8 +553,8 @@ export function withDeleted(
 }
 
 /** Photographs that survive the new filters stay selected; the rest are dropped, never replaced. */
-export function withQuery(state: VisibleInputs, query: Query): Partial<AppState> {
-  const held = withSelectionHeld(state, { query });
+export function withQuery(state: VisibleInputs, query: Query, landOn?: string): Partial<AppState> {
+  const held = withSelectionHeld(state, { query }, landOn);
   // A filter that hides the viewed photograph must not strand an empty viewer; it yields to the gallery.
   if (state.viewMode === "viewer" && held.selectedIndex === null) {
     return { ...held, viewMode: "gallery" };
@@ -758,12 +745,6 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 
   // Merge, not replace: batches of a streaming scan each bring their slice.
-  labelsLoaded: (labels, epoch) => {
-    if (epoch === get().epoch) set({ labels: { ...get().labels, ...labels } });
-  },
-
-  labelsApplied: (labels) => set({ labels: { ...get().labels, ...labels } }),
-
   cropsLoaded: (crops, epoch) => {
     if (epoch === get().epoch) set({ crops: { ...get().crops, ...crops } });
   },
@@ -958,16 +939,18 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     // Streaming score updates must not reset a direction the user flipped.
     const current = get().query.sort;
     const dir = current.key === "similar" ? current.dir : "desc";
-    set({
-      similarity,
-      ...withQuery({ ...get(), similarity }, { ...get().query, sort: { key: "similar", dir } }),
-    });
+    // Scores are a channel read live, so they land first; the lead is captured before they move it.
+    const lead = leadPath(get());
+    set({ similarity });
+    set(withQuery(get(), { ...get().query, sort: { key: "similar", dir } }, lead));
   },
 
   clearSimilarity: () => {
     const { query } = get();
     const sort = query.sort.key === "similar" ? defaultQuery.sort : query.sort;
-    set({ similarity: null, ...withQuery({ ...get(), similarity: null }, { ...query, sort }) });
+    const lead = leadPath(get());
+    set({ similarity: null });
+    set(withQuery(get(), { ...query, sort }, lead));
   },
 
   setEmbedModels: (embedModels) => set({ embedModels }),
@@ -1012,100 +995,68 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   },
 }));
 
+/** Per-file EXIF and dimensions; undefined until the background read lands. */
+export const META: Channel<ImageMeta | undefined> = storeChannel<AppState, ImageMeta | undefined>(
+  useAppStore,
+  (s) => s.meta,
+  undefined,
+);
+
+/** The lead photograph's path in the visible list; undefined when nothing is selected. */
+function leadPath(state: VisibleInputs): string | undefined {
+  return state.selectedIndex === null
+    ? undefined
+    : visibleOf(state, state.query)[state.selectedIndex]?.path;
+}
+
 /* All consumers share one memoized filter+sort result, held by input identity; one slot suffices since every consumer reads the same store state. */
 let visibleCache: {
   entries: FileEntry[];
   query: Query;
-  meta: Record<string, ImageMeta> | null;
-  scores: Record<string, number> | null;
-  labels: Record<string, ImageLabels> | null;
-  people: Record<string, string[]> | null;
+  /** The maps of the channels the query reads, in `channelsRead` order. */
+  maps: readonly unknown[];
   stacking: boolean;
   lead: StackLead;
   preferred: Record<string, string>;
   result: FileEntry[];
 } | null = null;
 
-/** Entries with filters + sort applied, memoized across all callers. */
+/** Entries with filters + sort applied, memoized across all callers. Channel data is read live, never from `state`. */
 export function visibleOf(
   state: Pick<
     AppState,
-    | "entries"
-    | "meta"
-    | "similarity"
-    | "labels"
-    | "peopleByPath"
-    | "stacking"
-    | "stackLead"
-    | "preferredMember"
-    | "viewMode"
-    | "galleryLayout"
+    "entries" | "stacking" | "stackLead" | "preferredMember" | "viewMode" | "galleryLayout"
   >,
   query: Query,
 ): FileEntry[] {
   // Only channels the query reads participate — streaming batches must not re-sort what a plain name sort ignores.
-  const meta = usesMeta(query) ? state.meta : null;
-  const scores = usesScores(query) ? (state.similarity?.scores ?? null) : null;
-  const labels = usesLabels(query) ? state.labels : null;
-  const people = usesPeople(query) ? state.peopleByPath : null;
-  const collapsing = stacksCollapse(state);
-  return applyQueryMemo(
-    state.entries,
-    query,
-    meta,
-    scores,
-    labels,
-    people,
-    collapsing,
-    state.stackLead,
-    state.preferredMember,
-  );
-}
-
-function applyQueryMemo(
-  entries: FileEntry[],
-  query: Query,
-  meta: Record<string, ImageMeta> | null,
-  scores: Record<string, number> | null,
-  labels: Record<string, ImageLabels> | null,
-  people: Record<string, string[]> | null,
-  stacking: boolean,
-  lead: StackLead,
-  preferred: Record<string, string>,
-): FileEntry[] {
+  const channels = channelsRead(query);
+  const maps = channels.map((c) => c.read());
+  const stacking = stacksCollapse(state);
   const c = visibleCache;
   if (
     c &&
-    c.entries === entries &&
+    c.entries === state.entries &&
     c.query === query &&
-    c.meta === meta &&
-    c.scores === scores &&
-    c.labels === labels &&
-    c.people === people &&
+    c.maps.length === maps.length &&
+    c.maps.every((m, i) => m === maps[i]) &&
     c.stacking === stacking &&
-    c.lead === lead &&
-    c.preferred === preferred
+    c.lead === state.stackLead &&
+    c.preferred === state.preferredMember
   ) {
     return c.result;
   }
-  const filtered = applyQuery(entries, query, {
-    meta: meta ?? {},
-    scores: scores ?? {},
-    labels: labels ?? {},
-    people: people ?? {},
-  });
+  const byChannel: ChannelMaps = new Map(channels.map((ch, i) => [ch, maps[i] ?? {}]));
+  const filtered = applyQuery(state.entries, query, byChannel);
   // Stacking collapses what the query already decided, so a filter matching one member of a pair still shows it.
-  const result = stacking ? collapseStacks(filtered, preferred, lead) : filtered;
+  const result = stacking ? collapseStacks(filtered, state.preferredMember, state.stackLead) : filtered;
   visibleCache = {
-    entries,
+    entries: state.entries,
     query,
-    meta,
-    scores,
-    labels,
-    people,
+    maps,
     stacking,
-    lead,
-    preferred,
+    lead: state.stackLead,
+    preferred: state.preferredMember,
     result,
   };
   return result;
@@ -1119,25 +1070,17 @@ export function useSelectedEntry(): FileEntry | null {
 }
 
 export function useVisibleEntries(): FileEntry[] {
-  const entries = useAppStore((s) => s.entries);
   const query = useAppStore((s) => s.query);
-  // Subscribe to a data channel only while the query reads it — otherwise every streamed batch re-renders every consumer.
-  const meta = useAppStore((s) => (usesMeta(s.query) ? s.meta : null));
-  const scores = useAppStore((s) => (usesScores(s.query) ? (s.similarity?.scores ?? null) : null));
-  const labels = useAppStore((s) => (usesLabels(s.query) ? s.labels : null));
-  const people = useAppStore((s) => (usesPeople(s.query) ? s.peopleByPath : null));
-  const stacking = useAppStore(stacksCollapse);
-  const lead = useAppStore((s) => s.stackLead);
-  const preferred = useAppStore((s) => s.preferredMember);
-  return applyQueryMemo(
-    entries,
-    query,
-    meta,
-    scores,
-    labels,
-    people,
-    stacking,
-    lead,
-    preferred,
+  // Listens to the store and to exactly the channels this query reads; the memo turns everything else into a no-op.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const offs = [useAppStore.subscribe(onChange), ...channelsRead(query).map((c) => c.subscribe(onChange))];
+      return () => offs.forEach((off) => off());
+    },
+    [query],
   );
+  return useSyncExternalStore(subscribe, () => {
+    const state = useAppStore.getState();
+    return visibleOf(state, state.query);
+  });
 }

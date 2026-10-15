@@ -13,7 +13,6 @@ use crate::services::embeddings::EmbeddingService;
 use crate::services::export::{ExportJob, ExportPlan, Exported};
 use crate::services::faces::{FaceService, PersonCluster};
 use crate::services::files::TrashOutcome;
-use crate::services::labels::{ImageLabels, LabelService};
 use crate::services::thumbnails::ThumbnailService;
 use crate::services::watcher::WatchService;
 use imgvwr_core::Region;
@@ -313,46 +312,6 @@ pub async fn image_stats(
 ) -> Result<imgvwr_core::ImageStats, String> {
     let thumbs = Arc::clone(thumbs.inner());
     tauri::async_runtime::spawn_blocking(move || thumbs.image_stats(&path))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn labels_for_paths(
-    service: State<'_, Arc<LabelService>>,
-    paths: Vec<String>,
-) -> Result<HashMap<String, ImageLabels>, String> {
-    let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.for_paths(&paths))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-// Label writes answer for every path given, so the frontend can install the result as-is.
-
-#[tauri::command]
-#[specta::specta]
-pub async fn labels_set_stars(
-    service: State<'_, Arc<LabelService>>,
-    paths: Vec<String>,
-    stars: Option<u8>,
-) -> Result<HashMap<String, ImageLabels>, String> {
-    let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.set_stars(&paths, stars))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn labels_toggle_tag(
-    service: State<'_, Arc<LabelService>>,
-    paths: Vec<String>,
-    tag: String,
-) -> Result<HashMap<String, ImageLabels>, String> {
-    let service = Arc::clone(service.inner());
-    tauri::async_runtime::spawn_blocking(move || service.toggle_tag(&paths, &tag))
         .await
         .map_err(|e| e.to_string())?
 }

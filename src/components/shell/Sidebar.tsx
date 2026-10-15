@@ -9,7 +9,7 @@ export function Sidebar() {
   const setActivePanel = useAppStore((s) => s.setActivePanel);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const width = useAppStore((s) => s.sidebarWidth);
-  const panels = allPanels();
+  const panels = allPanels("left");
   const active = panels.find((p) => p.id === activeId) ?? panels[0];
 
   if (!visible) {

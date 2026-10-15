@@ -1,12 +1,18 @@
-import { SelectMenuItems } from "../components/shell/filterMenus";
-import type { FileEntry } from "../ipc";
-import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../ipc";
-import { registerCommand, type CommandContext } from "../registry/commands";
-import { registerFilterField } from "../registry/filters";
-import { registerSort } from "../registry/sorts";
-import { numberRangeSpec } from "../state/query";
-import { TagDot } from "./TagDot";
-import { chosenEntries, filesBehind, useAppStore } from "../state/store";
+import { SelectMenuItems } from "../../components/shell/filterMenus";
+import type { FileEntry } from "../../ipc";
+import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../../ipc";
+import { registerBadge } from "../../registry/badges";
+import { registerCommand, type CommandContext } from "../../registry/commands";
+import { registerFilterField } from "../../registry/filters";
+import { registerKeybindings } from "../../registry/keybindings";
+import { registerPanel } from "../../registry/panels";
+import { registerSort } from "../../registry/sorts";
+import { numberRangeSpec } from "../../state/query";
+import { chosenEntries, filesBehind, useAppStore } from "../../state/store";
+import "./labels.css";
+import { LabelsPanel } from "./LabelsPanel";
+import { LABELS, useLabelsStore } from "./store";
+import { LabelsBadge, TagDot } from "./TagDot";
 
 /** A stacked raw+JPEG pair is one photograph; its labels go to both files. */
 function labelTargets(): { photographs: FileEntry[]; files: FileEntry[] } {
@@ -18,15 +24,14 @@ function labelTargets(): { photographs: FileEntry[]; files: FileEntry[] } {
 async function rateSelected(stars: number | null): Promise<void> {
   const { photographs, files } = labelTargets();
   if (photographs.length === 0) return;
-  const { labelsApplied } = useAppStore.getState();
-  labelsApplied(await labelsSetStars(files.map((e) => e.path), stars));
+  useLabelsStore.getState().applied(await labelsSetStars(files.map((e) => e.path), stars));
 }
 
 async function tagSelected(tag: string): Promise<void> {
   const { photographs, files } = labelTargets();
   if (photographs.length === 0) return;
   const labels = await labelsToggleTag(files.map((e) => e.path), tag);
-  useAppStore.getState().labelsApplied(labels);
+  useLabelsStore.getState().applied(labels);
 }
 
 const STAR_ROWS: { label: string; from: number; to: number }[] = [
@@ -66,7 +71,7 @@ function StarsMenuItems({ close }: { close: () => void }) {
 
 function TagMenuItems({ close }: { close: () => void }) {
   const entries = useAppStore((s) => s.entries);
-  const labels = useAppStore((s) => s.labels);
+  const labels = useLabelsStore((s) => s.labels);
   const counts = new Map<string, number>();
   for (const entry of entries) {
     for (const tag of labels[entry.path]?.tags ?? []) {
@@ -97,10 +102,10 @@ export function registerLabels(): void {
     id: "stars",
     label: "stars",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     Menu: StarsMenuItems,
     // Unrated maps to 0 stars, mirroring STAR_ROWS' [0, 1) "unrated" row.
-    spec: numberRangeSpec((_entry, { labels }) => labels.stars ?? 0, {
+    spec: numberRangeSpec((_entry, data) => data.get(LABELS).stars ?? 0, {
       unit: "★",
       scale: 1,
       integer: true,
@@ -113,9 +118,9 @@ export function registerLabels(): void {
     id: "tag",
     label: "tag",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     Menu: TagMenuItems,
-    values: (_entry, { labels }) => labels.tags,
+    values: (_entry, data) => data.get(LABELS).tags,
   });
 
   registerSort({
@@ -124,10 +129,10 @@ export function registerLabels(): void {
     hints: { asc: "lowest rated", desc: "highest rated" },
     defaultDir: "desc",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     missing: "last",
     param: null,
-    value: (_entry, ctx) => ctx.labels.stars,
+    value: (_entry, data) => data.get(LABELS).stars,
   });
 
   const hasSelection = (ctx: CommandContext) => ctx.store.getState().selection.length > 0;
@@ -156,6 +161,29 @@ export function registerLabels(): void {
     },
   });
 
+  registerKeybindings([
+    ["0", "labels.stars.0"],
+    ["1", "labels.stars.1"],
+    ["2", "labels.stars.2"],
+    ["3", "labels.stars.3"],
+    ["4", "labels.stars.4"],
+    ["5", "labels.stars.5"],
+    ["t", "labels.tag"],
+  ]);
+
+  registerPanel({
+    id: "labels",
+    title: "Labels",
+    component: LabelsPanel,
+    icon: null,
+    side: "right",
+    order: 50,
+    fill: false,
+    when: () => useAppStore.getState().selectedIndex !== null,
+  });
+
+  registerBadge({ id: "labels", component: LabelsBadge });
+
   // Asked-set is tracked by path, not a cursor: a watched folder can lose a file, shifting every later index.
   let lastEntries: FileEntry[] | null = null;
   let lastEpoch = -1;
@@ -166,13 +194,14 @@ export function registerLabels(): void {
     if (state.epoch !== lastEpoch) {
       lastEpoch = state.epoch;
       asked = new Set();
+      useLabelsStore.getState().reset();
     }
     const fresh = state.entries.filter((e) => !asked.has(e.path));
     if (fresh.length === 0) return;
     for (const entry of fresh) asked.add(entry.path);
     const epoch = state.epoch;
     void labelsForPaths(fresh.map((e) => e.path)).then((labels) => {
-      useAppStore.getState().labelsLoaded(labels, epoch);
+      useLabelsStore.getState().loaded(labels, epoch);
     });
   });
 }

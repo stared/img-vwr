@@ -7,10 +7,20 @@ import {
   events,
 } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
+import { storeChannel } from "../registry/channels";
 import { registerSort } from "../registry/sorts";
-import type { Similarity } from "../state/store";
+import type { AppState, Similarity } from "../state/store";
 import { useAppStore, visibleOf } from "../state/store";
 import { ModelMenu } from "./ModelMenu";
+
+const NO_SCORES: Readonly<Record<string, number>> = {};
+
+/** path → closeness to the anchor; null until that photograph is scored. */
+const SCORES = storeChannel<AppState, number | null>(
+  useAppStore,
+  (s) => s.similarity?.scores ?? NO_SCORES,
+  null,
+);
 
 function inFolderScope(): boolean {
   return useAppStore.getState().scope?.kind === "folder";
@@ -104,7 +114,7 @@ export function registerSimilarity(): void {
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
     appliesTo: (scope) => scope?.kind === "folder",
-    reads: "scores",
+    reads: [SCORES],
     missing: "hide",
     param: {
       segments: () => {
@@ -135,7 +145,7 @@ export function registerSimilarity(): void {
       isSet: () => useAppStore.getState().similarity !== null,
       clear: () => useAppStore.getState().clearSimilarity(),
     },
-    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
+    value: (_entry, data) => data.get(SCORES),
   });
 
   registerCommand({

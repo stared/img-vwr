@@ -29,7 +29,6 @@ export function scopeLoading(scope: Scope, epoch: number) {
     thumbs: {} as Record<string, string>,
     thumbErrors: {} as Record<string, string>,
     meta: {} as Record<string, ImageMeta>,
-    labels: {},
     viewMode: "gallery" as const,
     selectedIndex: null,
     selection: [] as string[],
