@@ -4,13 +4,13 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { GalleryGrid, noGroups } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
-import { MapGallery } from "./components/gallery/MapGallery";
 import { MosaicGallery } from "./components/gallery/MosaicGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
 import { DarkroomKnobs, GridKnobs, MosaicKnobs, TimelineKnobs } from "./components/gallery/viewKnobs";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
+import { registerMap } from "./features/map";
 import { registerScenes } from "./features/scenes";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
@@ -70,16 +70,7 @@ registerView({
   stacks: false,
   Knobs: TimelineKnobs,
 });
-registerView({
-  id: "map",
-  label: "Map",
-  hint: "photographs with GPS locations",
-  component: MapGallery,
-  keywords: ["geo", "gps", "location"],
-  zoomable: false,
-  stacks: false,
-  Knobs: null,
-});
+registerMap();
 registerView({
   id: "darkroom",
   label: "Darkroom",

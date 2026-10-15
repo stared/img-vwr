@@ -72,7 +72,7 @@ it also regenerates automatically on every dev run.
 src/                    strict-TS React UI
   registry/             the seams: channels, filters, sorts, commands, keys,
                         panels, badges, views, sources, facts
-  features/             labels, people, scenes, similarity, sources (Reddit, Commons) —
+  features/             labels, map, people, scenes, similarity, sources —
                         each a folder with its own store, UI and registrations;
                         the core never imports them
   commands/ sorts/ filters/ facts/   built-ins registered through those registries
