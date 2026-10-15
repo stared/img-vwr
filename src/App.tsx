@@ -15,7 +15,6 @@ import { getView } from "./registry/views";
 import { api, events, isLocal } from "./ipc";
 import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
-import { useSceneRefinement } from "./state/sceneRefinement";
 import { restoreSession, startSessionPersistence } from "./state/session";
 import { useAppStore, useSelectedEntry } from "./state/store";
 import "./App.css";
@@ -59,7 +58,6 @@ function App() {
   const GalleryView = getView(galleryLayout)?.component;
 
   useGlobalKeybindings();
-  useSceneRefinement();
   useFolderMeta();
   useDevelopSession();
 

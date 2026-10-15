@@ -1,12 +1,11 @@
 import { CAPTION_CYCLE, CAPTION_LABELS, CAPTION_NOTES, OVERLAY_CYCLE, OVERLAY_LABELS, OVERLAY_NOTES, useDevelopStore } from "../../state/develop";
-import { sceneGapLabel, sliderFromTau, tauFromSlider } from "../../state/scenes";
 import { useAppStore } from "../../state/store";
 import { parseNumber, Slider } from "../shell/Slider";
 import { maxColumnsFor } from "./GalleryGrid";
 
 /* Each view's own settings, shown under its row in the view menu. */
 
-function Columns() {
+export function Columns() {
   const gridColumns = useAppStore((s) => s.gridColumns);
   const setGridColumns = useAppStore((s) => s.setGridColumns);
   return(
@@ -29,55 +28,6 @@ function Columns() {
 
 export function GridKnobs() {
   return <div className="menu-knobs"><Columns /></div>;
-}
-
-export function SceneKnobs() {
-  const sceneGapMin = useAppStore((s) => s.sceneGapMin);
-  const setSceneGap = useAppStore((s) => s.setSceneGap);
-  const contentWeight = useAppStore((s) => s.sceneContentWeight);
-  const setContentWeight = useAppStore((s) => s.setSceneContentWeight);
-  return (
-        <div className="menu-knobs">
-          <Columns />
-          <Slider
-            label="scene break"
-            value={sliderFromTau(sceneGapMin)}
-            neutral={0}
-            min={0}
-            max={1}
-            step={0.005}
-            display={sceneGapLabel(sceneGapMin)}
-            parse={(text) => {
-              const minutes = parseNumber(text);
-              return minutes === null ? null : sliderFromTau(minutes);
-            }}
-            ticks={[1, 5, 30, 60].map((minutes) => ({
-              at: sliderFromTau(minutes),
-              title: minutes < 60 ? `${minutes} min` : "an hour",
-            }))}
-            layout="inline"
-            title="how long a pause splits scenes — log scale, 30 s to an hour"
-            onChange={(x) => setSceneGap(tauFromSlider(x))}
-          />
-          <Slider
-            label="content"
-            value={contentWeight}
-            neutral={0}
-            min={0}
-            max={1}
-            step={0.01}
-            display={`${Math.round(contentWeight * 100)}%`}
-            parse={(text) => {
-              const percent = parseNumber(text);
-              return percent === null ? null : percent / 100;
-            }}
-            ticks={[{ at: 0.5, title: "the clock and the pictures, evenly" }]}
-            layout="inline"
-            title="how much the pictures outvote the clock at scene breaks"
-            onChange={setContentWeight}
-          />
-        </div>
-      );
 }
 
 export function MosaicKnobs() {

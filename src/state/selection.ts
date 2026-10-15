@@ -121,16 +121,6 @@ export function stacksCollapse(
   return state.stacking && (state.viewMode === "viewer" || getView(state.galleryLayout)?.stacks === true);
 }
 
-/** Scores for exactly this visible list, matched by identity — the memoized list keeps its object while on screen. */
-export function sceneSimsFor(
-  state: Pick<AppState, "sceneSims">,
-  visible: FileEntry[],
-): (number | null)[][] | null {
-  return state.sceneSims !== null && state.sceneSims.entries === visible
-    ? state.sceneSims.bands
-    : null;
-}
-
 /** The photographs the selection means, in the order they are on screen. */
 export function chosenEntries(state: AppState): FileEntry[] {
   const picked = new Set(state.selection);

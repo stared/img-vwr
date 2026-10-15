@@ -106,12 +106,6 @@ export interface AppState {
   gridColumns: number;
   /** Moves the lead one visual row (+1 down, -1 up); registered by the mounted view, which alone knows its geometry; null when it has no second dimension. */
   rowNavigator: ((direction: 1 | -1) => void) | null;
-  /** The scenes view's time constant, minutes. */
-  sceneGapMin: number;
-  /** How much the pictures outvote the clock at scene boundaries, 0..1; matters only while similarities are available. */
-  sceneContentWeight: number;
-  /** `bands[i][d-1]` scores (entries[i], entries[i-d]); matched to `entries` by identity — stale means the clock alone decides; null pairs are unindexed. */
-  sceneSims: { entries: FileEntry[]; bands: (number | null)[][] } | null;
   /** Collapse raw+JPEG pairs into one photograph — only where one is on screen at a time; see `stacksCollapse`. */
   stacking: boolean;
   stackLead: StackLead;
@@ -180,10 +174,7 @@ interface AppActions {
   setMosaicPacking: (packing: MosaicPacking) => void;
   setGridColumns: (columns: number) => void;
   setRowNavigator: (navigator: ((direction: 1 | -1) => void) | null) => void;
-  setSceneGap: (min: number) => void;
-  setSceneContentWeight: (weight: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
-  sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
   toggleStacking: () => void;
   toggleStackLead: () => void;
   /** Show `path` in place of whatever its stack was showing. */
@@ -259,9 +250,6 @@ export const initialState: AppState = {
   mosaicPacking: "order",
   gridColumns: 6,
   rowNavigator: null,
-  sceneGapMin: 2,
-  sceneContentWeight: 1,
-  sceneSims: null,
   // On by default: a raw+JPEG folder otherwise shows every photograph twice.
   stacking: true,
   stackLead: "jpg",
@@ -516,12 +504,6 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   setGridColumns: (columns) => set({ gridColumns: columns }),
 
   setRowNavigator: (rowNavigator) => set({ rowNavigator }),
-
-  setSceneGap: (min) => set({ sceneGapMin: min }),
-
-  setSceneContentWeight: (weight) => set({ sceneContentWeight: weight }),
-
-  sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 
 
   toggleStacking: () =>

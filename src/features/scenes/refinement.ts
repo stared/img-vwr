@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
 
-import { api } from "../ipc";
+import { api, type FileEntry } from "../../ipc";
 import { SCENE_BAND } from "./scenes";
-import { useEmbedStore } from "./embeddings";
-import { useAppStore, useVisibleEntries } from "./store";
+import { useEmbedStore } from "../../state/embeddings";
+import { useAppStore } from "../../state/store";
+import { useScenesStore } from "./store";
 
 /** Feeds scene grouping embedding similarities when a model is already loaded; without one, scenes stay time-only. */
-export function useSceneRefinement(): void {
-  const inScenes = useAppStore((s) => s.galleryLayout === "scenes");
+/** Runs only while the scenes view is mounted. */
+export function useSceneRefinement(visible: FileEntry[]): void {
   const localScope = useAppStore((s) => s.scope?.kind === "folder");
   const modelId = useEmbedStore((s) => (s.status?.phase === "ready" ? s.status.modelId : null));
   const indexing = useEmbedStore((s) => s.progress !== null && s.progress.done < s.progress.total);
   const epoch = useAppStore((s) => s.epoch);
-  const visible = useVisibleEntries();
-  const wanted = inScenes && localScope && modelId !== null;
+  const wanted = localScope && modelId !== null;
 
   // Tracked in a ref, not derived from progress: indexing reports progress, so deriving re-fires a cached pass forever.
   const indexedFor = useRef<string | null>(null);
@@ -37,7 +37,7 @@ export function useSceneRefinement(): void {
       SCENE_BAND,
     )
       .then((bands) => {
-        if (!stale) useAppStore.getState().sceneSimsLoaded(visible, bands);
+        if (!stale) useScenesStore.setState({ sims: { entries: visible, bands } });
       })
       .catch(() => {
         // "No model loaded" and friends — scenes stay time-only.

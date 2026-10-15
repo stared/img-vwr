@@ -2,16 +2,16 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
-import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { GalleryGrid, noGroups } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
 import { MapGallery } from "./components/gallery/MapGallery";
 import { MosaicGallery } from "./components/gallery/MosaicGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
-import { DarkroomKnobs, GridKnobs, MosaicKnobs, SceneKnobs, TimelineKnobs } from "./components/gallery/viewKnobs";
+import { DarkroomKnobs, GridKnobs, MosaicKnobs, TimelineKnobs } from "./components/gallery/viewKnobs";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
-import { registerSceneCommands } from "./commands/scenes";
+import { registerScenes } from "./features/scenes";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
 import { DevelopLoupe } from "./components/develop/DevelopLoupe";
@@ -43,7 +43,7 @@ registerView({
   id: "grid",
   label: "Grid",
   hint: "regular thumbnail rows",
-  component: () => <GalleryGrid grouped={false} />,
+  component: () => <GalleryGrid useGroups={noGroups} />,
   keywords: ["thumbnails", "cells"],
   zoomable: false,
   stacks: false,
@@ -59,16 +59,7 @@ registerView({
   stacks: false,
   Knobs: MosaicKnobs,
 });
-registerView({
-  id: "scenes",
-  label: "Scenes",
-  hint: "moments inferred from time and content",
-  component: () => <GalleryGrid grouped />,
-  keywords: ["moments", "groups", "series", "burst"],
-  zoomable: false,
-  stacks: true,
-  Knobs: SceneKnobs,
-});
+registerScenes();
 registerView({
   id: "timeline",
   label: "Timeline",
@@ -114,7 +105,6 @@ registerLabels();
 registerThumbCrops();
 registerPeople();
 registerDevelopCommands();
-registerSceneCommands();
 // Menu rows follow registration order; Trash registers last to sit at the bottom.
 registerCopyCommands();
 registerTrashCommands();

@@ -6,8 +6,8 @@ feature (`eslint` enforces this for `src/`). The test of a well-formed
 feature: delete its folder and its registration lines, and typecheck, lint
 and tests still pass.
 
-`src/features/labels/` is the smallest complete example; `people/` and
-`similarity/` follow the same shape.
+`src/features/labels/` is the smallest complete example; `people/`,
+`scenes/` (a whole gallery view) and `similarity/` follow the same shape.
 
 ## Frontend: `src/features/<name>/`
 

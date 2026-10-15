@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageMeta } from "../../ipc";
 import {
   groupScenes,
   sceneThreshold,

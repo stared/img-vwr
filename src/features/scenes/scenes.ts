@@ -1,5 +1,5 @@
-import type { FileEntry, ImageMeta } from "../ipc";
-import { takenMs } from "./derived";
+import type { FileEntry, ImageMeta } from "../../ipc";
+import { takenMs } from "../../state/derived";
 
 export interface Scene {
   /** Index into the visible list of the first photograph. */

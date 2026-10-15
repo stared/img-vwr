@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import { api } from "../../ipc";
-import { groupScenes, sceneLabel, type Scene } from "../../state/scenes";
-import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
+import { api, type FileEntry } from "../../ipc";
+import { useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
 
 const CELL_GAP = 8;
@@ -15,7 +14,7 @@ const OVERSCAN_ROWS = 3;
 const REQUEST_DEBOUNCE_MS = 50;
 
 /* Must mirror the .gallery-scene-header CSS height. */
-const SCENE_HEADER_HEIGHT = 28;
+const GROUP_HEADER_HEIGHT = 28;
 
 const MIN_CELL_PX = 96;
 const MIN_COLUMNS = 2;
@@ -29,6 +28,18 @@ export function cellSizeFor(width: number, columns: number): number {
   const usable = width - CELL_GAP * (columns - 1);
   return Math.max(MIN_CELL_PX, Math.floor(usable / columns));
 }
+
+/** A labelled run of the visible list, drawn under a header row. */
+export interface GridGroup {
+  label: string;
+  start: number;
+  end: number;
+}
+
+/** Splits the visible list into groups (null: one plain run); a hook, so it may subscribe to what it groups by. */
+export type UseGroups = (entries: FileEntry[]) => GridGroup[] | null;
+
+export const noGroups: UseGroups = () => null;
 
 type GridRow =
   | { kind: "photos"; firstIndex: number; count: number }
@@ -55,38 +66,29 @@ export function rowNeighbor(
 
 export function gridRows(
   entryCount: number,
-  scenes: Scene[] | null,
+  groups: GridGroup[] | null,
   columns: number,
 ): GridRow[] {
   const rows: GridRow[] = [];
-  if (scenes === null) {
+  if (groups === null) {
     for (let i = 0; i < entryCount; i += columns) {
       rows.push({ kind: "photos", firstIndex: i, count: Math.min(columns, entryCount - i) });
     }
     return rows;
   }
-  let previous: Scene | null = null;
-  for (const scene of scenes) {
-    rows.push({ kind: "header", label: sceneLabel(scene, previous, scene.end - scene.start) });
-    for (let i = scene.start; i < scene.end; i += columns) {
-      rows.push({ kind: "photos", firstIndex: i, count: Math.min(columns, scene.end - i) });
+  for (const group of groups) {
+    rows.push({ kind: "header", label: group.label });
+    for (let i = group.start; i < group.end; i += columns) {
+      rows.push({ kind: "photos", firstIndex: i, count: Math.min(columns, group.end - i) });
     }
-    previous = scene;
   }
   return rows;
 }
 
-export function GalleryGrid({ grouped }: { grouped: boolean }) {
+export function GalleryGrid({ useGroups }: { useGroups: UseGroups }) {
   const entries = useVisibleEntries();
   const epoch = useAppStore((s) => s.epoch);
-  const status = useAppStore((s) => s.status);
-  const remote = useAppStore((s) => s.scope?.kind === "source");
-  const allEntries = useAppStore((s) => s.entries);
   const preferredColumns = useAppStore((s) => s.gridColumns);
-  const sceneGapMin = useAppStore((s) => s.sceneGapMin);
-  const contentWeight = useAppStore((s) => s.sceneContentWeight);
-  // Subscribed only when grouped: metadata streams in by the hundreds and would re-render the plain grid.
-  const meta = useAppStore((s) => (grouped ? s.meta : null));
   const select = useAppStore((s) => s.select);
   const selectedIndex = useAppStore((s) => s.selectedIndex);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -97,32 +99,11 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const cellSize = cellSizeFor(width, columns);
   const rowHeight = cellSize + CELL_INNER_GAP + CAPTION_HEIGHT + 2 * CELL_PADDING + CELL_GAP;
 
-  // getState() keeps received meta out of the effect's deps, so streaming results don't re-fire the request.
-  useEffect(() => {
-    if (!grouped || status !== "loaded" || remote || allEntries.length === 0) return;
-    const have = useAppStore.getState().meta;
-    const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
-    if (missing.length > 0) void api.requestMeta(missing, epoch);
-  }, [grouped, status, remote, allEntries, epoch]);
-
-  const sceneSims = useAppStore((s) => (grouped ? s.sceneSims : null));
-  const scenes = useMemo(
-    () =>
-      grouped
-        ? groupScenes(
-            entries,
-            meta ?? {},
-            sceneGapMin * 60_000,
-            contentWeight,
-            sceneSimsFor({ sceneSims }, entries),
-          )
-        : null,
-    [grouped, entries, meta, sceneGapMin, contentWeight, sceneSims],
-  );
+  const groups = useGroups(entries);
 
   const rows = useMemo(
-    () => gridRows(entries.length, scenes, columns),
-    [entries.length, scenes, columns],
+    () => gridRows(entries.length, groups, columns),
+    [entries.length, groups, columns],
   );
 
   const setRowNavigator = useAppStore((s) => s.setRowNavigator);
@@ -142,7 +123,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (rows[i]?.kind === "header" ? SCENE_HEADER_HEIGHT : rowHeight),
+    estimateSize: (i) => (rows[i]?.kind === "header" ? GROUP_HEADER_HEIGHT : rowHeight),
     overscan: OVERSCAN_ROWS,
   });
 

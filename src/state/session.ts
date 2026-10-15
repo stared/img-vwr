@@ -36,8 +36,6 @@ interface SavedSession {
   pinnedFolders: string[];
   sidebarWidth: number;
   rightbarWidth: number;
-  sceneGapMin: number;
-  sceneContentWeight: number;
   develop: {
     folded: Record<string, boolean>;
     caption: CaptionMode;
@@ -71,8 +69,6 @@ function snapshot(): SavedSession {
     pinnedFolders: s.pinnedFolders,
     sidebarWidth: s.sidebarWidth,
     rightbarWidth: s.rightbarWidth,
-    sceneGapMin: s.sceneGapMin,
-    sceneContentWeight: s.sceneContentWeight,
     develop: {
       folded: d.folded,
       caption: d.caption,
@@ -207,10 +203,6 @@ export function restoreSession(): boolean {
         : app.panelOrder,
     sidebarWidth: isNum(o.sidebarWidth) ? o.sidebarWidth : app.sidebarWidth,
     rightbarWidth: isNum(o.rightbarWidth) ? o.rightbarWidth : app.rightbarWidth,
-    sceneGapMin: isNum(o.sceneGapMin) ? o.sceneGapMin : app.sceneGapMin,
-    sceneContentWeight: isNum(o.sceneContentWeight)
-      ? o.sceneContentWeight
-      : app.sceneContentWeight,
   });
 
   const dev = (typeof o.develop === "object" && o.develop !== null

@@ -1,18 +1,14 @@
-import { registerCommand, type CommandContext } from "../registry/commands";
-import { groupScenes, sceneJumpTarget } from "../state/scenes";
-import { sceneSimsFor, useAppStore, visibleOf } from "../state/store";
+import { registerCommand, type CommandContext } from "../../registry/commands";
+import { useAppStore, visibleOf } from "../../state/store";
+import { groupScenes, sceneJumpTarget } from "./scenes";
+import { simsFor, useScenesStore } from "./store";
 
 function jumpScene(direction: 1 | -1): void {
   const s = useAppStore.getState();
   const visible = visibleOf(s, s.query);
   // Must group exactly as the grid draws, embedding refinement included.
-  const scenes = groupScenes(
-    visible,
-    s.meta,
-    s.sceneGapMin * 60_000,
-    s.sceneContentWeight,
-    sceneSimsFor(s, visible),
-  );
+  const { gapMin, contentWeight } = useScenesStore.getState();
+  const scenes = groupScenes(visible, s.meta, gapMin * 60_000, contentWeight, simsFor(visible));
   const target = sceneJumpTarget(scenes, s.selectedIndex, direction);
   if (target !== null) s.select(target);
 }
