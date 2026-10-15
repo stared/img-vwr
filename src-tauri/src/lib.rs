@@ -27,6 +27,7 @@ fn scene_registry() -> SceneRegistry {
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
+            // Folder, files, thumbnails, metadata
             commands::scan_folder,
             commands::list_subdirs,
             commands::set_recent_folders,
@@ -36,19 +37,14 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::request_thumbnails,
             commands::request_dir_counts,
             commands::request_meta,
+            commands::image_stats,
+            // Services shared by views and features
             services::embeddings::embedding_models,
             services::embeddings::embedding_select,
             services::embeddings::embedding_index,
             services::embeddings::embedding_rank_image,
             services::embeddings::embedding_rank_text,
             services::embeddings::embedding_banded_scores,
-            features::faces::faces_index,
-            features::faces::faces_people,
-            features::faces::faces_rename,
-            commands::image_stats,
-            features::labels::labels_for_paths,
-            features::labels::labels_set_stars,
-            features::labels::labels_toggle_tag,
             services::develop::develop_state,
             services::develop::develop_presets,
             services::develop::develop_auto_exposure,
@@ -60,6 +56,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             services::develop::develop_crops,
             services::develop::develop_export,
             services::develop::develop_pick_white_balance,
+            // Features: delete a block together with its module
+            features::faces::faces_index,
+            features::faces::faces_people,
+            features::faces::faces_rename,
+            features::labels::labels_for_paths,
+            features::labels::labels_set_stars,
+            features::labels::labels_toggle_tag,
         ])
         .events(collect_events![
             events::ScanBatch,
