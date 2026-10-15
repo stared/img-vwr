@@ -17,7 +17,6 @@ import type {
   FileEntry,
   ImageMeta,
   MetaEntry,
-  PersonCluster,
 } from "../ipc";
 import { newEpoch, scanFolder } from "../ipc";
 import { storeChannel, type Channel, type ChannelMaps } from "../registry/channels";
@@ -161,12 +160,6 @@ export interface AppState {
   imageMenu: { x: number; y: number } | null;
   /** Scores + label behind the "similar" sort; null = no anchor chosen. */
   similarity: Similarity | null;
-  /** Face clusters, biggest first; null until a pass has run for this folder. */
-  people: PersonCluster[] | null;
-  /** photo path → person-cluster ids (detected or implied); rebuilt whenever `people` lands. */
-  peopleByPath: Record<string, string[]>;
-  /** Face-detection progress; null when idle. */
-  facesProgress: { done: number; total: number } | null;
   /** Model catalog with downloaded/active flags, for the picker panel. */
   embedModels: EmbedModelInfo[];
   /** Latest model lifecycle event; null before any selection. */
@@ -216,8 +209,6 @@ interface AppActions {
   setSceneContentWeight: (weight: number) => void;
   /** Fresh banded similarities for exactly this visible list. */
   sceneSimsLoaded: (entries: FileEntry[], bands: (number | null)[][]) => void;
-  peopleLoaded: (people: PersonCluster[]) => void;
-  setFacesProgress: (progress: { done: number; total: number } | null) => void;
   toggleStacking: () => void;
   toggleStackLead: () => void;
   /** Show `path` in place of whatever its stack was showing. */
@@ -322,9 +313,6 @@ export const initialState: AppState = {
   exportFolder: null,
   imageMenu: null,
   similarity: null,
-  people: null,
-  peopleByPath: {},
-  facesProgress: null,
   embedModels: [],
   embedStatus: null,
   embedProgress: null,
@@ -798,17 +786,6 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   sceneSimsLoaded: (entries, bands) => set({ sceneSims: { entries, bands } }),
 
-  peopleLoaded: (people) => {
-    const peopleByPath: Record<string, string[]> = {};
-    for (const cluster of people) {
-      for (const path of [...cluster.photos, ...cluster.implied]) {
-        (peopleByPath[path] ??= []).push(cluster.id);
-      }
-    }
-    set({ people, peopleByPath });
-  },
-
-  setFacesProgress: (facesProgress) => set({ facesProgress }),
 
   toggleStacking: () =>
     set((s) => withSelectionHeld(s, { stacking: !s.stacking })),

@@ -1,31 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-import {
-  facesIndex,
-  facesPeople,
-  facesRename,
-  fileUrl,
-  type PersonCluster,
-} from "../ipc";
-import { storeChannel } from "../registry/channels";
-import { registerFilterField } from "../registry/filters";
-import { isRawEntry } from "../state/stacks";
-import { useAppStore, type AppState } from "../state/store";
+import { facesIndex, facesRename, fileUrl, type PersonCluster } from "../../ipc";
+import { useAppStore } from "../../state/store";
+import { localJpegPaths, PERSON_MERGE, refreshPeople, usePeopleStore } from "./store";
 
-/** path → names of the people in it; empty, never unknown. */
-const PEOPLE = storeChannel<AppState, string[]>(useAppStore, (s) => s.peopleByPath, []);
-
-/** Same-person cosine threshold in the ArcFace identity space, not the Similarity panel's model. */
-const PERSON_SIM = 0.45;
-
-/** Average-linkage merge threshold; see the Rust side for why centroids of different people converge. */
-const PERSON_MERGE = 0.38;
-
-/** Faceless-photo propagation bar — the same near-identical threshold scene merging uses. */
-const PERSON_PROPAGATE = 0.92;
-
-/** Clusters below this many faces are noise, not people worth a chip. */
-const MIN_FACES = 3;
 /** While the scan runs, people re-cluster this often from the photos scanned so far. */
 const PARTIAL_REFRESH_MS = 5000;
 
@@ -82,11 +60,11 @@ function countTags(
   return tags;
 }
 
-function personLabel(person: PersonCluster): string {
+export function personLabel(person: PersonCluster): string {
   return person.name ?? `person ${person.id}`;
 }
 
-function CountsRow({ person }: { person: PersonCluster }) {
+export function CountsRow({ person }: { person: PersonCluster }) {
   return (
     <span className="person-counts">
       {countTags(person).map(({ key, Icon, n, dim }) => (
@@ -99,52 +77,12 @@ function CountsRow({ person }: { person: PersonCluster }) {
   );
 }
 
-function localJpegPaths(): string[] {
-  const s = useAppStore.getState();
-  if (s.scope?.kind !== "folder") return [];
-  // Raws are skipped: sibling JPGs carry the same faces, and the negatives often fail to decode.
-  return s.entries.filter((e) => !isRawEntry(e)).map((e) => e.path);
-}
-
-let refreshing = false;
-let rerun = false;
-
-/** Clustering reads only photos already scanned, so it is safe mid-scan; a call during a run queues one more. */
-async function refreshPeople(): Promise<void> {
-  if (refreshing) {
-    rerun = true;
-    return;
-  }
-  refreshing = true;
-  try {
-    do {
-      rerun = false;
-      await clusterPeople();
-    } while (rerun);
-  } finally {
-    refreshing = false;
-  }
-}
-
-async function clusterPeople(): Promise<void> {
-  const paths = localJpegPaths();
-  if (paths.length === 0) return;
-  const epoch = useAppStore.getState().epoch;
-  try {
-    const clusters = await facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
-    if (useAppStore.getState().epoch !== epoch) return;
-    useAppStore.getState().peopleLoaded(clusters.filter((c) => c.photos.length >= MIN_FACES));
-  } catch (error) {
-    console.warn("clustering people failed", error);
-  }
-}
-
 export function PeoplePanel() {
   const scope = useAppStore((s) => s.scope);
   const entryCount = useAppStore((s) => s.entries.length);
   const status = useAppStore((s) => s.status);
-  const people = useAppStore((s) => s.people);
-  const progress = useAppStore((s) => s.facesProgress);
+  const people = usePeopleStore((s) => s.people);
+  const progress = usePeopleStore((s) => s.progress);
   const epoch = useAppStore((s) => s.epoch);
   const query = useAppStore((s) => s.query);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
@@ -269,45 +207,4 @@ export function PeoplePanel() {
       )}
     </div>
   );
-}
-
-function PersonMenuItems({ close }: { close: () => void }) {
-  const people = useAppStore((s) => s.people);
-  const query = useAppStore((s) => s.query);
-  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
-  const active = query.filters.find((f) => f.kind === "select" && f.field === "person");
-  if (people === null || people.length === 0) {
-    return <span className="menu-empty">no people found yet; see the People panel</span>;
-  }
-  return (
-    <>
-      {people.map((person) => (
-        <button
-          key={person.id}
-          onClick={() => {
-            setSelectFilter("person", person.id);
-            close();
-          }}
-        >
-          {personLabel(person)}
-          <CountsRow person={person} />
-          <span className="menu-check">
-            {active?.kind === "select" && active.value === person.id ? "✓" : ""}
-          </span>
-        </button>
-      ))}
-    </>
-  );
-}
-
-export function registerPeople(): void {
-  registerFilterField({
-    kind: "flags",
-    id: "person",
-    label: "person",
-    appliesTo: (scope) => scope?.kind === "folder",
-    reads: [PEOPLE],
-    Menu: PersonMenuItems,
-    values: (_entry, data) => data.get(PEOPLE),
-  });
 }

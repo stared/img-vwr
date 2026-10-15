@@ -36,9 +36,6 @@ export function scopeLoading(scope: Scope, epoch: number) {
     expandedStacks: {} as Record<string, true>,
     similarity: null,
     embedProgress: null,
-    people: null,
-    peopleByPath: {} as Record<string, string[]>,
-    facesProgress: null,
     viewerView: null,
     viewerImg: null,
   };

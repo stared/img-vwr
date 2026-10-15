@@ -31,7 +31,7 @@ import { registerLabels } from "./features/labels";
 import { registerThumbCrops } from "./state/thumbCrops";
 import { useDevelopStore } from "./state/develop";
 import { useAppStore, visibleOf } from "./state/store";
-import { PeoplePanel, registerPeople } from "./people";
+import { registerPeople } from "./features/people";
 import { registerSimilarity } from "./similarity";
 import { commonsSource } from "./sources/commons";
 import { redditSource } from "./sources/reddit";
@@ -117,8 +117,7 @@ for (const source of allSources()) {
   });
 }
 registerPanel({ ...left, id: "similarity", title: "Similarity", component: SimilarityPanel, icon: <SimilarityIcon />, order: 30 });
-registerPanel({ ...left, id: "people", title: "People", component: PeoplePanel, icon: "☺", order: 40 });
-// Right panels: the order numbers are the default section order (labels registers at 50).
+// Default positions are the order numbers; features register theirs (people 40 left, labels 50 right).
 const right = { side: "right" as const, icon: null, fill: false };
 const selected = () => useAppStore.getState().selectedIndex !== null;
 const inSession = () => useDevelopStore.getState().session !== null;

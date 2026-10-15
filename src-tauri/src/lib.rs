@@ -42,9 +42,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::embedding_rank_image,
             commands::embedding_rank_text,
             commands::embedding_banded_scores,
-            commands::faces_index,
-            commands::faces_people,
-            commands::faces_rename,
+            features::faces::faces_index,
+            features::faces::faces_people,
+            features::faces::faces_rename,
             commands::image_stats,
             features::labels::labels_for_paths,
             features::labels::labels_set_stars,
@@ -70,7 +70,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             events::FolderChanged,
             events::EmbeddingStatus,
             events::EmbeddingProgress,
-            events::FacesProgress,
+            features::faces::FacesProgress,
             events::MenuAction
         ])
 }
@@ -144,7 +144,7 @@ pub fn run() {
             // User data (labels, edits, person names) lives in app data, deliberately never beside the photos.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
-            app.manage(Arc::new(crate::services::faces::FaceService::new(
+            app.manage(Arc::new(crate::features::faces::FaceService::new(
                 cache_root,
                 &data_dir.join("faces.db"),
             )?));

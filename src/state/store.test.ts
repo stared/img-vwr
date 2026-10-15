@@ -5,7 +5,7 @@ import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
-import { folderRescanned, scopeLoading } from "./collection";
+import { folderRescanned } from "./collection";
 import {
   movedSelection,
   scanBatchArrived,
@@ -123,15 +123,6 @@ describe("sortForScope", () => {
   });
 });
 
-describe("scopeLoading", () => {
-  it("forgets the previous folder's people and their finished detection", () => {
-    // A completed facesProgress left standing would auto-cluster the new folder and announce "No faces found.".
-    const reset = scopeLoading(FOLDER_SCOPE, 7);
-    expect(reset.people).toBeNull();
-    expect(reset.peopleByPath).toEqual({});
-    expect(reset.facesProgress).toBeNull();
-  });
-});
 
 describe("scanBatchArrived", () => {
   const entry = (path: string) => ({
@@ -185,7 +176,6 @@ function showing(selected: number[], anchor: number | null = null) {
     selectionAnchor: anchor === null ? (chosen[0] ?? null) : (entries[anchor]?.path ?? null),
     meta: {},
     similarity: null,
-    peopleByPath: {},
     thumbs: {},
     thumbErrors: {},
     stacking: false,
@@ -400,7 +390,6 @@ describe("a selection follows its photograph across a collapse", () => {
     query: defaultQuery,
     meta: {},
     similarity: null,
-    peopleByPath: {},
     stacking: true,
     // Raw-led so the collapse genuinely swaps which file is showing — the harder case.
     stackLead: "raw" as const,

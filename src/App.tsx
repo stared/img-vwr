@@ -102,12 +102,6 @@ function App() {
         if (payload.kind === "command") executeCommand(payload.id, { store: useAppStore });
         else void useAppStore.getState().openFolder(payload.path, false);
       }),
-      events.facesProgress.listen(({ payload }) => {
-        const s = useAppStore.getState();
-        if (payload.epoch === s.epoch) {
-          s.setFacesProgress({ done: payload.done, total: payload.total });
-        }
-      }),
     ];
     return () => {
       for (const unlisten of unlisteners) void unlisten.then((fn) => fn());

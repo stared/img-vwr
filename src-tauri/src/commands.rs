@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use crate::services::develop::{DevelopFrame, DevelopService, DevelopState};
 use crate::services::embeddings::EmbeddingService;
 use crate::services::export::{ExportJob, ExportPlan, Exported};
-use crate::services::faces::{FaceService, PersonCluster};
 use crate::services::files::TrashOutcome;
 use crate::services::thumbnails::ThumbnailService;
 use crate::services::watcher::WatchService;
@@ -250,57 +249,6 @@ pub async fn embedding_banded_scores(
     tauri::async_runtime::spawn_blocking(move || service.banded_scores(&paths, band as usize))
         .await
         .map_err(|e| e.to_string())?
-}
-
-/// Progress arrives as `faces-progress` events.
-#[tauri::command]
-#[specta::specta]
-pub fn faces_index(
-    app: AppHandle,
-    service: State<'_, Arc<FaceService>>,
-    paths: Vec<String>,
-    epoch: u64,
-) {
-    use tauri_specta::Event as _;
-    let service = Arc::clone(service.inner());
-    std::thread::spawn(move || {
-        service.index(&paths, |done, total| {
-            let _ = crate::events::FacesProgress { done, total, epoch }.emit(&app);
-        });
-    });
-}
-
-/// Also propagates identity onto near-identical faceless photos.
-#[tauri::command]
-#[specta::specta]
-pub async fn faces_people(
-    faces: State<'_, Arc<FaceService>>,
-    embeddings: State<'_, Arc<EmbeddingService>>,
-    paths: Vec<String>,
-    threshold: f32,
-    merge: f32,
-    propagate: f32,
-) -> Result<Vec<PersonCluster>, String> {
-    let faces = Arc::clone(faces.inner());
-    let embeddings = Arc::clone(embeddings.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        // Inside the rayon pool, so clustering's per-face parallel searches skip the cold hand-off.
-        rayon::scope(|_| faces.people(&embeddings, &paths, threshold, merge, propagate))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// An empty name un-names; naming two fragments alike merges them on the next clustering.
-#[tauri::command]
-#[specta::specta]
-pub fn faces_rename(
-    faces: State<'_, Arc<FaceService>>,
-    cluster_id: String,
-    name: String,
-    merge: f32,
-) -> Result<(), String> {
-    faces.rename(&cluster_id, &name, merge)
 }
 
 /// Computed from the cached thumbnail, not the original.
