@@ -38,9 +38,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-imgvwr-core = { path = "crates/imgvwr-core" }
-imgvwr-develop = { path = "crates/imgvwr-develop" }
-imgvwr-embed = { path = "crates/imgvwr-embed" }
+imgvwr-core = { path = "crates/imgvwr-core", features = ["specta"] }
+imgvwr-develop = { path = "crates/imgvwr-develop", features = ["specta"] }
+imgvwr-embed = { path = "crates/imgvwr-embed", features = ["specta"] }
 imgvwr-raw = { path = "crates/imgvwr-raw" }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"

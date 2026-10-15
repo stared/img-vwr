@@ -9,7 +9,8 @@ use crate::pipeline::{luma, MID_GREY};
 /// 256-bin distributions of the *developed* image — what the user is actually
 /// looking at, so clipping shown here is clipping they can see. (The info
 /// panel's histogram is a different thing: it describes the file on disk.)
-#[derive(Debug, Clone, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct Histogram {
     pub luma: Vec<u32>,

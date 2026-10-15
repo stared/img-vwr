@@ -22,7 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::params::DevelopParams;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct Preset {
     pub id: String,

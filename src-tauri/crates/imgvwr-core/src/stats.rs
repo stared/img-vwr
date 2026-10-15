@@ -6,7 +6,8 @@ use crate::codec::DecodedImage;
 pub const TRIANGLE_N: usize = 48;
 
 /// Computed from the cached thumbnail; the original is never re-decoded for stats.
-#[derive(Debug, Clone, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct ImageStats {
     /// 256-bin histograms: Rec. 709 luma and the three channels.
