@@ -2,81 +2,57 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
-import { GalleryGrid } from "./components/gallery/GalleryGrid";
+import { GalleryGrid, noGroups } from "./components/gallery/GalleryGrid";
 import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
-import { MapGallery } from "./components/gallery/MapGallery";
-import { MosaicGallery } from "./components/gallery/MosaicGallery";
-import { TimelineGallery } from "./components/gallery/TimelineGallery";
+import { DarkroomKnobs, GridKnobs } from "./components/gallery/viewKnobs";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
-import { registerSceneCommands } from "./commands/scenes";
+import { registerMap } from "./features/map";
+import { registerMosaic } from "./features/mosaic";
+import { registerScenes } from "./features/scenes";
+import { registerTimeline } from "./features/timeline";
 import { registerSourceCommands } from "./commands/sources";
 import { registerTrashCommands } from "./commands/trash";
 import { DevelopLoupe } from "./components/develop/DevelopLoupe";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
-import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
-import { ColorsPanel, HistogramPanel, LabelsPanel, ShotPanel } from "./components/shell/InfoPanel";
+import { FolderIcon, SimilarityIcon } from "./components/shell/icons";
+import { ColorsPanel, HistogramPanel, ShotPanel } from "./components/shell/InfoPanel";
 import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
 import { StatsPanel } from "./components/shell/StatsPanel";
 import { registerCommand } from "./registry/commands";
-import { allPanels, registerPanel } from "./registry/panels";
+import { allPanels, always, registerPanel } from "./registry/panels";
 import { allViews, registerView } from "./registry/views";
 import { allSources, registerSource } from "./registry/sources";
 import { registerBuiltinFacts } from "./facts/builtin";
 import { registerBuiltinFilterFields } from "./filters/builtin";
-import { registerLabels } from "./labels";
+import { registerLabels } from "./features/labels";
 import { registerThumbCrops } from "./state/thumbCrops";
 import { useDevelopStore } from "./state/develop";
 import { useAppStore, visibleOf } from "./state/store";
-import { PeoplePanel, registerPeople } from "./people";
-import { registerSimilarity } from "./similarity";
-import { commonsSource } from "./sources/commons";
-import { redditSource } from "./sources/reddit";
+import { registerPeople } from "./features/people";
+import { registerSimilarity } from "./features/similarity";
+import { startEmbeddings } from "./state/embeddings";
+import { commonsSource } from "./features/sources/commons";
+import { redditSource } from "./features/sources/reddit";
 import { registerBuiltinSorts } from "./sorts/builtin";
 
 registerView({
   id: "grid",
   label: "Grid",
   hint: "regular thumbnail rows",
-  component: () => <GalleryGrid grouped={false} />,
+  component: () => <GalleryGrid useGroups={noGroups} />,
   keywords: ["thumbnails", "cells"],
   zoomable: false,
+  stacks: false,
+  Knobs: GridKnobs,
 });
-registerView({
-  id: "mosaic",
-  label: "Mosaic",
-  hint: "edge-to-edge photographs",
-  component: MosaicGallery,
-  keywords: ["packed", "wall", "justified"],
-  zoomable: false,
-});
-registerView({
-  id: "scenes",
-  label: "Scenes",
-  hint: "moments inferred from time and content",
-  component: () => <GalleryGrid grouped />,
-  keywords: ["moments", "groups", "series", "burst"],
-  zoomable: false,
-});
-registerView({
-  id: "timeline",
-  label: "Timeline",
-  hint: "photographs positioned by capture time",
-  component: TimelineGallery,
-  keywords: ["date", "taken", "time", "chronological"],
-  zoomable: false,
-});
-registerView({
-  id: "map",
-  label: "Map",
-  hint: "photographs with GPS locations",
-  component: MapGallery,
-  keywords: ["geo", "gps", "location"],
-  zoomable: false,
-});
+registerMosaic();
+registerScenes();
+registerTimeline();
+registerMap();
 registerView({
   id: "darkroom",
   label: "Darkroom",
@@ -84,6 +60,8 @@ registerView({
   component: DarkroomGallery,
   keywords: ["develop", "edit", "filmstrip", "lightroom", "carousel", "loupe"],
   zoomable: true,
+  stacks: true,
+  Knobs: DarkroomKnobs,
 });
 
 registerBuiltinCommands();
@@ -94,58 +72,44 @@ registerBuiltinFacts();
 registerSource(redditSource);
 registerSource(commonsSource);
 registerSourceCommands();
+startEmbeddings();
 registerSimilarity();
 registerLabels();
 registerThumbCrops();
 registerPeople();
 registerDevelopCommands();
-registerSceneCommands();
 // Menu rows follow registration order; Trash registers last to sit at the bottom.
 registerCopyCommands();
 registerTrashCommands();
 registerSortCommands();
-registerPanel({ id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon /> });
+const left = { side: "left" as const, fill: false, when: always };
+registerPanel({ ...left, id: "folders", title: "Folders", component: FolderTreePanel, icon: <FolderIcon />, order: 10 });
 for (const source of allSources()) {
   registerPanel({
+    ...left,
     id: `source-${source.id}`,
     title: source.sidebarTitle,
     component: makeSourcePanel(source),
-    icon: SOURCE_ICONS[source.id] ?? source.glyph,
+    icon: source.icon,
+    order: 20,
   });
 }
-registerPanel({
-  id: "similarity",
-  title: "Similarity",
-  component: SimilarityPanel,
-  icon: <SimilarityIcon />,
-});
-registerPanel({ id: "people", title: "People", component: PeoplePanel, icon: "☺" });
-// Right-panel registration order is the default section order.
+registerPanel({ ...left, id: "similarity", title: "Similarity", component: SimilarityPanel, icon: <SimilarityIcon />, order: 30 });
+// Default positions are the order numbers; features register theirs (people 40 left, labels 50 right).
+const right = { side: "right" as const, icon: null, fill: false };
 const selected = () => useAppStore.getState().selectedIndex !== null;
 const inSession = () => useDevelopStore.getState().session !== null;
-registerPanel({ id: "shot", title: "Shot", component: ShotPanel, side: "right", when: selected });
-registerPanel({ id: "loupe", title: "Loupe", component: DevelopLoupe, side: "right", when: inSession });
+registerPanel({ ...right, id: "shot", title: "Shot", component: ShotPanel, order: 10, when: selected });
+registerPanel({ ...right, id: "loupe", title: "Loupe", component: DevelopLoupe, order: 20, when: inSession });
+registerPanel({ ...right, id: "histogram", title: "Histogram", component: HistogramPanel, order: 30, when: inSession });
+registerPanel({ ...right, id: "develop", title: "Develop", component: DevelopPanel, order: 40, when: inSession });
+registerPanel({ ...right, id: "colors", title: "Colors", component: ColorsPanel, order: 60, when: selected });
 registerPanel({
-  id: "histogram",
-  title: "Histogram",
-  component: HistogramPanel,
-  side: "right",
-  when: inSession,
-});
-registerPanel({
-  id: "develop",
-  title: "Develop",
-  component: DevelopPanel,
-  side: "right",
-  when: inSession,
-});
-registerPanel({ id: "labels", title: "Labels", component: LabelsPanel, side: "right", when: selected });
-registerPanel({ id: "colors", title: "Colors", component: ColorsPanel, side: "right", when: selected });
-registerPanel({
+  ...right,
   id: "stats",
   title: "Statistics",
   component: StatsPanel,
-  side: "right",
+  order: 70,
   fill: true,
   when: () => {
     const state = useAppStore.getState();
@@ -154,10 +118,12 @@ registerPanel({
       && visibleOf(state, state.query).length > 1;
   },
 });
-for (const panel of allPanels()) {
+for (const panel of allPanels("left")) {
   registerCommand({
     id: `view.${panel.id}`,
     title: `Show ${panel.title}`,
+    input: null,
+    when: () => true,
     keywords: ["view", "panel", "sidebar"],
     menus: [],
     run: ({ store }) => store.getState().setActivePanel(panel.id),

@@ -1,11 +1,11 @@
-import { embeddingSelect } from "../../ipc";
-import { downloadLabel } from "../../similarity/ModelMenu";
-import { useAppStore } from "../../state/store";
+import { api } from "../../ipc";
+import { useEmbedStore } from "../../state/embeddings";
+import { downloadLabel } from "./ModelMenu";
 
 export function SimilarityPanel() {
-  const models = useAppStore((s) => s.embedModels);
-  const status = useAppStore((s) => s.embedStatus);
-  const progress = useAppStore((s) => s.embedProgress);
+  const models = useEmbedStore((s) => s.models);
+  const status = useEmbedStore((s) => s.status);
+  const progress = useEmbedStore((s) => s.progress);
 
   const busy = status?.phase === "downloading" || status?.phase === "loading";
 
@@ -34,7 +34,7 @@ export function SimilarityPanel() {
                   ? `${model.label} scores likeness for "closest to…" sorts — local, nothing leaves this machine`
                   : `use ${model.label} for "closest to…" sorts — local, nothing leaves this machine`
               }
-              onClick={() => void embeddingSelect(model.id)}
+              onClick={() => void api.embeddingSelect(model.id)}
             >
               <span className="model-name">
                 {model.label}

@@ -75,7 +75,7 @@ pub fn embedded_jpeg(path: &Path) -> Option<Vec<u8>> {
             else {
                 continue;
             };
-            if is_displayable_jpeg(bytes) && best.map_or(true, |b| bytes.len() > b.len()) {
+            if is_displayable_jpeg(bytes) && best.is_none_or(|b| bytes.len() > b.len()) {
                 best = Some(bytes);
             }
         }

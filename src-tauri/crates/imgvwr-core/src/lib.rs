@@ -7,7 +7,7 @@ pub mod scene;
 pub mod stats;
 pub mod thumbs;
 
-pub use cache_key::thumb_cache_key;
+pub use cache_key::{file_cache_key, mtime_ms, thumb_cache_key};
 pub use codec::{CodecError, CodecRegistry, DecodedImage, ImageCodec};
 pub use image_scene::{scene_from_radiance, scene_from_rgba, ImageCrateFormat};
 pub use meta::{read_camera_decisions, read_meta, CameraDecisions, ExifSubset, ImageMeta};

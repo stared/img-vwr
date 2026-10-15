@@ -16,10 +16,14 @@ tokenizers = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 serde = { workspace = true }
 serde_json = "1"
-specta = { workspace = true }
+specta = { workspace = true, optional = true }
 
 # Metal kernels only exist on macOS; other platforms fall back to CPU.
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { version = "0.11", features = ["metal"] }
 candle-nn = { version = "0.11", features = ["metal"] }
 candle-transformers = { version = "0.11", features = ["metal"] }
+
+[features]
+# TypeScript bindings for the app; the crate itself does not need them.
+specta = ["dep:specta"]

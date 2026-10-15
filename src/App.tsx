@@ -12,58 +12,27 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { getView } from "./registry/views";
-import { developSetFusions, events, requestMeta, setRecentFolders, type FusionRecipe } from "./ipc";
+import { api, events, isLocal } from "./ipc";
 import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
-import { fusionMap } from "./state/hdr";
-import { useSceneRefinement } from "./state/sceneRefinement";
 import { restoreSession, startSessionPersistence } from "./state/session";
-import { hdrOf, useAppStore, useSelectedEntry } from "./state/store";
+import { useAppStore, useSelectedEntry } from "./state/store";
 import "./App.css";
 
-/** Registers each HDR set's face path with the develop service; no file is written until an export. */
-function useHdrDetection() {
+/** Every file's EXIF, once per folder: timeline, map and date sorts read it without asking for it. */
+function useFolderMeta() {
   const scope = useAppStore((s) => s.scope);
   const status = useAppStore((s) => s.status);
   const entries = useAppStore((s) => s.entries);
   const epoch = useAppStore((s) => s.epoch);
-  // Identity-stable: a meta batch that changed no set keeps the old array.
-  const sets = useAppStore((s) => (s.scope?.kind === "folder" ? hdrOf(s).sets : null));
-  const methods = useAppStore((s) => s.hdrMethod);
-
-  // Detection needs every file's EXIF, not only what on-screen panels asked for; once per folder.
   const askedFor = useRef<number | null>(null);
   useEffect(() => {
     if (scope?.kind !== "folder" || status !== "loaded") return;
     if (askedFor.current === epoch) return;
     askedFor.current = epoch;
     const missing = entries.filter((e) => !useAppStore.getState().meta[e.path]).map((e) => e.path);
-    if (missing.length > 0) void requestMeta(missing, epoch);
+    if (missing.length > 0) void api.requestMeta(missing, epoch);
   }, [scope, status, entries, epoch]);
-
-  // Signature of what the develop service last got; an unchanged map is not re-sent.
-  const registered = useRef("");
-  const previous = useRef<Record<string, FusionRecipe>>({});
-  useEffect(() => {
-    const fusions = Object.fromEntries(
-      Object.entries(sets === null ? {} : fusionMap(sets)).map(([face, frames]) => [
-        face,
-        { frames, method: methods[face] ?? ("fusion" as const) },
-      ]),
-    );
-    const signature = JSON.stringify(fusions);
-    if (signature === registered.current) return;
-    registered.current = signature;
-    const before = previous.current;
-    previous.current = fusions;
-    void developSetFusions(fusions).then(() => {
-      // A session may have opened the face as a plain JPEG before detection landed; drop it so it reopens as the fusion.
-      const changed = [...new Set([...Object.keys(before), ...Object.keys(fusions)])].filter(
-        (path) => JSON.stringify(before[path]) !== JSON.stringify(fusions[path]),
-      );
-      if (changed.length > 0) useDevelopStore.getState().dropStale(changed);
-    });
-  }, [sets, methods]);
 }
 
 /** The session follows the lead selection in every view; panels only render it. */
@@ -71,14 +40,13 @@ function useDevelopSession() {
   const path = useSelectedEntry()?.path;
   const open = useDevelopStore((s) => s.open);
   const close = useDevelopStore((s) => s.close);
-  const isLocal = path !== undefined && !path.startsWith("http");
   useEffect(() => {
-    if (path === undefined || !isLocal) {
+    if (path === undefined || !isLocal(path)) {
       close();
       return;
     }
     void open(path);
-  }, [path, isLocal, open, close]);
+  }, [path, open, close]);
 }
 
 function App() {
@@ -90,8 +58,7 @@ function App() {
   const GalleryView = getView(galleryLayout)?.component;
 
   useGlobalKeybindings();
-  useSceneRefinement();
-  useHdrDetection();
+  useFolderMeta();
   useDevelopSession();
 
   useEffect(() => {
@@ -104,7 +71,7 @@ function App() {
 
   const recentFolders = useAppStore((s) => s.recentFolders);
   useEffect(() => {
-    void setRecentFolders(recentFolders);
+    void api.setRecentFolders(recentFolders);
   }, [recentFolders]);
 
   useEffect(() => {
@@ -132,12 +99,6 @@ function App() {
       events.menuAction.listen(({ payload }) => {
         if (payload.kind === "command") executeCommand(payload.id, { store: useAppStore });
         else void useAppStore.getState().openFolder(payload.path, false);
-      }),
-      events.facesProgress.listen(({ payload }) => {
-        const s = useAppStore.getState();
-        if (payload.epoch === s.epoch) {
-          s.setFacesProgress({ done: payload.done, total: payload.total });
-        }
       }),
     ];
     return () => {

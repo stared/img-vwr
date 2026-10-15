@@ -4,7 +4,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct ExifSubset {
     pub orientation: u32,
@@ -24,7 +25,8 @@ pub struct ExifSubset {
 }
 
 /// The camera's per-shot auto grade in Adobe slider units, from the raw file's XMP packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct CameraGrade {
     pub contrast: f64,
@@ -33,7 +35,8 @@ pub struct CameraGrade {
     pub texture: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct ImageMeta {
     /// None when no Rust decoder knows the format (e.g. AVIF).
@@ -125,7 +128,7 @@ pub fn read_camera_decisions(path: &Path) -> CameraDecisions {
         ..Default::default()
     };
 
-    if let Some(file) = File::open(path).ok() {
+    if let Ok(file) = File::open(path) {
         if let Ok(exif) = exif::Reader::new().read_from_container(&mut BufReader::new(file)) {
             let signed = |tag: exif::Tag| {
                 exif.get_field(tag, exif::In::PRIMARY).and_then(|f| match &f.value {

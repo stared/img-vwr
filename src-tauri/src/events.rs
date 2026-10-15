@@ -73,14 +73,6 @@ pub struct EmbeddingProgress {
     pub epoch: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
-#[serde(rename_all = "camelCase")]
-pub struct FacesProgress {
-    pub done: u32,
-    pub total: u32,
-    pub epoch: u64,
-}
-
 /// A menu-bar click, relayed so the frontend runs it like any other command.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(tag = "kind", rename_all = "camelCase")]

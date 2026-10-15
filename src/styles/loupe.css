@@ -1,0 +1,36 @@
+/* ---- Loupe ---- */
+
+.develop-loupe {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.develop-loupe.aiming {
+  border-bottom-color: var(--accent);
+}
+
+/* The patch is larger than the window, offset so the aimed point centres. */
+.develop-loupe img {
+  position: absolute;
+  image-rendering: pixelated;
+}
+
+.develop-loupe-waiting {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.develop-loupe-note {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}

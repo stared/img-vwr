@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { FileEntry, ImageMeta } from "../ipc";
 import type { Sort } from "../state/query";
 import type { Scope } from "../state/store";
@@ -18,8 +20,8 @@ export interface ImageSource {
   /** Palette command title, e.g. "Open Reddit Subreddit…". */
   title: string;
   sidebarTitle: string;
-  /** Short activity-bar glyph, e.g. "r/". */
-  glyph: string;
+  /** Activity-bar mark: an icon, or short text such as "r/". */
+  icon: ReactNode;
   /** Hint shown in the palette's argument input. */
   placeholder: string;
   /** Scope-chip value for an argument, e.g. "r/EarthPorn". */

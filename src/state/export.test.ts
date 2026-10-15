@@ -45,7 +45,7 @@ const SCAN = PAIRS.flatMap((stem) => [file(`${stem}.NEF`), file(`${stem}.JPG`)])
 
 function candidate(stem: string, edited: boolean): Candidate {
   const stack = SCAN.filter((f) => f.path.startsWith(stem));
-  return { entry: need(stack.find((f) => f.formatHint === "nef"), "a raw"), stack, edited, hdr: false };
+  return { entry: need(stack.find((f) => f.formatHint === "nef"), "a raw"), stack, edited };
 }
 
 describe("planFor", () => {
@@ -63,7 +63,7 @@ describe("planFor", () => {
 
   it("develops an untouched raw with no JPG beside it", () => {
     const lone = file("/shoot/DSC_0009.NEF");
-    const planned = planFor({ entry: lone, stack: [lone], edited: false, hdr: false }, DEFAULT_OPTIONS);
+    const planned = planFor({ entry: lone, stack: [lone], edited: false }, DEFAULT_OPTIONS);
     expect(planned.reason).toBe("no-jpg");
     expect(planned.job).toEqual({
       kind: "render",
@@ -101,32 +101,15 @@ describe("planFor", () => {
   it("copies an untouched JPEG rather than encoding it again", () => {
     const jpg = need(SCAN.find((f) => f.path === "/shoot/DSC_0001.JPG"), "the JPG");
     const planned = planFor(
-      { entry: jpg, stack: [jpg], edited: false, hdr: false },
+      { entry: jpg, stack: [jpg], edited: false },
       DEFAULT_OPTIONS,
     );
     expect(planned.job).toEqual({ kind: "copy", path: "/shoot/DSC_0001.JPG" });
   });
 
-  it("always develops an HDR face — the file at its path is one exposure", () => {
-    const face = need(SCAN.find((f) => f.path === "/shoot/DSC_0001.JPG"), "the JPG");
-    const planned = planFor(
-      { entry: face, stack: [face], edited: false, hdr: true },
-      DEFAULT_OPTIONS,
-    );
-    expect(planned.reason).toBe("hdr");
-    expect(planned.job.kind).toBe("render");
-  });
 });
 
 describe("candidatesOf", () => {
-  it("marks the paths that front HDR sets", () => {
-    const chosen = [need(SCAN.find((f) => f.name === "DSC_0001.JPG"), "the JPG")];
-    const [candidate] = candidatesOf(chosen, SCAN, new Set(), new Set(["/shoot/DSC_0001.JPG"]));
-    expect(candidate?.hdr).toBe(true);
-    const [plain] = candidatesOf(chosen, SCAN, new Set());
-    expect(plain?.hdr).toBe(false);
-  });
-
   it("finds the whole stack behind each chosen photograph", () => {
     const chosen = [need(SCAN[0], "the first file")];
     const [candidate] = candidatesOf(chosen, SCAN, new Set());

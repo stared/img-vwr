@@ -1,0 +1,149 @@
+/* ---- Cropped miniatures ---- */
+
+/* Size containers: a crop-shaped box contain-fits itself with cq units, no JS. */
+.thumb-frame,
+.filmstrip-photo {
+  container-type: size;
+}
+
+.thumb-cropped {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  width: min(100cqw, calc(100cqh * var(--crop-ar)));
+  height: min(100cqh, calc(100cqw / var(--crop-ar)));
+}
+
+/* Inline styles carry the crop's size and shift. */
+.thumb-frame .thumb-cropped img,
+.filmstrip-cell .thumb-cropped img {
+  position: absolute;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+}
+
+.filmstrip-cell.stacked .thumb-cropped.filmstrip-card {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transform: translate(3px, -3px);
+  box-shadow: 0 0 0 1px var(--bg);
+  border-radius: 4px;
+}
+
+.filmstrip-cell.stacked .thumb-cropped.filmstrip-card.deep {
+  transform: translate(6px, -6px);
+}
+
+.thumb-crop {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  z-index: 1;
+  display: flex;
+  pointer-events: none;
+}
+
+.thumb-crop svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--text);
+  stroke-width: 2;
+  fill: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+
+/* Already positioned and sized in screen pixels — no transform. */
+.viewer-detail {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.canvas-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+
+.canvas-waiting-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.canvas-waiting-note {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.viewer-crop {
+  position: absolute;
+  /* Only the handles take the pointer; a press inside the box is a press on the picture. */
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+
+.viewer-crop-third {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.viewer-crop-third.down {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.viewer-crop-third.across {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.viewer-crop-handle {
+  position: absolute;
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 1px;
+  box-sizing: border-box;
+}
+
+.viewer-crop-handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+
+.viewer-crop-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.viewer-crop-handle.n { left: 50%; top: 0; cursor: ns-resize; }
+.viewer-crop-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.viewer-crop-handle.e { left: 100%; top: 50%; cursor: ew-resize; }
+.viewer-crop-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.viewer-crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
+.viewer-crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.viewer-crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
+
+.viewer-canvas.cropping {
+  cursor: crosshair;
+}
+
+/* A row of the answers an enumerable control can have, the current one lit. */
+.develop-switch,
+.export-row-choices {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 8px 4px;
+}

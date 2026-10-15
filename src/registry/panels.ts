@@ -6,14 +6,16 @@ export interface Panel {
   id: string;
   title: string;
   component: ComponentType;
-  /** Activity-bar glyph; left panels are chosen one-at-a-time by icon. */
-  icon?: ReactNode;
-  /** Which shell edge hosts the panel; defaults to the left sidebar. */
-  side?: PanelSide;
+  /** Activity-bar glyph for left panels (chosen one at a time); null shows the title's first letter. */
+  icon: ReactNode | null;
+  /** Which shell edge hosts the panel. */
+  side: PanelSide;
+  /** Default position on its side, ascending; the user's own arrangement overrides it. */
+  order: number;
   /** Take the remaining sidebar height and scroll internally. */
-  fill?: boolean;
-  /** Renders only while true; absent = always. */
-  when?: () => boolean;
+  fill: boolean;
+  /** Renders only while true. */
+  when: () => boolean;
 }
 
 const registry = new Map<string, Panel>();
@@ -25,6 +27,8 @@ export function registerPanel(panel: Panel): void {
   registry.set(panel.id, panel);
 }
 
-export function allPanels(side: PanelSide = "left"): Panel[] {
-  return [...registry.values()].filter((p) => (p.side ?? "left") === side);
+export function allPanels(side: PanelSide): Panel[] {
+  return [...registry.values()].filter((p) => p.side === side).sort((a, b) => a.order - b.order);
 }
+
+export const always = (): boolean => true;

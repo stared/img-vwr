@@ -11,6 +11,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.export",
     title: "Export…",
+    input: null,
     keywords: ["save", "jpeg", "png", "render", "develop", "share"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Export…" }],
     when: (ctx: CommandContext) => {
@@ -25,6 +26,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.crop",
     title: "Crop & Straighten",
+    input: null,
     keywords: ["crop", "straighten", "rotate", "aspect", "trim"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Crop & Straighten" }],
     when: hasSession,
@@ -38,6 +40,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.cropDone",
     title: "Crop: Done",
+    input: null,
     keywords: ["apply", "commit", "finish crop"],
     menus: [],
     when: () => useDevelopStore.getState().cropping,
@@ -49,6 +52,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.cropCancel",
     title: "Crop: Cancel",
+    input: null,
     keywords: ["revert crop", "undo crop", "abandon"],
     menus: [],
     when: () => useDevelopStore.getState().cropping,
@@ -60,6 +64,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.reset",
     title: "Reset Develop Settings",
+    input: null,
     keywords: ["revert", "neutral", "undo edit"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Reset Develop" }],
     when: hasSession,
@@ -71,6 +76,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.focusMap",
     title: "Toggle Focus Map",
+    input: null,
     keywords: ["sharpness", "overlay", "analysis", "in focus"],
     menus: [],
     when: hasSession,
@@ -84,6 +90,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.copy",
     title: "Copy Develop Settings",
+    input: null,
     keywords: ["clipboard", "settings", "sync", "apply to"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Copy Develop Settings" }],
     when: hasSession,
@@ -95,6 +102,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.paste",
     title: "Paste Develop Settings",
+    input: null,
     keywords: ["clipboard", "settings", "sync", "apply"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Paste Develop Settings" }],
     when: () => hasSession() && useDevelopStore.getState().copied !== null,
@@ -106,6 +114,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.compare",
     title: "Compare With Before",
+    input: null,
     keywords: ["before", "after", "original", "toggle", "preview"],
     menus: [],
     when: hasSession,
@@ -117,6 +126,7 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.autoTone",
     title: "Auto Tone",
+    input: null,
     keywords: ["auto", "exposure", "brightness", "levels"],
     menus: [{ menu: "image", section: "develop", submenu: null, label: "Auto Tone" }],
     when: hasSession,
@@ -128,6 +138,8 @@ export function registerDevelopCommands(): void {
   registerCommand({
     id: "develop.panel",
     title: "Show Develop Panel",
+    input: null,
+    when: () => true,
     keywords: ["exposure", "white balance", "edit"],
     menus: [],
     run: ({ store }: CommandContext) => {

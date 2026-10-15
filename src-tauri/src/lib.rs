@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod features;
 mod menu;
 mod services;
 
@@ -11,7 +12,7 @@ use tauri_specta::{collect_commands, collect_events, Builder};
 use imgvwr_core::SceneRegistry;
 use services::develop::DevelopService;
 use services::embeddings::EmbeddingService;
-use services::labels::LabelService;
+use features::labels::LabelService;
 use services::thumbnails::ThumbnailService;
 use services::watcher::WatchService;
 
@@ -26,42 +27,42 @@ fn scene_registry() -> SceneRegistry {
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
+            // Folder, files, thumbnails, metadata
             commands::scan_folder,
             commands::list_subdirs,
             commands::set_recent_folders,
-            commands::get_metadata,
             commands::delete_files,
             commands::copy_files,
             commands::new_epoch,
             commands::request_thumbnails,
             commands::request_dir_counts,
             commands::request_meta,
-            commands::embedding_models,
-            commands::embedding_select,
-            commands::embedding_index,
-            commands::embedding_rank_image,
-            commands::embedding_rank_text,
-            commands::embedding_banded_scores,
-            commands::faces_index,
-            commands::faces_people,
-            commands::faces_rename,
-            commands::faces_names,
             commands::image_stats,
-            commands::labels_for_paths,
-            commands::labels_set_stars,
-            commands::labels_toggle_tag,
-            commands::develop_state,
-            commands::develop_presets,
-            commands::develop_auto_exposure,
-            commands::develop_focus_point,
-            commands::develop_render,
-            commands::develop_save,
-            commands::develop_reset,
-            commands::develop_edited_paths,
-            commands::develop_crops,
-            commands::develop_export,
-            commands::develop_pick_white_balance,
-            commands::develop_set_fusions,
+            // Services shared by views and features
+            services::embeddings::embedding_models,
+            services::embeddings::embedding_select,
+            services::embeddings::embedding_index,
+            services::embeddings::embedding_rank_image,
+            services::embeddings::embedding_rank_text,
+            services::embeddings::embedding_banded_scores,
+            services::develop::develop_state,
+            services::develop::develop_presets,
+            services::develop::develop_auto_exposure,
+            services::develop::develop_focus_point,
+            services::develop::develop_render,
+            services::develop::develop_save,
+            services::develop::develop_reset,
+            services::develop::develop_edited_paths,
+            services::develop::develop_crops,
+            services::develop::develop_export,
+            services::develop::develop_pick_white_balance,
+            // Features: delete a block together with its module
+            features::faces::faces_index,
+            features::faces::faces_people,
+            features::faces::faces_rename,
+            features::labels::labels_for_paths,
+            features::labels::labels_set_stars,
+            features::labels::labels_toggle_tag,
         ])
         .events(collect_events![
             events::ScanBatch,
@@ -72,7 +73,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             events::FolderChanged,
             events::EmbeddingStatus,
             events::EmbeddingProgress,
-            events::FacesProgress,
+            features::faces::FacesProgress,
             events::MenuAction
         ])
 }
@@ -146,7 +147,7 @@ pub fn run() {
             // User data (labels, edits, person names) lives in app data, deliberately never beside the photos.
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
-            app.manage(Arc::new(crate::services::faces::FaceService::new(
+            app.manage(Arc::new(crate::features::faces::FaceService::new(
                 cache_root,
                 &data_dir.join("faces.db"),
             )?));

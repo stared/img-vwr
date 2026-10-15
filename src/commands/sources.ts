@@ -6,6 +6,7 @@ export function registerSourceCommands(): void {
     registerCommand({
       id: `source.${source.id}`,
       title: source.title,
+      when: () => true,
       keywords: ["source", "open", source.id],
       input: { placeholder: source.placeholder },
       menus: [],

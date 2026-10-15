@@ -15,22 +15,22 @@ describe("command registry", () => {
   beforeEach(clearCommandsForTest);
 
   it("rejects duplicate ids", () => {
-    registerCommand({ id: "a", title: "A", menus: [], run: () => {} });
-    expect(() => registerCommand({ id: "a", title: "A again", menus: [], run: () => {} })).toThrow(
+    registerCommand({ id: "a", title: "A", keywords: [], input: null, when: () => true, menus: [], run: () => {} });
+    expect(() => registerCommand({ id: "a", title: "A again", keywords: [], input: null, when: () => true, menus: [], run: () => {} })).toThrow(
       /already registered/,
     );
   });
 
   it("executes and reports missing commands", () => {
     let ran = 0;
-    registerCommand({ id: "a", title: "A", menus: [], run: () => void (ran += 1) });
+    registerCommand({ id: "a", title: "A", keywords: [], input: null, when: () => true, menus: [], run: () => void (ran += 1) });
     expect(executeCommand("a", ctx)).toBe(true);
     expect(ran).toBe(1);
     expect(executeCommand("nope", ctx)).toBe(false);
   });
 
   it("respects the when guard", () => {
-    registerCommand({ id: "guarded", title: "G", menus: [], when: () => false, run: () => {} });
+    registerCommand({ id: "guarded", title: "G", keywords: [], input: null, menus: [], when: () => false, run: () => {} });
     expect(executeCommand("guarded", ctx)).toBe(false);
   });
 });
@@ -58,9 +58,9 @@ describe("searchCommands", () => {
   beforeEach(clearCommandsForTest);
 
   it("ranks better matches first and hides guarded commands", () => {
-    registerCommand({ id: "viewer.zoomFit", title: "Zoom to Fit", menus: [], run: () => {} });
-    registerCommand({ id: "folder.open", title: "Open Folder", menus: [], run: () => {} });
-    registerCommand({ id: "hidden", title: "Zoom Fit Hidden", menus: [], when: () => false, run: () => {} });
+    registerCommand({ id: "viewer.zoomFit", title: "Zoom to Fit", keywords: [], input: null, when: () => true, menus: [], run: () => {} });
+    registerCommand({ id: "folder.open", title: "Open Folder", keywords: [], input: null, when: () => true, menus: [], run: () => {} });
+    registerCommand({ id: "hidden", title: "Zoom Fit Hidden", keywords: [], input: null, menus: [], when: () => false, run: () => {} });
 
     const results = searchCommands("fit", ctx).map((c) => c.id);
     expect(results[0]).toBe("viewer.zoomFit");

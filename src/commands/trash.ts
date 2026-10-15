@@ -1,6 +1,6 @@
 import { confirm, message } from "@tauri-apps/plugin-dialog";
 
-import { deleteFiles, type FileEntry } from "../ipc";
+import { api, type FileEntry } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { chosenEntries, filesBehind, useAppStore } from "../state/store";
 
@@ -37,7 +37,7 @@ async function trashSelection(): Promise<void> {
   });
   if (!go) return;
 
-  const outcome = await deleteFiles(files.map((f) => f.path));
+  const outcome = await api.deleteFiles(files.map((f) => f.path));
   useAppStore.getState().deleted(outcome.removed);
   if (outcome.failed.length > 0) {
     const lines = outcome.failed.map((f) => `${f.path.split("/").pop() ?? f.path}: ${f.error}`);
@@ -49,6 +49,7 @@ export function registerTrashCommands(): void {
   registerCommand({
     id: "image.trash",
     title: "Move to Trash",
+    input: null,
     keywords: ["delete", "remove", "bin", "discard", "reject", "cull"],
     menus: [{ menu: "image", section: "danger", submenu: null, label: "Move to Trash" }],
     when: (ctx: CommandContext) => {

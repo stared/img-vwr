@@ -2,7 +2,8 @@ use imgvwr_core::WhiteBalance;
 use serde::{Deserialize, Serialize};
 
 /// Zero means unchanged on every slider, so [`Default`] is the identity edit; ranges are ±100 except exposure (stops).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopParams {
     /// Stops of exposure; ±5 EV.
@@ -63,7 +64,8 @@ impl DevelopParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct DevelopSettings {
     pub white_balance: WhiteBalance,
@@ -122,7 +124,8 @@ fn clamp_finite(v: f32, lo: f32, hi: f32) -> f32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub enum Overlay {
     None,

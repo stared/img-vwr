@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # Includes the rule that the core never imports a feature.
+      - run: pnpm lint
+      - run: pnpm test
+
+  rust:
+    # Raw decoding and face detection use macOS frameworks.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # tauri-build embeds the frontend, so it must exist before cargo compiles the app.
+      - run: pnpm install --frozen-lockfile && pnpm build
+      - run: cargo test --workspace --manifest-path src-tauri/Cargo.toml
+      # The tests regenerate src/ipc/bindings.ts; a diff means it was committed stale.
+      - run: git diff --exit-code src/ipc/bindings.ts

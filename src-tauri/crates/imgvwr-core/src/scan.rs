@@ -28,7 +28,8 @@ pub fn is_supported_extension(ext: &str) -> bool {
     DISPLAY_EXTENSIONS.contains(&ext) || RAW_EXTENSIONS.contains(&ext)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub path: String,
@@ -39,7 +40,8 @@ pub struct FileEntry {
     pub format_hint: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct DirEntry {
     pub path: String,
