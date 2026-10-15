@@ -21,91 +21,13 @@ import {
   withRatio,
 } from "./crop";
 import { api, FULL_REGION } from "../ipc";
+import { PARAM_KEYS, type CaptionMode, type ParamKey } from "./developControls";
+import { DETAIL_MAX_EDGE, displayedSize, frameAspect, LOUPE_MARGIN, loupeRegion } from "./developGeometry";
+
+export * from "./developControls";
+export * from "./developGeometry";
 
 /* Rendering coalesces, never queues: at most one render in flight; changes set a dirty flag and one follow-up runs when it lands. */
-
-/** Sliders that make up an edit, in the order the panel shows them. */
-export const PARAM_KEYS = [
-  "exposure",
-  "contrast",
-  "highlights",
-  "shadows",
-  "whites",
-  "blacks",
-  "rolloff",
-  "vibrance",
-  "saturation",
-] as const;
-
-type ParamKey = (typeof PARAM_KEYS)[number];
-
-export interface ParamSpec {
-  key: ParamKey;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  format: (value: number) => string;
-}
-
-const signed = (digits: number) => (value: number) =>
-  `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-
-export const PARAM_SPECS: ParamSpec[] = [
-  { key: "exposure", label: "exposure", min: -5, max: 5, step: 0.01, format: (v) => `${signed(2)(v)} EV` },
-  { key: "contrast", label: "contrast", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "highlights", label: "highlights", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "shadows", label: "shadows", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "whites", label: "whites", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "blacks", label: "blacks", min: -100, max: 100, step: 1, format: signed(0) },
-  // One-sided: zero is clipping, and nothing lies on the other side of it.
-  { key: "rolloff", label: "roll-off", min: 0, max: 100, step: 1, format: (v) => v.toFixed(0) },
-  { key: "vibrance", label: "vibrance", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "saturation", label: "saturation", min: -100, max: 100, step: 1, format: signed(0) },
-];
-
-/** Mutually exclusive pixel overlays; adding one means adding it here and in the Rust enum. */
-export const OVERLAY_CYCLE: Overlay[] = ["none", "sharpness", "clipping"];
-
-export const OVERLAY_LABELS: Record<Overlay, string> = {
-  none: "off",
-  sharpness: "focus map",
-  clipping: "clipping",
-};
-
-export const OVERLAY_NOTES: Record<Overlay, string> = {
-  none: "The photograph, unmarked.",
-  sharpness:
-    "Marks the regions that resolve fine detail. Smooth surfaces read as unsharp because there is no detail there to resolve.",
-  clipping:
-    "Red where a channel has hit white and lost its texture, blue where nothing at all was recorded.",
-};
-
-export const CAPTION_CYCLE = ["briefly", "always", "off"] as const;
-export type CaptionMode = (typeof CAPTION_CYCLE)[number];
-
-export const CAPTION_LABELS: Record<CaptionMode, string> = {
-  briefly: "on change",
-  always: "always",
-  off: "off",
-};
-
-export const CAPTION_NOTES: Record<CaptionMode, string> = {
-  briefly: "Says which photograph this is when you arrive at it, then fades.",
-  always: "Stays over the photograph.",
-  off: "Nothing over the photograph; the panels still say everything.",
-};
-
-/** How long "briefly" lasts: enough to read a filename and an exposure without hurrying. */
-export const CAPTION_LINGER_MS = 3500;
-
-export function nextCaption(current: CaptionMode): CaptionMode {
-  const at = CAPTION_CYCLE.indexOf(current);
-  return CAPTION_CYCLE[(at + 1) % CAPTION_CYCLE.length] ?? "briefly";
-}
-
-export const TEMPERATURE_RANGE = { min: 2000, max: 12000, step: 10 };
-export const TINT_RANGE = { min: -150, max: 150, step: 1 };
 
 export interface Session {
   path: string;
@@ -223,101 +145,6 @@ interface DevelopStore {
 
 /* Re-exported so panels that only want "is this cropped" need not know about `./crop`. */
 export { FULL_CROP, isCropped } from "./crop";
-
-/** Size in real pixels of what the viewer shows — the cropped size, or zoom percentages would be measured against thrown-away pixels. */
-export function displayedSize(
-  native: { width: number; height: number },
-  crop: Crop,
-): { width: number; height: number } {
-  return {
-    width: Math.max(1, Math.round(native.width * crop.width)),
-    height: Math.max(1, Math.round(native.height * crop.height)),
-  };
-}
-
-/** The frame's shape, which every rotation in `./crop` has to be told. */
-export function frameAspect(native: { width: number; height: number }): number {
-  return native.height > 0 ? native.width / native.height : 1;
-}
-
-/** Largest detail crop we will develop, in pixels of the longest edge. */
-const DETAIL_MAX_EDGE = 4000;
-
-/** The region covering `edge` image pixels at 1:1 around `at`, clamped inside the frame. */
-export function loupeRegion(
-  at: { x: number; y: number },
-  image: { width: number; height: number },
-  edge: number,
-): RegionArg {
-  const width = Math.min(1, edge / Math.max(1, image.width));
-  const height = Math.min(1, edge / Math.max(1, image.height));
-  const inside = (v: number, span: number) => Math.min(1 - span, Math.max(0, v - span / 2));
-  return { x: inside(at.x, width), y: inside(at.y, height), width, height };
-}
-
-/** The loupe renders this much wider than its window, so small aim movements slide over pixels already in hand. */
-export const LOUPE_MARGIN = 1.8;
-
-/** Whether pixels covering `have` can still fill a window over `want`. */
-export function loupeCovers(have: RegionArg, want: RegionArg): boolean {
-  // A pixel of slack: the regions are computed in floats from different sizes.
-  const EPS = 1e-6;
-  return (
-    want.x >= have.x - EPS &&
-    want.y >= have.y - EPS &&
-    want.x + want.width <= have.x + have.width + EPS &&
-    want.y + want.height <= have.y + have.height + EPS
-  );
-}
-
-/** How much two regions must differ before the crop is worth re-developing. */
-const REGION_EPSILON = 0.01;
-
-export function regionsDiffer(a: RegionArg, b: RegionArg): boolean {
-  return (
-    Math.abs(a.x - b.x) > REGION_EPSILON ||
-    Math.abs(a.y - b.y) > REGION_EPSILON ||
-    Math.abs(a.width - b.width) > REGION_EPSILON ||
-    Math.abs(a.height - b.height) > REGION_EPSILON
-  );
-}
-
-/** On-screen part in normalised image coordinates; `scale` is screen pixels per image pixel, `tx`/`ty` place the image's top-left. */
-export function visibleRegion(
-  view: { scale: number; tx: number; ty: number },
-  image: { width: number; height: number },
-  canvas: { width: number; height: number },
-): RegionArg {
-  const spanX = view.scale * image.width;
-  const spanY = view.scale * image.height;
-  if (spanX <= 0 || spanY <= 0) return FULL_REGION;
-  const x = Math.max(0, -view.tx / spanX);
-  const y = Math.max(0, -view.ty / spanY);
-  return {
-    x,
-    y,
-    width: Math.min(1 - x, canvas.width / spanX),
-    height: Math.min(1 - y, canvas.height / spanY),
-  };
-}
-
-/** True when the preview is magnified past its own resolution. */
-export function needsDetail(
-  view: { scale: number },
-  frame: { width: number },
-  image: { width: number },
-): boolean {
-  if (image.width <= 0 || frame.width <= 0) return false;
-  const previewPixelsPerImagePixel = frame.width / image.width;
-  // Slack so sitting exactly at the preview's resolution does not flap.
-  return view.scale > previewPixelsPerImagePixel * 1.05;
-}
-
-/** Bounded so a huge window does not turn every drag into a full-resolution render. */
-export function previewEdge(viewportLongestPx: number, dpr: number): number {
-  const wanted = Math.round(viewportLongestPx * dpr);
-  return Math.min(3000, Math.max(1200, wanted));
-}
 
 /** True when the viewer must show a developed frame rather than the file: undecodable format, or an edit applied. */
 export function needsDevelopedFrame(session: Session | null): boolean {
