@@ -1,3 +1,4 @@
+import { IconBrandReddit } from "@tabler/icons-react";
 import { fetch } from "@tauri-apps/plugin-http";
 
 import type { ImageSource, SourceItem } from "../registry/sources";
@@ -81,7 +82,7 @@ export const redditSource: ImageSource = {
   id: "reddit",
   title: "Open Reddit Subreddit…",
   sidebarTitle: "Reddit",
-  glyph: "r/",
+  icon: <IconBrandReddit size={18} stroke={1.7} />,
   placeholder: "subreddit, e.g. EarthPorn",
   label: (arg) => `r/${subredditOf(arg)}`,
   // The feed is /hot — its order IS the front-page rank, worth sorting by.

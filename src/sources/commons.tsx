@@ -1,3 +1,4 @@
+import { IconBrandWikipedia } from "@tabler/icons-react";
 import { fetch } from "@tauri-apps/plugin-http";
 
 import type { ImageSource, SourceItem } from "../registry/sources";
@@ -124,7 +125,7 @@ export const commonsSource: ImageSource = {
   id: "commons",
   title: "Open Wikimedia Commons…",
   sidebarTitle: "Wikimedia Commons",
-  glyph: "W",
+  icon: <IconBrandWikipedia size={18} stroke={1.7} />,
   placeholder: "search, or Category:…",
   label: (arg) => arg.trim(),
   // Search results arrive relevance-ranked; category listings alphabetical.

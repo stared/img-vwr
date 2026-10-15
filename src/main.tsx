@@ -17,7 +17,7 @@ import { registerTrashCommands } from "./commands/trash";
 import { DevelopLoupe } from "./components/develop/DevelopLoupe";
 import { DevelopPanel } from "./components/develop/DevelopPanel";
 import { FolderTreePanel } from "./components/shell/FolderTreePanel";
-import { FolderIcon, SimilarityIcon, SOURCE_ICONS } from "./components/shell/icons";
+import { FolderIcon, SimilarityIcon } from "./components/shell/icons";
 import { ColorsPanel, HistogramPanel, ShotPanel } from "./components/shell/InfoPanel";
 import { SimilarityPanel } from "./components/shell/SimilarityPanel";
 import { makeSourcePanel } from "./components/shell/SourcePanel";
@@ -127,7 +127,7 @@ for (const source of allSources()) {
     id: `source-${source.id}`,
     title: source.sidebarTitle,
     component: makeSourcePanel(source),
-    icon: SOURCE_ICONS[source.id] ?? source.glyph,
+    icon: source.icon,
     order: 20,
   });
 }
