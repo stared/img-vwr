@@ -1,0 +1,133 @@
+/* ---- Export sheet ---- */
+
+.export-sheet {
+  width: min(620px, 90vw);
+  margin: 12vh auto 0;
+  padding: 16px 8px 14px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.export-sheet h3 {
+  margin: 0 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Centred, not baseline-aligned: a slider track has no baseline and would sit high. */
+.export-row {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  gap: 8px;
+}
+
+.export-row-label {
+  flex: 0 0 88px;
+  padding-left: 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.export-row-choices {
+  flex: 1;
+  margin: 0 12px 0 0;
+}
+
+/* The overlay ground swallows the faint hairline; unlit options still need edges. */
+.export-choice {
+  border-color: var(--border);
+}
+
+.export-row .slider {
+  flex: 1;
+  gap: 10px;
+  padding: 0;
+}
+
+/* Fixed, not a minimum: a wider readout would steal track length from one slider. */
+.export-row .slider-value {
+  flex: 0 0 132px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.export-summary {
+  margin: 12px 8px 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.export-note,
+.export-failed {
+  margin: 0 8px 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.export-failed {
+  list-style: none;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 8px 0;
+}
+
+.export-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-folder:hover {
+  border-color: var(--accent);
+}
+
+.export-go {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 14px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.export-progress {
+  height: 3px;
+  margin: 8px 8px 0;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.export-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}

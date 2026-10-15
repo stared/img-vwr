@@ -1,0 +1,272 @@
+/* ---- Sliders ---- */
+
+.slider {
+  display: block;
+  padding: 2px 8px 4px;
+}
+
+.slider.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  /* An input's intrinsic min-width is ~20 characters; without this the slider can't shrink. */
+  min-width: 0;
+}
+
+.slider-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.slider-label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.slider-value {
+  min-width: 0;
+  padding: 0 2px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.slider:hover .slider-value {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.slider-value:focus {
+  color: var(--text);
+  background: var(--bg);
+  outline: 1px solid var(--accent);
+}
+
+.slider-value.changed {
+  color: var(--text);
+}
+
+.slider-track {
+  position: relative;
+  display: block;
+  height: 14px;
+  cursor: ew-resize;
+  /* Without this the webview pans the panel instead of moving the thumb. */
+  touch-action: none;
+}
+
+.slider-rail,
+.slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.slider-rail {
+  left: 0;
+  right: 0;
+  background: var(--border);
+}
+
+/* The fill runs from the neutral value, not the left edge. */
+.slider-fill {
+  background: var(--accent-muted);
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 11px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-dim);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: background 120ms ease, height 120ms ease;
+}
+
+.slider-track:hover .slider-thumb {
+  background: var(--text);
+}
+
+.slider-track:active .slider-thumb {
+  height: 13px;
+  background: var(--text);
+}
+
+.slider-track:focus-visible {
+  outline: none;
+}
+
+.slider-track:focus-visible .slider-thumb {
+  background: var(--accent-text);
+}
+
+.slider.inline .slider-track {
+  flex: 1;
+  min-width: 96px;
+}
+
+/* Right-sidebar sliders: the value stays faint until it is changed. */
+.sidebar.right .slider {
+  padding: 3px 10px 5px;
+}
+
+.sidebar.right .slider-head {
+  padding-bottom: 2px;
+}
+
+.sidebar.right .slider-label {
+  color: var(--text-dim);
+}
+
+.sidebar.right .slider-value {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.sidebar.right .slider-value.changed {
+  color: var(--text);
+}
+
+.slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  margin-left: -3.5px;
+  border: none;
+  border-radius: 50%;
+  background: var(--border);
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.slider-tick.filled {
+  background: var(--accent-muted);
+}
+
+.slider-tick::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+
+.slider-tick:hover {
+  background: var(--text);
+  transform: translateY(-50%) scale(1.3);
+}
+
+.slider-tick.on,
+.slider-tick.on.filled {
+  background: var(--accent-text);
+}
+
+/* One button for every enumerable option; colour only on on/armed states. */
+.develop-reset,
+.develop-toggle,
+.export-choice {
+  height: 22px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border-faint);
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.develop-toggle {
+  margin: 2px 8px 4px;
+}
+
+.develop-reset:hover:not(:disabled),
+.develop-toggle:hover,
+.export-choice:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.develop-switch .develop-toggle {
+  margin: 0;
+}
+
+.develop-switch-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.develop-toggle.on,
+.export-choice.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.develop-toggle.armed {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.develop-reset:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* Pinned sections stay in a separate dock; the remaining panels scroll below. */
+.sidebar.right:not(.collapsed) {
+  overflow: hidden;
+}
+
+.sidebar-pinned {
+  flex: 0 1 auto;
+  max-height: 50%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-pinned:has(+ .sidebar-scroll:empty) {
+  max-height: 100%;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sidebar-pinned > .sidebar-panel,
+.sidebar-scroll > .sidebar-panel {
+  flex-shrink: 0;
+}
+
+.panel-pin {
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-dim);
+  border-radius: 4px;
+}
+
+.panel-pin:hover,
+.panel-pin[aria-pressed="true"] {
+  color: var(--text);
+}
+
+.panel-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

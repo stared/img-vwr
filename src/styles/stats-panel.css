@@ -1,0 +1,144 @@
+/* ---- Statistics panel ---- */
+
+
+.stats {
+  padding: 0 12px 14px;
+  font-size: 12px;
+}
+
+.stats-summary {
+  padding-bottom: 4px;
+  color: var(--text);
+}
+
+.stats-section:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.stats-progress {
+  color: var(--text-dim);
+}
+
+.stats-section {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.stats-section-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 0 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-faint);
+}
+
+.stats-section-header:hover {
+  color: var(--text);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 68px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  line-height: 18px;
+  text-align: left;
+}
+
+.stats-row.list {
+  grid-template-columns: 1fr 36px;
+}
+
+button.stats-row:hover .stats-label {
+  color: var(--text);
+}
+
+.stats-row.active .stats-label,
+.stats-row.active .stats-count {
+  color: var(--accent);
+}
+
+.stats-row.active .stats-bar > span {
+  background: var(--accent);
+}
+
+.stats-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-bar {
+  height: 8px;
+}
+
+.stats-bar > span {
+  display: block;
+  height: 100%;
+  min-width: 1px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.stats-count {
+  text-align: right;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bins are full-height click targets; the inner span is the visible bar. */
+.stats-histo {
+  display: flex;
+  gap: 1px;
+  height: 56px;
+}
+
+.stats-histo > span {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.stats-histo > span > span {
+  width: 100%;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.stats-histo.selectable > span {
+  cursor: pointer;
+}
+
+.stats-histo.selectable > span:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.stats-histo.selectable > span:hover > span,
+.stats-histo > span.active > span {
+  background: var(--accent);
+}
+
+.stats-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-note {
+  padding-top: 3px;
+  color: var(--text-dim);
+}
