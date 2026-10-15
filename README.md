@@ -70,14 +70,14 @@ it also regenerates automatically on every dev run.
 
 ```
 src/                    strict-TS React UI
-  registry/             command / keybinding / panel / view / sort / filter /
-                        fact / source registries (plugin seam)
+  registry/             the seams: channels, filters, sorts, commands, keys,
+                        panels, badges, views, sources, facts
+  features/             labels, people, similarity — each a folder with its own
+                        store, UI and registrations; the core never imports them
   commands/ sorts/ filters/ facts/   built-ins registered through those registries
   sources/              image sources besides folders (Reddit, Commons)
-  labels/ people/ similarity/        features that register their own
-                        commands, filters and sorts
   components/           shell (palette, sidebar, statusbar), gallery, viewer, develop
-  state/store.ts        zustand store; transitions are pure functions
+  state/store.ts        core store: folder, selection, query, view; pure transitions
   ipc/                  generated bindings + thin typed wrappers
 src-tauri/
   crates/imgvwr-core/     PURE Rust: scan, codecs, thumbnails, cache keys,
@@ -86,15 +86,16 @@ src-tauri/
                           focus map — knows nothing about file formats
   crates/imgvwr-raw/      raw format plugin (Core Image on macOS)
   crates/imgvwr-embed/    image/text embeddings for similarity and faces
-  src/                    Tauri wiring: commands (thin adapters), events,
-                          services (thumbnails, develop + the `develop:`
-                          preview protocol, embeddings, faces, labels, export)
+  src/                    Tauri wiring: lib.rs registers everything;
+                          services/ (thumbnails, develop + the `develop:`
+                          preview protocol, embeddings, export, watcher) and
+                          features/ (faces, labels), each with its commands
 tools/camera-look/      fitting pipeline that generates imgvwr-develop's look_data.rs
 ```
 
-Extension seams exercised so far (the future plugin API maps onto these):
-`ImageCodec` + `CodecRegistry` and `SceneFormat` + `SceneRegistry` (Rust), the
-TS registries above, and the typed event bus (tauri-specta).
+Extension seams: `ImageCodec` + `CodecRegistry` and `SceneFormat` +
+`SceneRegistry` (Rust), the TS registries above, and the typed event bus
+(tauri-specta). [EXTENDING.md](EXTENDING.md) walks through adding a feature.
 
 Two Rust seams because they answer different questions. A codec answers "what
 do these bytes look like" and stops at display-ready RGBA8. A `SceneFormat`
