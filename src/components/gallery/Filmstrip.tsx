@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
+import { api, fileUrl, type FileEntry } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
 import { groupStacks, pairedName, stackCaption, stackKeyOf } from "../../state/stacks";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
@@ -168,7 +168,7 @@ export function Filmstrip({ height }: { height: number }) {
         .slice(first, last)
         .map((c) => c.entry.path)
         .filter((path) => !(path in have) && !(path in thumbErrors));
-      if (wanted.length > 0) void requestThumbnails(wanted, epoch);
+      if (wanted.length > 0) void api.requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [placed, first, last, epoch]);

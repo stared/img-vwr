@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { ImageMeta } from "../../ipc";
-import { requestMeta } from "../../ipc";
+import { api } from "../../ipc";
 import type { Dims } from "../../state/derived";
 import { effectiveDims, takenMs } from "../../state/derived";
 import { activeFormats } from "../../state/query";
@@ -178,7 +178,7 @@ export function StatsPanel() {
     if (status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
     const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
-    if (missing.length > 0) void requestMeta(missing, epoch);
+    if (missing.length > 0) void api.requestMeta(missing, epoch);
   }, [status, remote, allEntries, epoch]);
 
   const stats = useMemo(() => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { facesIndex, facesRename, fileUrl, type PersonCluster } from "../../ipc";
+import { api, fileUrl, type PersonCluster } from "../../ipc";
 import { useAppStore } from "../../state/store";
 import { localJpegPaths, PERSON_MERGE, refreshPeople, usePeopleStore } from "./store";
 
@@ -99,7 +99,7 @@ export function PeoplePanel() {
     const key = `${epoch}:${paths.length}`;
     if (indexedFor.current === key) return;
     indexedFor.current = key;
-    void facesIndex(paths, epoch);
+    void api.facesIndex(paths, epoch);
   }, [scope, status, epoch, entryCount]);
 
   const clusteredFor = useRef<string | null>(null);
@@ -135,7 +135,7 @@ export function PeoplePanel() {
     setEditing(null);
     if (name === (person.name ?? "")) return;
     try {
-      await facesRename(person.id, name, PERSON_MERGE);
+      await api.facesRename(person.id, name, PERSON_MERGE);
       if (active.has(person.id)) {
         // Renaming changes the cluster id; re-point an active filter, or drop it on un-name.
         if (name !== "") setSelectFilter("person", name);

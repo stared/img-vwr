@@ -1,4 +1,4 @@
-import { embeddingSelect } from "../../ipc";
+import { api } from "../../ipc";
 import { useEmbedStore } from "../../state/embeddings";
 import { downloadLabel } from "./ModelMenu";
 
@@ -34,7 +34,7 @@ export function SimilarityPanel() {
                   ? `${model.label} scores likeness for "closest to…" sorts — local, nothing leaves this machine`
                   : `use ${model.label} for "closest to…" sorts — local, nothing leaves this machine`
               }
-              onClick={() => void embeddingSelect(model.id)}
+              onClick={() => void api.embeddingSelect(model.id)}
             >
               <span className="model-name">
                 {model.label}

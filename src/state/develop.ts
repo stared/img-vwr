@@ -20,17 +20,7 @@ import {
   straightened,
   withRatio,
 } from "./crop";
-import {
-  developAutoExposure,
-  developFocusPoint,
-  developPickWhiteBalance,
-  developPresets,
-  developRender,
-  developReset,
-  developSave,
-  developState,
-  FULL_REGION,
-} from "../ipc";
+import { api, FULL_REGION } from "../ipc";
 
 /* Rendering coalesces, never queues: at most one render in flight; changes set a dirty flag and one follow-up runs when it lands. */
 
@@ -445,7 +435,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     const live = get().cropping ? { ...start.settings, crop: WHOLE_FRAME } : start.settings;
     const settings = get().comparing ? start.info.settings : live;
 
-    const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
+    const result = await api.developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
       (frame) => ({ ok: true as const, frame }),
       (error: unknown) => ({ ok: false as const, error: String(error) }),
     );
@@ -490,12 +480,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         const path = wanted.find((p) => p !== session.path && !(p in get().warm));
         if (path === undefined) return;
 
-        const warmed = await developState(path).then(
+        const warmed = await api.developState(path).then(
           async (info) => ({
             info,
             // A plain JPEG with no edit is shown by the webview from the file itself.
             frame: needsDevelopedFrame(sessionFor(path, info, null))
-              ? await developRender(path, info.settings, currentEdge, "none", FULL_REGION)
+              ? await api.developRender(path, info.settings, currentEdge, "none", FULL_REGION)
               : null,
           }),
           () => null,
@@ -514,7 +504,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     const session = get().session;
     if (!session) return;
     set({ session: { ...session, settings: next, dirty: true } });
-    void developSave(session.path, next).catch(() => {
+    void api.developSave(session.path, next).catch(() => {
       const now = get().session;
       if (now && now.path === session.path) {
         set({ session: { ...now, error: "could not save this edit" } });
@@ -527,7 +517,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     session: null,
     // Fetched once at store creation; the catalog is fixed for the session.
     presets: (() => {
-      void developPresets().then(
+      void api.developPresets().then(
         (presets) => set({ presets }),
         () => {},
       );
@@ -565,7 +555,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
       set({ opening: path, session: null });
       try {
-        const info = await developState(path);
+        const info = await api.developState(path);
         // A slow open must not install itself over an image the user has navigated on from.
         if (get().opening !== path) return;
         set({ opening: null, session: sessionFor(path, info, null) });
@@ -626,7 +616,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     reset: async () => {
       const session = get().session;
       if (!session) return;
-      const info = await developReset(session.path);
+      const info = await api.developReset(session.path);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       set({
@@ -640,7 +630,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       if (!session || session.detailing) return;
       const { path, settings, overlay } = session;
       set({ session: { ...session, detailing: true } });
-      void developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
+      void api.developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
         (detail) => {
           const now = get().session;
           // Only install it if it still describes the image on screen under the settings that produced it.
@@ -667,7 +657,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const session = get().session;
       if (!session) return;
       // The point is in crop coordinates; the backend maps it back onto the sensor.
-      const balance = await developPickWhiteBalance(session.path, x, y, session.settings);
+      const balance = await api.developPickWhiteBalance(session.path, x, y, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       // Disarm on use: the eyedropper is a single action, not a mode.
@@ -696,7 +686,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     autoTone: async () => {
       const session = get().session;
       if (!session) return;
-      const exposure = await developAutoExposure(session.path, session.settings);
+      const exposure = await api.developAutoExposure(session.path, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       change({ ...now.settings, params: { ...now.settings.params, exposure } });
@@ -809,7 +799,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const aim =
         get().loupeAt !== null
           ? Promise.resolve(get().loupeAt as { x: number; y: number })
-          : developFocusPoint(path, settings).then(
+          : api.developFocusPoint(path, settings).then(
               ([x, y]) => ({ x, y }),
               () => ({ x: 0.5, y: 0.5 }),
             );
@@ -819,7 +809,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
           // Wider than the window, so the next small movement costs nothing.
           const wide = Math.round(edge * LOUPE_MARGIN);
           const region = loupeRegion(at, image, wide);
-          const frame = await developRender(path, settings, wide, overlay, region);
+          const frame = await api.developRender(path, settings, wide, overlay, region);
           return { at, frame, region };
         })
         .then(

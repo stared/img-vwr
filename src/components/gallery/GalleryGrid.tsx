@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import { requestMeta, requestThumbnails } from "../../ipc";
+import { api } from "../../ipc";
 import { groupScenes, sceneLabel, type Scene } from "../../state/scenes";
 import { sceneSimsFor, useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbCell } from "./ThumbCell";
@@ -102,7 +102,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
     if (!grouped || status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
     const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
-    if (missing.length > 0) void requestMeta(missing, epoch);
+    if (missing.length > 0) void api.requestMeta(missing, epoch);
   }, [grouped, status, remote, allEntries, epoch]);
 
   const sceneSims = useAppStore((s) => (grouped ? s.sceneSims : null));
@@ -175,7 +175,7 @@ export function GalleryGrid({ grouped }: { grouped: boolean }) {
         }
       }
       if (wanted.length > 0) {
-        void requestThumbnails(wanted, epoch);
+        void api.requestThumbnails(wanted, epoch);
       }
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);

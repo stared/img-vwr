@@ -1,9 +1,4 @@
-import {
-  embeddingIndex,
-  embeddingRankImage,
-  embeddingRankText,
-  embeddingSelect,
-} from "../../ipc";
+import { api } from "../../ipc";
 import { ModelMenu } from "../../components/shell/ModelMenu";
 import { registerCommand, type CommandContext } from "../../registry/commands";
 import { registerSort } from "../../registry/sorts";
@@ -24,8 +19,8 @@ async function rankAnchor(anchor: Similarity["anchor"]): Promise<Record<string, 
   const paths = useAppStore.getState().entries.map((e) => e.path);
   const ranked =
     anchor.kind === "image"
-      ? await embeddingRankImage(anchor.path, paths)
-      : await embeddingRankText(anchor.query, paths);
+      ? await api.embeddingRankImage(anchor.path, paths)
+      : await api.embeddingRankText(anchor.query, paths);
   const scores: Record<string, number> = {};
   for (const { path, score } of ranked) {
     scores[path] = score;
@@ -55,7 +50,7 @@ async function refreshScores(anchor: Similarity["anchor"]): Promise<void> {
 /** Set (or refresh) the similarity anchor and make sure indexing is running. */
 async function similarTo(anchor: Similarity["anchor"], label: string): Promise<void> {
   const { entries, epoch } = useAppStore.getState();
-  void embeddingIndex(
+  void api.embeddingIndex(
     entries.map((e) => e.path),
     epoch,
   );
@@ -72,7 +67,7 @@ async function anchorTo(anchor: Similarity["anchor"], label: string): Promise<vo
   }
   setSimilarity({ label, anchor, scores: {} });
   const downloaded = useEmbedStore.getState().models.find((m) => m.downloaded);
-  if (downloaded) await embeddingSelect(downloaded.id);
+  if (downloaded) await api.embeddingSelect(downloaded.id);
   else useAppStore.getState().setActivePanel("similarity");
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
-import { imageStats, isLocal } from "../../ipc";
+import { api, isLocal } from "../../ipc";
 import { useDevelopStore } from "../../state/develop";
 import { DevelopHistogram } from "../develop/DevelopHistogram";
 import { formatBytes } from "../../state/stats";
@@ -217,7 +217,7 @@ export function ColorsPanel() {
       return;
     }
     const timer = setTimeout(() => {
-      imageStats(path)
+      api.imageStats(path)
         .then((data) => setStats({ path, data }))
         // Undecodable (e.g. AVIF has no Rust codec): no chart.
         .catch(() => setStats(null));

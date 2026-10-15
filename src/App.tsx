@@ -12,7 +12,7 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { getView } from "./registry/views";
-import { events, isLocal, requestMeta, setRecentFolders } from "./ipc";
+import { api, events, isLocal } from "./ipc";
 import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
 import { useSceneRefinement } from "./state/sceneRefinement";
@@ -32,7 +32,7 @@ function useFolderMeta() {
     if (askedFor.current === epoch) return;
     askedFor.current = epoch;
     const missing = entries.filter((e) => !useAppStore.getState().meta[e.path]).map((e) => e.path);
-    if (missing.length > 0) void requestMeta(missing, epoch);
+    if (missing.length > 0) void api.requestMeta(missing, epoch);
   }, [scope, status, entries, epoch]);
 }
 
@@ -73,7 +73,7 @@ function App() {
 
   const recentFolders = useAppStore((s) => s.recentFolders);
   useEffect(() => {
-    void setRecentFolders(recentFolders);
+    void api.setRecentFolders(recentFolders);
   }, [recentFolders]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { developEditedPaths, developExport, type Exported } from "../../ipc";
+import { api, type Exported } from "../../ipc";
 import {
   candidatesOf,
   planAll,
@@ -88,7 +88,7 @@ export function ExportDialog() {
     const chosen = chosenEntries(state);
     const all = state.entries;
     let live = true;
-    void developEditedPaths(all.map((e) => e.path)).then(
+    void api.developEditedPaths(all.map((e) => e.path)).then(
       (edited) => {
         if (live) setCandidates(candidatesOf(chosen, all, new Set(edited)));
       },
@@ -118,7 +118,7 @@ export function ExportDialog() {
       setPhase({ kind: "running", done: at, total: planned.length, now: item.entry.name });
       try {
         written.push(
-          await developExport(item.job, {
+          await api.developExport(item.job, {
             folder,
             format: options.format,
             size: options.size,

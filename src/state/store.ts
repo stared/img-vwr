@@ -17,7 +17,7 @@ import type {
   ImageMeta,
   MetaEntry,
 } from "../ipc";
-import { newEpoch, scanFolder } from "../ipc";
+import { api } from "../ipc";
 import { storeChannel, type Channel, type ChannelMaps } from "../registry/channels";
 import { getSource } from "../registry/sources";
 import { getView } from "../registry/views";
@@ -592,13 +592,13 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
       query: { ...query, sort: sortForScope(scope, query.sort) },
       recentFolders: withRecent(get().recentFolders, path),
     });
-    const epoch = await newEpoch();
+    const epoch = await api.newEpoch();
     // Another scope was opened while the epoch was being fetched.
     if (get().scope !== scope) return;
     set({ epoch });
     try {
       // Entries stream in as scanBatch events; only the error branch matters here.
-      await scanFolder(path, recursive, epoch);
+      await api.scanFolder(path, recursive, epoch);
     } catch (error) {
       // Ignore a stale failure if the user already opened another scope.
       if (get().scope === scope) {
@@ -646,7 +646,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
       ...scopeLoading(scope, EPOCH_PENDING),
       query: { ...query, sort: sortForScope(scope, query.sort) },
     });
-    const epoch = await newEpoch();
+    const epoch = await api.newEpoch();
     if (get().scope !== scope) return;
     set({ epoch });
     try {

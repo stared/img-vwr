@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { FileEntry } from "../../ipc";
-import { fileUrl, requestThumbnails } from "../../ipc";
+import { api, fileUrl } from "../../ipc";
 import { takenMs } from "../../state/derived";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import type { TimeWindow } from "./timeline";
@@ -156,7 +156,7 @@ export function TimelineGallery() {
       const wanted = visible
         .map(({ item }) => item.entry.path)
         .filter((path) => !(path in thumbs) && !(path in thumbErrors));
-      if (wanted.length > 0) void requestThumbnails(wanted, epoch);
+      if (wanted.length > 0) void api.requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [visible, epoch]);

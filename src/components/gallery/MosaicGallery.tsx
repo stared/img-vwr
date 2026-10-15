@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { FileEntry } from "../../ipc";
-import { fileUrl, requestMeta, requestThumbnails } from "../../ipc";
+import { api, fileUrl } from "../../ipc";
 import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { PhotoBadges } from "../../registry/badges";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
@@ -31,7 +31,7 @@ export function MosaicGallery() {
     if (status !== "loaded" || remote || allEntries.length === 0) return;
     const have = useAppStore.getState().meta;
     const missing = allEntries.filter((e) => !(e.path in have)).map((e) => e.path);
-    if (missing.length > 0) void requestMeta(missing, epoch);
+    if (missing.length > 0) void api.requestMeta(missing, epoch);
   }, [status, remote, allEntries, epoch]);
 
   const bands = useMemo(() => {
@@ -89,7 +89,7 @@ export function MosaicGallery() {
           }
         }
       }
-      if (wanted.length > 0) void requestThumbnails(wanted, epoch);
+      if (wanted.length > 0) void api.requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [entries, bands, epoch, firstBand, lastBand]);

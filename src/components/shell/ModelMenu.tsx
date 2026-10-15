@@ -1,4 +1,4 @@
-import { embeddingSelect } from "../../ipc";
+import { api } from "../../ipc";
 import { useEmbedStore } from "../../state/embeddings";
 
 export function downloadLabel(mb: number): string {
@@ -17,7 +17,7 @@ export function ModelMenu({ close }: { close: () => void }) {
           key={model.id}
           disabled={busy || model.active}
           onClick={() => {
-            void embeddingSelect(model.id);
+            void api.embeddingSelect(model.id);
             close();
           }}
         >

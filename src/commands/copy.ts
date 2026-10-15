@@ -1,6 +1,6 @@
 import { tempDir } from "@tauri-apps/api/path";
 
-import { copyFiles, developEditedPaths, developExport, type ExifSource } from "../ipc";
+import { api, type ExifSource } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { candidatesOf, jpegOf, type Candidate } from "../state/export";
 import { chosenEntries, useAppStore } from "../state/store";
@@ -33,7 +33,7 @@ async function copySelection(): Promise<void> {
 
   // Asked over the whole stack so a raw's crop counts for its stand-in JPEG (same rule as the export dialog).
   const edited = new Set(
-    await developEditedPaths(state.entries.map((e) => e.path)).catch(() => []),
+    await api.developEditedPaths(state.entries.map((e) => e.path)).catch(() => []),
   );
   const plan = copyPlan(candidatesOf(photographs, state.entries, edited));
 
@@ -48,7 +48,7 @@ async function copySelection(): Promise<void> {
       continue;
     }
     try {
-      const rendered = await developExport(
+      const rendered = await api.developExport(
         { kind: "render", path: step.path, exif: step.exif },
         { folder, format: { kind: "jpeg", quality: 90 }, size: { kind: "full" } },
       );
@@ -58,7 +58,7 @@ async function copySelection(): Promise<void> {
       paths.push(step.path);
     }
   }
-  if (paths.length > 0) await copyFiles(paths);
+  if (paths.length > 0) await api.copyFiles(paths);
 }
 
 export function registerCopyCommands(): void {

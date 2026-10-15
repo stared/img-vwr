@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { embeddingModels, events, type EmbedModelInfo } from "../ipc";
+import { api, events, type EmbedModelInfo } from "../ipc";
 import { useAppStore } from "./store";
 
 /* The image-embedding model, shared by everything that compares photographs by content (scenes, similarity, people). */
@@ -27,7 +27,7 @@ export const useEmbedStore = create<EmbedState>()(() => ({
 }));
 
 async function refreshModels(): Promise<void> {
-  const models = await embeddingModels();
+  const models = await api.embeddingModels();
   useEmbedStore.setState({ models });
   // After a webview reload the Rust side may still hold a loaded model; mirror it back.
   const active = models.find((m) => m.active);

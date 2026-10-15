@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { facesPeople, type PersonCluster } from "../../ipc";
+import { api, type PersonCluster } from "../../ipc";
 import { storeChannel } from "../../registry/channels";
 import { isRawEntry } from "../../state/stacks";
 import { useAppStore } from "../../state/store";
@@ -91,7 +91,7 @@ async function clusterPeople(): Promise<void> {
   if (paths.length === 0) return;
   const epoch = useAppStore.getState().epoch;
   try {
-    const clusters = await facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
+    const clusters = await api.facesPeople(paths, PERSON_SIM, PERSON_MERGE, PERSON_PROPAGATE);
     if (useAppStore.getState().epoch !== epoch) return;
     usePeopleStore.getState().loaded(clusters.filter((c) => c.photos.length >= MIN_FACES));
   } catch (error) {

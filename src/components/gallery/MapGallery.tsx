@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-import { fileUrl, requestThumbnails } from "../../ipc";
+import { api, fileUrl } from "../../ipc";
 import { gpsOf } from "../../state/derived";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 
@@ -49,7 +49,7 @@ export function MapGallery() {
     const wanted = located
       .map(({ entry }) => entry.path)
       .filter((path) => !(path in thumbs) && !(path in thumbErrors));
-    if (wanted.length > 0) void requestThumbnails(wanted, epoch);
+    if (wanted.length > 0) void api.requestThumbnails(wanted, epoch);
   }, [located, epoch]);
 
   useEffect(() => {

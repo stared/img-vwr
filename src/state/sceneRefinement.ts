@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { embeddingBandedScores, embeddingIndex } from "../ipc";
+import { api } from "../ipc";
 import { SCENE_BAND } from "./scenes";
 import { useEmbedStore } from "./embeddings";
 import { useAppStore, useVisibleEntries } from "./store";
@@ -22,7 +22,7 @@ export function useSceneRefinement(): void {
     const key = `${epoch}:${modelId}`;
     if (indexedFor.current === key) return;
     indexedFor.current = key;
-    void embeddingIndex(
+    void api.embeddingIndex(
       useAppStore.getState().entries.map((e) => e.path),
       epoch,
     );
@@ -32,7 +32,7 @@ export function useSceneRefinement(): void {
   useEffect(() => {
     if (!wanted || indexing || visible.length < 2) return;
     let stale = false;
-    embeddingBandedScores(
+    api.embeddingBandedScores(
       visible.map((e) => e.path),
       SCENE_BAND,
     )
