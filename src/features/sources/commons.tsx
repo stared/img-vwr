@@ -1,8 +1,8 @@
 import { IconBrandWikipedia } from "@tabler/icons-react";
 import { fetch } from "@tauri-apps/plugin-http";
 
-import type { ImageSource, SourceItem } from "../registry/sources";
-import { sourceScope } from "../registry/sources";
+import type { ImageSource, SourceItem } from "../../registry/sources";
+import { sourceScope } from "../../registry/sources";
 import { urlExtension } from "./shared";
 
 const API = "https://commons.wikimedia.org/w/api.php";

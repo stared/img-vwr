@@ -35,8 +35,8 @@ import { useAppStore, visibleOf } from "./state/store";
 import { registerPeople } from "./features/people";
 import { registerSimilarity } from "./features/similarity";
 import { startEmbeddings } from "./state/embeddings";
-import { commonsSource } from "./sources/commons";
-import { redditSource } from "./sources/reddit";
+import { commonsSource } from "./features/sources/commons";
+import { redditSource } from "./features/sources/reddit";
 import { registerBuiltinSorts } from "./sorts/builtin";
 
 registerView({
