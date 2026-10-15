@@ -1,7 +1,7 @@
 import { useAppStore } from "../state/store";
 
 /** Stable per name, so a tag keeps its color across sessions and folders. */
-export function tagColor(tag: string): string {
+function tagColor(tag: string): string {
   let h = 0;
   for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
   return `hsl(${h % 360} 75% 60%)`;

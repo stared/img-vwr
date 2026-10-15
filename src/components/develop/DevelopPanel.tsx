@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import { isLocal } from "../../ipc";
 
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
@@ -88,10 +89,9 @@ export function DevelopPanel() {
   );
 
   // Session lifecycle is owned by App's useDevelopSession; this panel only renders it.
-  const isLocal = entry !== null && !entry.path.startsWith("http");
 
   if (!entry) return <p className="panel-hint">No image selected.</p>;
-  if (!isLocal) return <p className="panel-hint">Only local images can be developed.</p>;
+  if (!isLocal(entry.path)) return <p className="panel-hint">Only local images can be developed.</p>;
   if (opening !== null) return <p className="panel-hint">Opening {entry.name}…</p>;
   if (!session) return <p className="panel-hint">No develop support for this format.</p>;
 

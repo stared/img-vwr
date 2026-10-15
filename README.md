@@ -70,8 +70,13 @@ it also regenerates automatically on every dev run.
 
 ```
 src/                    strict-TS React UI
-  registry/             command / keybinding / panel registries (plugin seam)
-  components/           shell (palette, sidebar, statusbar), gallery, viewer
+  registry/             command / keybinding / panel / view / sort / filter /
+                        fact / source registries (plugin seam)
+  commands/ sorts/ filters/ facts/   built-ins registered through those registries
+  sources/              image sources besides folders (Reddit, Commons)
+  labels/ people/ similarity/        features that register their own
+                        commands, filters and sorts
+  components/           shell (palette, sidebar, statusbar), gallery, viewer, develop
   state/store.ts        zustand store; transitions are pure functions
   ipc/                  generated bindings + thin typed wrappers
 src-tauri/
@@ -80,15 +85,17 @@ src-tauri/
   crates/imgvwr-develop/  format-agnostic pipeline: tone, colour, histogram,
                           focus map — knows nothing about file formats
   crates/imgvwr-raw/      raw format plugin (Core Image on macOS)
+  crates/imgvwr-hdr/      exposure-bracket merge: align, crop, fuse
+  crates/imgvwr-embed/    image/text embeddings for similarity and faces
   src/                    Tauri wiring: commands (thin adapters), events,
-                          ThumbnailService (rayon pool + epoch cancellation),
-                          DevelopService + the `develop:` preview protocol
+                          services (thumbnails, develop + the `develop:`
+                          preview protocol, embeddings, faces, labels, export)
+tools/camera-look/      fitting pipeline that generates imgvwr-develop's look_data.rs
 ```
 
 Extension seams exercised so far (the future plugin API maps onto these):
 `ImageCodec` + `CodecRegistry` and `SceneFormat` + `SceneRegistry` (Rust), the
-command/panel/keybinding registries (TS), and the typed event bus
-(tauri-specta).
+TS registries above, and the typed event bus (tauri-specta).
 
 Two Rust seams because they answer different questions. A codec answers "what
 do these bytes look like" and stops at display-ready RGBA8. A `SceneFormat`

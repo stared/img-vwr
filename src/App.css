@@ -1806,8 +1806,7 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-panel .develop-toggle,
-.develop-panel .develop-reset,
-.develop-panel .develop-choice {
+.develop-panel .develop-reset {
   min-height: 28px;
   height: auto;
   padding: 4px 8px;
@@ -2274,7 +2273,6 @@ button.stats-row:hover .stats-label {
 /* One button for every enumerable option; colour only on on/armed states. */
 .develop-reset,
 .develop-toggle,
-.develop-choice,
 .export-choice {
   height: 22px;
   padding: 0 8px;
@@ -2293,7 +2291,6 @@ button.stats-row:hover .stats-label {
 
 .develop-reset:hover:not(:disabled),
 .develop-toggle:hover,
-.develop-choice:hover,
 .export-choice:hover {
   color: var(--text);
   border-color: var(--border);
@@ -2309,7 +2306,6 @@ button.stats-row:hover .stats-label {
 }
 
 .develop-toggle.on,
-.develop-choice.on,
 .export-choice.on {
   border-color: var(--accent);
   color: var(--accent);
@@ -2690,7 +2686,6 @@ button.stats-row:hover .stats-label {
 
 /* A row of the answers an enumerable control can have, the current one lit. */
 .develop-switch,
-.develop-choices,
 .export-row-choices {
   display: flex;
   align-items: center;

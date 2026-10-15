@@ -3,6 +3,7 @@ import { defaultQuery, usesScores, type Filter, type Query, type Sort } from "./
 import type { StackLead } from "./stacks";
 import {
   useAppStore,
+  GALLERY_LAYOUTS,
   type GalleryLayout,
   type MosaicPacking,
   type Scope,
@@ -88,15 +89,6 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFin
 const oneOf = <T extends string>(v: unknown, all: readonly T[]): v is T =>
   isString(v) && (all as readonly string[]).includes(v);
 
-const LAYOUTS: readonly GalleryLayout[] = [
-  "grid",
-  "mosaic",
-  "timeline",
-  "map",
-  "darkroom",
-  "scenes",
-];
-
 function readScope(v: unknown): Scope | null {
   if (typeof v !== "object" || v === null) return null;
   const o = v as Record<string, unknown>;
@@ -172,7 +164,7 @@ export function restoreSession(): boolean {
 
   const app = useAppStore.getState();
   useAppStore.setState({
-    galleryLayout: oneOf(o.galleryLayout, LAYOUTS) ? o.galleryLayout : app.galleryLayout,
+    galleryLayout: oneOf(o.galleryLayout, GALLERY_LAYOUTS) ? o.galleryLayout : app.galleryLayout,
     query: readQuery(o.query),
     stacking: isBool(o.stacking) ? o.stacking : app.stacking,
     stackLead: oneOf(o.stackLead, ["jpg", "raw"] as const) ? o.stackLead : app.stackLead,

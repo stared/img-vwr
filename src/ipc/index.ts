@@ -2,30 +2,20 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { commands, events } from "./bindings";
 import type {
+  Crop,
   DevelopFrame,
-  DevelopParams,
   DevelopSettings,
   DevelopState,
   DirEntry,
   EmbedModelInfo,
-  ExifSource,
-  Exported,
-  ExportFormat,
   ExportJob,
   ExportPlan,
-  ExportSize,
-  FileEntry,
+  Exported,
   FusionRecipe,
-  HdrMethod,
-  Histogram,
   ImageLabels,
-  ImageMeta,
   ImageStats,
-  MenuAction,
-  MetaEntry,
-  PersonCluster,
-  Crop,
   Overlay,
+  PersonCluster,
   Preset,
   RegionArg,
   Result,
@@ -35,37 +25,7 @@ import type {
 } from "./bindings";
 
 export { events };
-export type {
-  DevelopFrame,
-  DevelopParams,
-  DevelopSettings,
-  DevelopState,
-  DirEntry,
-  EmbedModelInfo,
-  ExifSource,
-  Exported,
-  ExportFormat,
-  ExportJob,
-  ExportPlan,
-  ExportSize,
-  FileEntry,
-  FusionRecipe,
-  HdrMethod,
-  Histogram,
-  ImageLabels,
-  ImageMeta,
-  ImageStats,
-  MenuAction,
-  MetaEntry,
-  PersonCluster,
-  Crop,
-  Overlay,
-  Preset,
-  RegionArg,
-  SimilarityScore,
-  TrashOutcome,
-  WhiteBalance,
-};
+export type * from "./bindings";
 
 function unwrap<T>(result: Result<T, string>): T {
   if (result.status === "error") {
@@ -288,7 +248,11 @@ export function developFrameUrl(token: number): string {
   return `develop://localhost/frame/${token}`;
 }
 
+/** Sources hand out web URLs; everything else is a path on this machine. */
+export function isLocal(path: string): boolean {
+  return !path.startsWith("http://") && !path.startsWith("https://");
+}
+
 export function fileUrl(path: string): string {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return convertFileSrc(path);
+  return isLocal(path) ? convertFileSrc(path) : path;
 }

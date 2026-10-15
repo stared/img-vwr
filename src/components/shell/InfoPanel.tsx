@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { FileEntry, ImageStats } from "../../ipc";
 import { formatAperture, formatShutter, formatSigned } from "../../facts/builtin";
-import { imageStats, labelsSetStars, labelsToggleTag } from "../../ipc";
+import { imageStats, isLocal, labelsSetStars, labelsToggleTag } from "../../ipc";
 import { TagDot, type TagFill } from "../../labels/TagDot";
 import { titleWithChord } from "../../registry/keybindings";
 import { useDevelopStore } from "../../state/develop";
@@ -312,11 +312,10 @@ export function HistogramPanel() {
 export function ColorsPanel() {
   const entry = useSelectedEntry();
   const path = entry?.path;
-  const isLocal = path !== undefined && !path.startsWith("http");
   const [stats, setStats] = useState<{ path: string; data: ImageStats } | null>(null);
 
   useEffect(() => {
-    if (path === undefined || !isLocal) {
+    if (path === undefined || !isLocal(path)) {
       setStats(null);
       return;
     }
@@ -327,7 +326,7 @@ export function ColorsPanel() {
         .catch(() => setStats(null));
     }, STATS_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [path, isLocal]);
+  }, [path]);
 
   const current = stats !== null && stats.path === path ? stats.data : null;
   if (current === null) return null;

@@ -64,7 +64,8 @@ import {
 } from "./query";
 
 export type ViewMode = "gallery" | "viewer";
-export type GalleryLayout = "grid" | "mosaic" | "timeline" | "map" | "darkroom" | "scenes";
+export const GALLERY_LAYOUTS = ["grid", "mosaic", "timeline", "map", "darkroom", "scenes"] as const;
+export type GalleryLayout = (typeof GALLERY_LAYOUTS)[number];
 
 export type MosaicPacking = "order" | "packed";
 export type TimelineOrientation = "vertical" | "horizontal";

@@ -162,7 +162,6 @@ export function Filmstrip({ height }: { height: number }) {
     if (left < strip.scrollLeft || left + cellWidth > strip.scrollLeft + strip.clientWidth) {
       strip.scrollTo({ left: left - (strip.clientWidth - cellWidth) / 2, behavior: "smooth" });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex]);
 
   useEffect(() => {

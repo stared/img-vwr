@@ -12,7 +12,7 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { getView } from "./registry/views";
-import { developSetFusions, events, requestMeta, setRecentFolders, type FusionRecipe } from "./ipc";
+import { developSetFusions, events, isLocal, requestMeta, setRecentFolders, type FusionRecipe } from "./ipc";
 import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
 import { fusionMap } from "./state/hdr";
@@ -71,14 +71,13 @@ function useDevelopSession() {
   const path = useSelectedEntry()?.path;
   const open = useDevelopStore((s) => s.open);
   const close = useDevelopStore((s) => s.close);
-  const isLocal = path !== undefined && !path.startsWith("http");
   useEffect(() => {
-    if (path === undefined || !isLocal) {
+    if (path === undefined || !isLocal(path)) {
       close();
       return;
     }
     void open(path);
-  }, [path, isLocal, open, close]);
+  }, [path, open, close]);
 }
 
 function App() {

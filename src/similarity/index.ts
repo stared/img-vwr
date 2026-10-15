@@ -54,7 +54,7 @@ async function refreshScores(anchor: Similarity["anchor"]): Promise<void> {
 }
 
 /** Set (or refresh) the similarity anchor and make sure indexing is running. */
-export async function similarTo(anchor: Similarity["anchor"], label: string): Promise<void> {
+async function similarTo(anchor: Similarity["anchor"], label: string): Promise<void> {
   const { entries, epoch, setSimilarity } = useAppStore.getState();
   void embeddingIndex(
     entries.map((e) => e.path),
