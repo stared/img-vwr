@@ -3,10 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use imgvwr_core::thumbs::apply_orientation;
 use rayon::prelude::*;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use crate::services::cache::{read_vector, write_vector, IndexingPass};
 use crate::services::embeddings::EmbeddingService;
 
 /// Coordinates are normalized to the EXIF-oriented image, origin top-left.
@@ -99,14 +101,6 @@ fn spread<T: Clone>(items: &[T], take: usize) -> Vec<T> {
     items.iter().step_by(step).take(take).cloned().collect()
 }
 
-struct IndexingPass<'a>(&'a AtomicBool);
-
-impl Drop for IndexingPass<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
 impl FaceService {
     pub fn new(cache_root: PathBuf, names_db: &Path) -> Result<Self, String> {
         let sidecars_dir = cache_root.join("faces");
@@ -183,17 +177,6 @@ impl FaceService {
             .map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())
-    }
-
-    pub fn known_names(&self) -> Result<Vec<String>, String> {
-        let conn = self.names.lock().unwrap();
-        let mut stmt = conn
-            .prepare("SELECT DISTINCT name FROM person_exemplars ORDER BY name")
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
     }
 
     /// Naming saves exemplar vectors (so two fragments named alike merge next clustering); renaming away withdraws this cluster's exemplars.
@@ -274,7 +257,7 @@ impl FaceService {
         if let Some(v) = self.face_vectors.lock().unwrap().get(id_crop) {
             return Some(Arc::clone(v));
         }
-        let vector = Arc::new(read_face_vector(&self.vector_file(id_crop).ok()?)?);
+        let vector = Arc::new(read_vector(&self.vector_file(id_crop).ok()?, None)?);
         self.face_vectors
             .lock()
             .unwrap()
@@ -287,14 +270,14 @@ impl FaceService {
             return Ok(Arc::clone(v));
         }
         let vec_file = self.vector_file(id_crop)?;
-        let vector = match read_face_vector(&vec_file) {
+        let vector = match read_vector(&vec_file, None) {
             Some(v) => v,
             None => {
                 let v = self
                     .face_model()?
                     .embed_face_file(Path::new(id_crop))
                     .map_err(|e| e.to_string())?;
-                if let Err(e) = write_face_vector(&vec_file, &v) {
+                if let Err(e) = write_vector(&vec_file, &v) {
                     eprintln!("face vector cache write failed for {}: {e}", vec_file.display());
                 }
                 v
@@ -414,7 +397,7 @@ impl FaceService {
             .ok()
             .and_then(|m| m.exif.map(|e| e.orientation))
             .unwrap_or(1);
-        let oriented = apply_orientation(decoded, orientation);
+        let oriented = image::DynamicImage::ImageRgba8(apply_orientation(decoded.into_rgba8(), orientation));
         let scaled = oriented.resize(DETECT_EDGE, DETECT_EDGE, image::imageops::FilterType::Triangle);
 
         let detections = platform::detect_faces(&scaled)?;
@@ -814,29 +797,6 @@ pub fn role_of(face: &Face, all: &[Face]) -> Role {
     }
 }
 
-fn read_face_vector(file: &Path) -> Option<Vec<f32>> {
-    let bytes = std::fs::read(file).ok()?;
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
-        return None;
-    }
-    Some(
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-    )
-}
-
-fn write_face_vector(file: &Path, v: &[f32]) -> std::io::Result<()> {
-    let mut bytes = Vec::with_capacity(v.len() * 4);
-    for x in v {
-        bytes.extend_from_slice(&x.to_le_bytes());
-    }
-    let tmp = file.with_extension("vec.tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, file)
-}
-
 fn norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6)
 }
@@ -846,31 +806,7 @@ const SIDECAR_KEY_EDGE: u32 = 256;
 
 fn cache_key_of(path: &str) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
-    let mtime_ms = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    Ok(imgvwr_core::thumb_cache_key(
-        path,
-        mtime_ms,
-        meta.len(),
-        SIDECAR_KEY_EDGE,
-    ))
-}
-
-fn apply_orientation(img: image::DynamicImage, orientation: u32) -> image::DynamicImage {
-    match orientation {
-        2 => img.fliph(),
-        3 => img.rotate180(),
-        4 => img.flipv(),
-        5 => img.rotate90().fliph(),
-        6 => img.rotate90(),
-        7 => img.rotate270().fliph(),
-        8 => img.rotate270(),
-        _ => img,
-    }
+    Ok(imgvwr_core::file_cache_key(path, &meta, SIDECAR_KEY_EDGE))
 }
 
 /// Normalized to the oriented bitmap, origin top-left.
@@ -1202,7 +1138,8 @@ mod tests {
 
         // Naming saves exemplars; both fragments named alike share them.
         svc.rename("1", "Ania", 0.38).unwrap();
-        assert_eq!(svc.known_names().unwrap(), vec!["Ania"]);
+        let names: Vec<String> = svc.identities().unwrap().into_iter().map(|i| i.name).collect();
+        assert_eq!(names, ["Ania"]);
         svc.rename("2", "Ania", 0.38).unwrap();
         let ania = &svc.identities().unwrap()[0];
         assert!(ania.exemplars.iter().any(|e| e[0] > 0.9));
@@ -1219,7 +1156,7 @@ mod tests {
         // Clearing the last cluster of a name deletes the identity.
         svc.rename("1", "", 0.38).unwrap();
         svc.rename("2", "  ", 0.38).unwrap();
-        assert_eq!(svc.known_names().unwrap(), Vec::<String>::new());
+        assert!(svc.identities().unwrap().is_empty());
     }
 
     #[test]

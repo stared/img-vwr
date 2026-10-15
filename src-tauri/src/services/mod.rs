@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod develop;
 pub mod embeddings;
 pub mod export;

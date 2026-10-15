@@ -37,14 +37,6 @@ async setRecentFolders(paths: string[]) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_metadata", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Never prompts (confirmation is the frontend's job) and never reports more as trashed than actually went.
  */
@@ -153,14 +145,6 @@ async facesPeople(paths: string[], threshold: number, merge: number, propagate: 
 async facesRename(clusterId: string, name: string, merge: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("faces_rename", { clusterId, name, merge }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async facesNames() : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("faces_names") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

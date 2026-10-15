@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use imgvwr_core::{thumb_cache_key, CodecRegistry, THUMB_MAX_EDGE};
+use imgvwr_core::{file_cache_key, CodecRegistry, THUMB_MAX_EDGE};
 
 /// Pinned like the face sidecars' key edge, so a display-thumbnail resolution bump does not re-embed every corpus.
 const VECTOR_KEY_EDGE: u32 = 256;
@@ -12,19 +12,11 @@ use tauri::AppHandle;
 use tauri_specta::Event as _;
 
 use crate::events::{EmbeddingProgress, EmbeddingStatus};
+use crate::services::cache::{read_vector, write_vector, IndexingPass};
 use crate::services::thumbnails::ThumbnailService;
 
 /// Keyed by (model id, image path or query phrase) so two models' vectors sit side by side.
 type VectorCache = Mutex<HashMap<(String, String), Arc<Vec<f32>>>>;
-
-/// A drop guard, not a hand-cleared flag: every way out of the pass — early return, panic — clears it.
-struct IndexingPass<'a>(&'a AtomicBool);
-
-impl Drop for IndexingPass<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
 
 pub struct EmbeddingService {
     /// Long-running work locks per image, not per run.
@@ -240,13 +232,7 @@ impl EmbeddingService {
 
     fn vector_file(&self, embedder: &Embedder, path: &str) -> Result<PathBuf, String> {
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        let key = thumb_cache_key(path, mtime_ms, meta.len(), VECTOR_KEY_EDGE);
+        let key = file_cache_key(path, &meta, VECTOR_KEY_EDGE);
         Ok(self
             .vectors_dir
             .join(format!("{key}-{}.vec", embedder.model_id)))
@@ -259,7 +245,7 @@ impl EmbeddingService {
             return Some(Arc::clone(v));
         }
         let vec_file = self.vector_file(embedder, path).ok()?;
-        let vector = Arc::new(read_vector(&vec_file, embedder.dim)?);
+        let vector = Arc::new(read_vector(&vec_file, Some(embedder.dim))?);
         self.vectors
             .lock()
             .unwrap()
@@ -272,15 +258,9 @@ impl EmbeddingService {
             return Ok(v);
         }
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
         let vec_file = self.vector_file(embedder, path)?;
         // Pixels come from the live display-thumbnail cache at today's size; the vector's identity key does not care.
-        let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        let key = file_cache_key(path, &meta, THUMB_MAX_EDGE);
         let thumb = self.thumb_file(path, &key)?;
         let vector = embedder
             .embed_image_file(&thumb)
@@ -317,33 +297,6 @@ impl EmbeddingService {
         std::fs::rename(&tmp, &cache_file).map_err(|e| e.to_string())?;
         Ok(cache_file)
     }
-}
-
-fn read_vector(file: &Path, dim: usize) -> Option<Vec<f32>> {
-    let bytes = std::fs::read(file).ok()?;
-    if bytes.len() != dim * 4 {
-        return None; // stale schema or truncated write — recompute
-    }
-    Some(
-        bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-    )
-}
-
-fn write_vector(file: &Path, v: &[f32]) -> std::io::Result<()> {
-    // macOS may purge ~/Library/Caches while the app runs — recreate rather than fail every write.
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut bytes = Vec::with_capacity(v.len() * 4);
-    for x in v {
-        bytes.extend_from_slice(&x.to_le_bytes());
-    }
-    let tmp = file.with_extension("vec.tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, file)
 }
 
 fn emit_status(app: &AppHandle, model_id: &str, phase: &str, error: Option<String>) {

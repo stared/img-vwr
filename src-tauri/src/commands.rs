@@ -143,13 +143,6 @@ fn read_meta_composed(path: &std::path::Path) -> std::io::Result<ImageMeta> {
     Ok(meta)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn get_metadata(path: PathBuf) -> Result<ImageMeta, String> {
-    read_meta_composed(&path)
-        .map_err(|e| format!("failed to read metadata of {}: {e}", path.display()))
-}
-
 /// Never prompts (confirmation is the frontend's job) and never reports more as trashed than actually went.
 #[tauri::command]
 #[specta::specta]
@@ -309,12 +302,6 @@ pub fn faces_rename(
     merge: f32,
 ) -> Result<(), String> {
     faces.rename(&cluster_id, &name, merge)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn faces_names(faces: State<'_, Arc<FaceService>>) -> Result<Vec<String>, String> {
-    faces.known_names()
 }
 
 /// Computed from the cached thumbnail, not the original.

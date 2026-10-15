@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use imgvwr_core::thumbs::apply_orientation;
 use imgvwr_core::{Region, SceneError, SceneImage, SceneRegistry, WhiteBalance};
 use imgvwr_develop::{Crop, DevelopParams, DevelopSettings, Histogram, Overlay};
 use rusqlite::Connection;
@@ -674,10 +675,7 @@ impl DevelopService {
             return (None, false);
         }
         let mtime_ms = std::fs::metadata(path)
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
+            .map(|m| imgvwr_core::mtime_ms(&m) as i64)
             .unwrap_or(0);
         let tag = imgvwr_develop::look::model_tag();
 
@@ -697,9 +695,6 @@ impl DevelopService {
                                 wb_r: row.get::<_, f64>(2)? as f32,
                                 wb_b: row.get::<_, f64>(3)? as f32,
                                 saturation: row.get::<_, f64>(4)? as f32,
-                                // Zero in every shipped 5-axis row; a 7-axis refit changes model_tag and invalidates the cache.
-                                shadow_lift: 0.0,
-                                highlight_shift: 0.0,
                                 chroma_nr: row.get::<_, f64>(5)? as f32,
                                 luma_nr: row.get::<_, f64>(6)? as f32,
                                 sharpen: row.get::<_, f64>(7)? as f32,
@@ -799,7 +794,7 @@ fn sibling_camera_jpeg(path: &str) -> Option<Box<dyn SceneImage>> {
             continue;
         }
         let img = image::open(&candidate).ok()?;
-        let rgba = oriented(img.to_rgba8(), exif.orientation);
+        let rgba = apply_orientation(img.to_rgba8(), exif.orientation);
         return Some(imgvwr_core::image_scene::scene_from_rgba(rgba));
     }
     None
@@ -813,19 +808,10 @@ fn embedded_fallback(path: &str) -> Option<Box<dyn SceneImage>> {
         .and_then(|m| m.exif)
         .map(|e| e.orientation)
         .unwrap_or(1);
-    Some(imgvwr_core::image_scene::scene_from_rgba(oriented(
+    Some(imgvwr_core::image_scene::scene_from_rgba(apply_orientation(
         img.to_rgba8(),
         orientation,
     )))
-}
-
-fn oriented(rgba: image::RgbaImage, orientation: u32) -> image::RgbaImage {
-    match orientation {
-        6 => image::imageops::rotate90(&rgba),
-        8 => image::imageops::rotate270(&rgba),
-        3 => image::imageops::rotate180(&rgba),
-        _ => rgba,
-    }
 }
 
 /// Deliberately neutral: thumbnails show the photograph, not the edit, so the cache stays valid while the user works.
@@ -874,12 +860,7 @@ fn evict_past(frames: &mut VecDeque<(u64, Vec<u8>)>, budget: usize) {
 fn encode_jpeg(img: &imgvwr_core::DecodedImage, quality: u8) -> Result<Vec<u8>, String> {
     let rgb = image::RgbaImage::from_raw(img.width, img.height, img.rgba.clone())
         .ok_or_else(|| "developed buffer size mismatch".to_string())?;
-    let rgb = image::DynamicImage::ImageRgba8(rgb).into_rgb8();
-    let mut out = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut std::io::Cursor::new(&mut out), quality)
-        .encode(&rgb, img.width, img.height, image::ExtendedColorType::Rgb8)
-        .map_err(|e| e.to_string())?;
-    Ok(out)
+    export::encode_jpeg(&image::DynamicImage::ImageRgba8(rgb).into_rgb8(), quality)
 }
 
 fn extension_of(path: &str) -> String {
