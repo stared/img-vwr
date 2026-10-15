@@ -8,7 +8,8 @@ use imgvwr_core::{file_cache_key, CodecRegistry, THUMB_MAX_EDGE};
 /// Pinned like the face sidecars' key edge, so a display-thumbnail resolution bump does not re-embed every corpus.
 const VECTOR_KEY_EDGE: u32 = 256;
 use imgvwr_embed::{dot, is_downloaded, model_spec, EmbedModelInfo, Embedder, MODELS};
-use tauri::AppHandle;
+use serde::Serialize;
+use tauri::{AppHandle, State};
 use tauri_specta::Event as _;
 
 use crate::events::{EmbeddingProgress, EmbeddingStatus};
@@ -306,6 +307,97 @@ fn emit_status(app: &AppHandle, model_id: &str, phase: &str, error: Option<Strin
         error,
     }
     .emit(app);
+}
+
+// ---- commands ----
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SimilarityScore {
+    pub path: String,
+    pub score: f32,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_models(service: State<'_, Arc<EmbeddingService>>) -> Vec<EmbedModelInfo> {
+    service.models()
+}
+
+/// Downloads on first use; progress arrives as `embedding-status` events.
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_select(
+    app: AppHandle,
+    service: State<'_, Arc<EmbeddingService>>,
+    model_id: String,
+) {
+    service.select(&app, model_id);
+}
+
+/// Progress arrives as `embedding-progress` events.
+#[tauri::command]
+#[specta::specta]
+pub fn embedding_index(
+    app: AppHandle,
+    service: State<'_, Arc<EmbeddingService>>,
+    thumbs: State<'_, Arc<ThumbnailService>>,
+    paths: Vec<String>,
+    epoch: u64,
+) {
+    service.index(&app, &thumbs, paths, epoch);
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn embedding_rank_image(
+    service: State<'_, Arc<EmbeddingService>>,
+    anchor: String,
+    paths: Vec<String>,
+) -> Result<Vec<SimilarityScore>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let scores = service.rank_image(&anchor, &paths)?;
+        Ok(scores
+            .into_iter()
+            .map(|(path, score)| SimilarityScore { path, score })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// scores[i][d-1] compares paths[i] with paths[i-d]; null until indexed — never computes vectors itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn embedding_banded_scores(
+    service: State<'_, Arc<EmbeddingService>>,
+    paths: Vec<String>,
+    band: u32,
+) -> Result<Vec<Vec<Option<f32>>>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.banded_scores(&paths, band as usize))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn embedding_rank_text(
+    service: State<'_, Arc<EmbeddingService>>,
+    query: String,
+    paths: Vec<String>,
+) -> Result<Vec<SimilarityScore>, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let scores = service.rank_text(&query, &paths)?;
+        Ok(scores
+            .into_iter()
+            .map(|(path, score)| SimilarityScore { path, score })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
