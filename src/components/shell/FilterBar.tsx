@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 
 import { executeCommand } from "../../registry/commands";
 import { filterFieldsFor, getFilterField, type FilterField } from "../../registry/filters";
@@ -395,10 +395,6 @@ function AddFilterMenu({ scope }: { scope: Scope }) {
 
 function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
   const setSort = useAppStore((s) => s.setSort);
-  // Bare subscriptions: segments read this state via getState(), invisible to React, so subscribe to keep the chip text live.
-  useAppStore((s) => s.similarity);
-  useAppStore((s) => s.embedModels);
-  useAppStore((s) => s.embedStatus);
 
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [openSeg, setOpenSeg] = useState<number | null>(null);
@@ -416,6 +412,10 @@ function SortChip({ scope, sort }: { scope: Scope; sort: Sort }) {
   // While collecting, the chip shows the PENDING sort's segments instead.
   const collectingProvider = collecting === null ? undefined : getSort(collecting);
   const provider = collectingProvider ?? activeProvider;
+  // Segments read their sort's own state outside React; its subscription keeps the chip text live.
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const param = provider?.param ?? null;
+  useEffect(() => param?.subscribe(redraw), [param]);
   const segments: SortChipSegment[] =
     provider === undefined
       ? [{ kind: "text", text: sort.key }]

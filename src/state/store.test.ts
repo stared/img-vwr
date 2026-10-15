@@ -68,6 +68,7 @@ beforeAll(() => {
       collectHint: "type a phrase",
       isSet: () => true,
       clear: () => {},
+      subscribe: () => () => {},
     },
     value: (_entry, data) => data.get(SCORES),
   });

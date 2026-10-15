@@ -31,6 +31,8 @@ export interface SortParam {
   isSet: () => boolean;
   /** Drops the parameter and with it the sort; rendered as the chip's ×. */
   clear: () => void;
+  /** Fires when anything `segments` reads changes, so the chip redraws. */
+  subscribe: (onChange: () => void) => () => void;
 }
 
 export interface SortProvider {

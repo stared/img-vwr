@@ -34,8 +34,6 @@ export function scopeLoading(scope: Scope, epoch: number) {
     selection: [] as string[],
     selectionAnchor: null,
     expandedStacks: {} as Record<string, true>,
-    similarity: null,
-    embedProgress: null,
     viewerView: null,
     viewerImg: null,
   };

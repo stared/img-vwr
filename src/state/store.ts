@@ -13,7 +13,6 @@ import {
 } from "../components/viewer/viewport";
 import type {
   Crop,
-  EmbedModelInfo,
   FileEntry,
   ImageMeta,
   MetaEntry,
@@ -66,22 +65,6 @@ export type TimelineOrientation = "vertical" | "horizontal";
 
 export type { FolderStatus, Scope } from "./collection";
 export { scanBatchArrived, sortForScope } from "./collection";
-
-/** Computed per-image scores backing a transient sort ("similar to …"). */
-export interface Similarity {
-  /** Chip value describing the anchor: a file name or a quoted phrase. */
-  label: string;
-  /** What the scores measure distance to; kept for re-ranking as the background index fills in. */
-  anchor: { kind: "image"; path: string } | { kind: "text"; query: string };
-  scores: Record<string, number>;
-}
-
-/** Embedding model lifecycle, mirrored from Rust events for the panel. */
-export interface EmbedStatus {
-  modelId: string;
-  phase: "downloading" | "loading" | "ready" | "error";
-  error: string | null;
-}
 
 export interface AppState {
   scope: Scope | null;
@@ -158,14 +141,6 @@ export interface AppState {
   exportFolder: string | null;
   /** Right-click menu position over the selected image; null = closed. */
   imageMenu: { x: number; y: number } | null;
-  /** Scores + label behind the "similar" sort; null = no anchor chosen. */
-  similarity: Similarity | null;
-  /** Model catalog with downloaded/active flags, for the picker panel. */
-  embedModels: EmbedModelInfo[];
-  /** Latest model lifecycle event; null before any selection. */
-  embedStatus: EmbedStatus | null;
-  /** Indexing progress of the current collection; null when idle. */
-  embedProgress: { done: number; total: number } | null;
   /** Viewer transform; null until the current image has loaded. */
   viewerView: Viewport | null;
   /** Natural size of the loaded viewer image. */
@@ -248,12 +223,6 @@ interface AppActions {
   /** Open the palette directly in a command's argument input. */
   promptCommand: (commandId: string) => void;
   setImageMenu: (pos: { x: number; y: number } | null) => void;
-  /** Install similarity scores and switch the sort to "similar". */
-  setSimilarity: (similarity: Similarity) => void;
-  clearSimilarity: () => void;
-  setEmbedModels: (models: EmbedModelInfo[]) => void;
-  setEmbedStatus: (status: EmbedStatus) => void;
-  setEmbedProgress: (progress: { done: number; total: number } | null) => void;
   viewerImageLoaded: (size: Size) => void;
   viewerWinResized: (size: Size) => void;
   viewerZoom: (factor: number, cursor?: Point) => void;
@@ -312,10 +281,6 @@ export const initialState: AppState = {
   exportOptions: DEFAULT_OPTIONS,
   exportFolder: null,
   imageMenu: null,
-  similarity: null,
-  embedModels: [],
-  embedStatus: null,
-  embedProgress: null,
   viewerView: null,
   viewerImg: null,
   viewerWin: { width: 0, height: 0 },
@@ -912,30 +877,6 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setImageMenu: (imageMenu) => set({ imageMenu }),
 
-  setSimilarity: (similarity) => {
-    // Streaming score updates must not reset a direction the user flipped.
-    const current = get().query.sort;
-    const dir = current.key === "similar" ? current.dir : "desc";
-    // Scores are a channel read live, so they land first; the lead is captured before they move it.
-    const lead = leadPath(get());
-    set({ similarity });
-    set(withQuery(get(), { ...get().query, sort: { key: "similar", dir } }, lead));
-  },
-
-  clearSimilarity: () => {
-    const { query } = get();
-    const sort = query.sort.key === "similar" ? defaultQuery.sort : query.sort;
-    const lead = leadPath(get());
-    set({ similarity: null });
-    set(withQuery(get(), { ...query, sort }, lead));
-  },
-
-  setEmbedModels: (embedModels) => set({ embedModels }),
-
-  setEmbedStatus: (embedStatus) => set({ embedStatus }),
-
-  setEmbedProgress: (embedProgress) => set({ embedProgress }),
-
   // Fit is a state, not a one-off: a fitted view refits to whatever arrives, a zoomed view holds its place.
   viewerImageLoaded: (size) => {
     const { viewerFitted, viewerView, viewerImg, viewerWin } = get();
@@ -980,7 +921,7 @@ export const META: Channel<ImageMeta | undefined> = storeChannel<AppState, Image
 );
 
 /** The lead photograph's path in the visible list; undefined when nothing is selected. */
-function leadPath(state: VisibleInputs): string | undefined {
+export function leadPath(state: VisibleInputs): string | undefined {
   return state.selectedIndex === null
     ? undefined
     : visibleOf(state, state.query)[state.selectedIndex]?.path;

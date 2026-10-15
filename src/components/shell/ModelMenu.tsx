@@ -1,5 +1,5 @@
-import { embeddingSelect } from "../ipc";
-import { useAppStore } from "../state/store";
+import { embeddingSelect } from "../../ipc";
+import { useEmbedStore } from "../../state/embeddings";
 
 export function downloadLabel(mb: number): string {
   return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`;
@@ -7,8 +7,8 @@ export function downloadLabel(mb: number): string {
 
 /** Selecting downloads/loads the model; the re-rank arrives via the embedding status listener. */
 export function ModelMenu({ close }: { close: () => void }) {
-  const models = useAppStore((s) => s.embedModels);
-  const status = useAppStore((s) => s.embedStatus);
+  const models = useEmbedStore((s) => s.models);
+  const status = useEmbedStore((s) => s.status);
   const busy = status?.phase === "downloading" || status?.phase === "loading";
   return (
     <>

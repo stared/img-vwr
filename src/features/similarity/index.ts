@@ -1,33 +1,22 @@
 import {
   embeddingIndex,
-  embeddingModels,
   embeddingRankImage,
   embeddingRankText,
   embeddingSelect,
-  events,
-} from "../ipc";
-import { registerCommand, type CommandContext } from "../registry/commands";
-import { storeChannel } from "../registry/channels";
-import { registerSort } from "../registry/sorts";
-import type { AppState, Similarity } from "../state/store";
-import { useAppStore, visibleOf } from "../state/store";
-import { ModelMenu } from "./ModelMenu";
-
-const NO_SCORES: Readonly<Record<string, number>> = {};
-
-/** path → closeness to the anchor; null until that photograph is scored. */
-const SCORES = storeChannel<AppState, number | null>(
-  useAppStore,
-  (s) => s.similarity?.scores ?? NO_SCORES,
-  null,
-);
+} from "../../ipc";
+import { ModelMenu } from "../../components/shell/ModelMenu";
+import { registerCommand, type CommandContext } from "../../registry/commands";
+import { registerSort } from "../../registry/sorts";
+import { useEmbedStore } from "../../state/embeddings";
+import { useAppStore, visibleOf } from "../../state/store";
+import { clearSimilarity, SCORES, setSimilarity, useSimilarityStore, type Similarity } from "./store";
 
 function inFolderScope(): boolean {
   return useAppStore.getState().scope?.kind === "folder";
 }
 
 function modelReady(): boolean {
-  return useAppStore.getState().embedStatus?.phase === "ready";
+  return useEmbedStore.getState().status?.phase === "ready";
 }
 
 /** Rank the whole collection against the anchor; unindexed images get no score. */
@@ -57,15 +46,15 @@ async function refreshScores(anchor: Similarity["anchor"]): Promise<void> {
     console.warn("ranking failed; keeping the current order", error);
     return;
   }
-  const current = useAppStore.getState().similarity;
+  const current = useSimilarityStore.getState().similarity;
   if (seq === rankSeq && current !== null && current.anchor === anchor) {
-    useAppStore.getState().setSimilarity({ ...current, scores });
+    setSimilarity({ ...current, scores });
   }
 }
 
 /** Set (or refresh) the similarity anchor and make sure indexing is running. */
 async function similarTo(anchor: Similarity["anchor"], label: string): Promise<void> {
-  const { entries, epoch, setSimilarity } = useAppStore.getState();
+  const { entries, epoch } = useAppStore.getState();
   void embeddingIndex(
     entries.map((e) => e.path),
     epoch,
@@ -81,11 +70,10 @@ async function anchorTo(anchor: Similarity["anchor"], label: string): Promise<vo
     await similarTo(anchor, label);
     return;
   }
-  const { embedModels, setSimilarity, setActivePanel } = useAppStore.getState();
   setSimilarity({ label, anchor, scores: {} });
-  const downloaded = embedModels.find((m) => m.downloaded);
+  const downloaded = useEmbedStore.getState().models.find((m) => m.downloaded);
   if (downloaded) await embeddingSelect(downloaded.id);
-  else setActivePanel("similarity");
+  else useAppStore.getState().setActivePanel("similarity");
 }
 
 function selectedEntryPath(): { path: string; name: string } | null {
@@ -94,17 +82,6 @@ function selectedEntryPath(): { path: string; name: string } | null {
   const visible = visibleOf(s, s.query);
   const entry = visible[s.selectedIndex];
   return entry ? { path: entry.path, name: entry.name } : null;
-}
-
-async function refreshModels(): Promise<void> {
-  const models = await embeddingModels();
-  const { setEmbedModels, setEmbedStatus, embedStatus } = useAppStore.getState();
-  setEmbedModels(models);
-  // After a webview reload the Rust side may still hold a loaded model; mirror it back.
-  const active = models.find((m) => m.active);
-  if (active && embedStatus === null) {
-    setEmbedStatus({ modelId: active.id, phase: "ready", error: null });
-  }
 }
 
 export function registerSimilarity(): void {
@@ -118,7 +95,8 @@ export function registerSimilarity(): void {
     missing: "hide",
     param: {
       segments: () => {
-        const { similarity, embedModels, embedStatus } = useAppStore.getState();
+        const { similarity } = useSimilarityStore.getState();
+        const { models: embedModels, status: embedStatus } = useEmbedStore.getState();
         const busy =
           embedStatus?.phase === "downloading" || embedStatus?.phase === "loading";
         const model = busy
@@ -142,8 +120,12 @@ export function registerSimilarity(): void {
       },
       collectLabel: "closest to…",
       collectHint: "type a phrase",
-      isSet: () => useAppStore.getState().similarity !== null,
-      clear: () => useAppStore.getState().clearSimilarity(),
+      isSet: () => useSimilarityStore.getState().similarity !== null,
+      clear: clearSimilarity,
+      subscribe: (onChange) => {
+        const offs = [useSimilarityStore.subscribe(onChange), useEmbedStore.subscribe(onChange)];
+        return () => offs.forEach((off) => off());
+      },
     },
     value: (_entry, data) => data.get(SCORES),
   });
@@ -175,29 +157,22 @@ export function registerSimilarity(): void {
     },
   });
 
-  void events.embeddingStatus.listen(({ payload }) => {
-    const phase = payload.phase;
-    if (phase === "downloading" || phase === "loading" || phase === "ready" || phase === "error") {
-      useAppStore.getState().setEmbedStatus({
-        modelId: payload.modelId,
-        phase,
-        error: payload.error,
-      });
-    }
-    if (phase === "ready" || phase === "error") void refreshModels();
+  useEmbedStore.subscribe((now, before) => {
+    const { similarity } = useSimilarityStore.getState();
+    if (similarity === null) return;
     // A newly loaded model's scores are not comparable to the old one's: recompute the anchor.
-    if (phase === "ready") {
-      const { similarity } = useAppStore.getState();
-      if (similarity) void similarTo(similarity.anchor, similarity.label);
+    if (now.status !== before.status && now.status?.phase === "ready") {
+      void similarTo(similarity.anchor, similarity.label);
+    } else if (now.progress !== before.progress && now.progress !== null) {
+      void refreshScores(similarity.anchor);
     }
   });
 
-  void events.embeddingProgress.listen(({ payload }) => {
-    const { epoch, similarity, setEmbedProgress } = useAppStore.getState();
-    if (payload.epoch !== epoch) return;
-    setEmbedProgress({ done: payload.done, total: payload.total });
-    if (similarity) void refreshScores(similarity.anchor);
+  // A new scope drops the anchor; its sort is parameterized, so the scope change already reset it.
+  let epoch = useAppStore.getState().epoch;
+  useAppStore.subscribe((app) => {
+    if (app.epoch === epoch) return;
+    epoch = app.epoch;
+    useSimilarityStore.setState({ similarity: null });
   });
-
-  void refreshModels();
 }
