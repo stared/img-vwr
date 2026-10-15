@@ -1,6 +1,6 @@
 import { TagDot } from "../../labels/TagDot";
 import { pairedName, siblingsOf } from "../../state/stacks";
-import { hdrOf, useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
+import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 
 export function StatusBar() {
   const scope = useAppStore((s) => s.scope);
@@ -16,8 +16,7 @@ export function StatusBar() {
   const labels = useAppStore((s) => (entry ? s.labels[entry.path] : undefined));
   const allEntries = useAppStore((s) => s.entries);
   const stacking = useAppStore((s) => s.stacking);
-  const hdr = useAppStore((s) => hdrOf(s));
-  const siblings = entry && stacking ? siblingsOf(allEntries, entry, hdr.keyByStack) : [];
+  const siblings = entry && stacking ? siblingsOf(allEntries, entry) : [];
 
   const looking = viewMode === "viewer" || galleryLayout === "darkroom";
 

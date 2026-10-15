@@ -33,18 +33,6 @@ pub struct DevelopState {
     pub edited: bool,
     /// True when the webview cannot display this file itself.
     pub needs_render: bool,
-    pub hdr: HdrOutcome,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum HdrOutcome {
-    Plain,
-    /// `left_out` names frames that were misaligned and left out rather than ghosted in.
-    #[serde(rename_all = "camelCase")]
-    Fused { frames: u32, left_out: Vec<String> },
-    /// The path shows the face file alone; `reason` is the measurement that said no.
-    Refused { frames: u32, reason: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
@@ -73,8 +61,6 @@ pub struct DevelopFrame {
 struct OpenScene {
     path: String,
     scene: Box<dyn SceneImage>,
-    /// Decided once, when the scene opens.
-    hdr: HdrOutcome,
     /// Measured once at open so preview, loupe and export agree.
     tuning: Option<imgvwr_develop::LookTuning>,
     /// The camera's own JPEG, decoded lazily on the first render at camera-default settings.
@@ -88,7 +74,7 @@ impl OpenScene {
             .as_deref()
     }
 
-    /// At untouched camera-default settings the camera's own JPEG renders instead; a fused bracket never swaps.
+    /// At untouched camera-default settings the camera's own JPEG renders instead.
     fn resolved(
         &self,
         settings: &DevelopSettings,
@@ -98,13 +84,7 @@ impl OpenScene {
         Option<&imgvwr_develop::LookTuning>,
         FrameSource,
     ) {
-        if self.hdr == HdrOutcome::Plain
-            && imgvwr_develop::is_camera_default(
-                settings,
-                self.scene.as_shot(),
-                self.scene.rendering(),
-            )
-        {
+        if imgvwr_develop::is_camera_default(settings, self.scene.as_shot(), self.scene.rendering()) {
             if let Some(cam) = self.camera_scene() {
                 let neutral = imgvwr_develop::opening_settings(cam.as_shot(), cam.rendering());
                 return (cam, neutral, None, FrameSource::CameraJpeg);
@@ -125,15 +105,6 @@ pub struct DevelopService {
     frames: Mutex<VecDeque<(u64, Vec<u8>)>>,
     next_token: AtomicU64,
     conn: Mutex<Connection>,
-    /// Face frame's path → recipe; a registered path opens as the fused photograph via `scene_for`.
-    fusions: Mutex<HashMap<String, FusionRecipe>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct FusionRecipe {
-    pub frames: Vec<String>,
-    pub method: crate::services::hdr::HdrMethod,
 }
 
 impl DevelopService {
@@ -203,22 +174,7 @@ impl DevelopService {
             frames: Mutex::new(VecDeque::new()),
             next_token: AtomicU64::new(1),
             conn: Mutex::new(conn),
-            fusions: Mutex::new(HashMap::new()),
         })
-    }
-
-    /// Replaces the whole map; any open scene whose recipe changed is dropped so it cannot serve stale pixels.
-    pub fn set_fusions(&self, fusions: HashMap<String, FusionRecipe>) {
-        let old = {
-            let mut lock = self.fusions.lock().unwrap();
-            std::mem::replace(&mut *lock, fusions.clone())
-        };
-        let mut open = self.open.lock().unwrap();
-        open.retain(|s| old.get(&s.path) == fusions.get(&s.path));
-    }
-
-    fn is_fused(&self, path: &str) -> bool {
-        self.fusions.lock().unwrap().contains_key(path)
     }
 
     fn scene_for(&self, path: &str) -> Result<Arc<OpenScene>, SceneError> {
@@ -232,26 +188,7 @@ impl DevelopService {
         }
 
         // Opening is slow, so it happens outside the lock.
-        let fused = self.fusions.lock().unwrap().get(path).cloned();
-        let (scene, hdr) = match fused {
-            Some(recipe) => match crate::services::hdr::fused_scene(&recipe.frames, recipe.method) {
-                Ok(fusion) => {
-                    let outcome = HdrOutcome::Fused {
-                        frames: recipe.frames.len() as u32,
-                        left_out: fusion.left_out,
-                    };
-                    (fusion.scene, outcome)
-                }
-                Err(refusal) => {
-                    let outcome = HdrOutcome::Refused {
-                        frames: recipe.frames.len() as u32,
-                        reason: refusal.to_string(),
-                    };
-                    (self.registry.open(Path::new(path))?, outcome)
-                }
-            },
-            None => (self.registry.open(Path::new(path))?, HdrOutcome::Plain),
-        };
+        let scene = self.registry.open(Path::new(path))?;
         let (tuning, flat) = self.tuning_for(path, scene.as_ref());
         // A flat decode is the system decoder failing silently (pixel-shift brackets); the embedded JPEG opens instead.
         let (scene, tuning) = if flat {
@@ -265,7 +202,6 @@ impl DevelopService {
         let entry = Arc::new(OpenScene {
             path: path.to_owned(),
             scene,
-            hdr,
             tuning,
             camera: OnceLock::new(),
         });
@@ -294,9 +230,7 @@ impl DevelopService {
             as_shot,
             edited: stored.is_some(),
             settings: stored.unwrap_or(opening),
-            // A fused path's file is one exposure, not the photograph — only a render shows it.
-            needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)) || self.is_fused(path),
-            hdr: entry.hdr.clone(),
+            needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)),
         })
     }
 
@@ -485,17 +419,7 @@ impl DevelopService {
                 )
                 .ok_or_else(|| "developed buffer size mismatch".to_string())?;
 
-                // "DSC_1156-HDR" marks the merge beside the frames' own exports.
-                let named = if self.is_fused(path) {
-                    let stem = Path::new(path)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("image");
-                    format!("{stem}-HDR")
-                } else {
-                    path.clone()
-                };
-                let destination = export::destination_for(folder, &named, plan.format.extension());
+                let destination = export::destination_for(folder, path, plan.format.extension());
                 export::write_rendered(img, plan, exif, &destination)?;
                 Ok(Exported {
                     source,
@@ -969,116 +893,6 @@ mod tests {
         .save(&path)
         .unwrap();
         path
-    }
-
-    /// Blobby texture, not per-pixel noise: alignment (rightly) refuses static.
-    fn bracket(dir: &Path) -> Vec<String> {
-        let noise = |gx: u32, gy: u32, salt: u32| -> i32 {
-            (gx.wrapping_mul(2654435761) ^ gy.wrapping_mul(40503) ^ salt.wrapping_mul(97)) as i32
-                % 61
-                - 30
-        };
-        let mut paths = Vec::new();
-        for (i, gain) in [250u32, 1000, 4000].iter().enumerate() {
-            let img = image::RgbImage::from_fn(60, 40, |x, y| {
-                let base = (90 + noise(x / 10, y / 10, 1) + noise(x / 3, y / 3, 2)).clamp(0, 255);
-                let v = (base as u32 * gain / 1000).min(255) as u8;
-                image::Rgb([v, v, v])
-            });
-            let path = dir.join(format!("DSC_000{i}.JPG"));
-            image::DynamicImage::ImageRgb8(img).save(&path).unwrap();
-            paths.push(path.display().to_string());
-        }
-        paths
-    }
-
-    #[test]
-    fn a_registered_bracket_is_the_fused_photograph_everywhere_behind_one_path() {
-        let (dir, svc) = service();
-        let paths = bracket(dir.path());
-        let face = paths[1].clone();
-
-        let before = svc.state(&face).unwrap();
-        assert!(!before.needs_render);
-        assert_eq!(before.hdr, HdrOutcome::Plain);
-
-        let recipe = |frames: &[String]| FusionRecipe {
-            frames: frames.to_vec(),
-            method: crate::services::hdr::HdrMethod::Fusion,
-        };
-        svc.set_fusions(HashMap::from([(face.clone(), recipe(&paths))]));
-
-        let state = svc.state(&face).unwrap();
-        assert!(state.needs_render);
-        assert_eq!((state.width, state.height), (60, 40), "same framing, fused");
-        assert_eq!(
-            state.hdr,
-            HdrOutcome::Fused {
-                frames: 3,
-                left_out: vec![],
-            }
-        );
-
-        let out = tempfile::tempdir().unwrap();
-        let job = ExportJob::Render {
-            path: face.clone(),
-            exif: crate::services::export::ExifSource::None,
-        };
-        let exported = svc
-            .export(
-                &job,
-                &plan(
-                    out.path(),
-                    ExportFormat::Jpeg { quality: 90 },
-                    crate::services::export::ExportSize::Full,
-                ),
-            )
-            .unwrap();
-        assert!(exported.path.ends_with("DSC_0001-HDR.jpg"), "{}", exported.path);
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 3 + 1, "3 frames + develop.db");
-
-        svc.set_fusions(HashMap::new());
-        let plain = svc.state(&face).unwrap();
-        assert!(!plain.needs_render);
-        assert_eq!(plain.hdr, HdrOutcome::Plain);
-        assert_eq!((plain.width, plain.height), (60, 40));
-    }
-
-    #[test]
-    fn a_bracket_that_cannot_be_aligned_shows_its_face_rather_than_an_error() {
-        let (dir, svc) = service();
-        // Two frames that share nothing, so alignment must refuse them.
-        let face = dir.path().join("DSC_0100.JPG");
-        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(60, 40, |x, y| {
-            image::Rgb([((x * 4) % 251) as u8, ((y * 7) % 251) as u8, 40])
-        }))
-        .save(&face)
-        .unwrap();
-        let other = dir.path().join("DSC_0101.JPG");
-        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(60, 40, |x, y| {
-            image::Rgb([(((x / 7) + (y / 5)) % 2 * 200) as u8, 30, 220])
-        }))
-        .save(&other)
-        .unwrap();
-
-        let face_path = face.display().to_string();
-        svc.set_fusions(HashMap::from([(
-            face_path.clone(),
-            FusionRecipe {
-                frames: vec![face_path.clone(), other.display().to_string()],
-                method: crate::services::hdr::HdrMethod::Fusion,
-            },
-        )]));
-
-        let state = svc.state(&face_path).unwrap();
-        assert_eq!((state.width, state.height), (60, 40));
-        match state.hdr {
-            HdrOutcome::Refused { frames, ref reason } => {
-                assert_eq!(frames, 2);
-                assert!(!reason.is_empty());
-            }
-            ref other => panic!("expected a refusal, got {other:?}"),
-        }
     }
 
     #[test]

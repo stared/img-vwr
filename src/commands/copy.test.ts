@@ -41,11 +41,6 @@ describe("what a copy actually hands over", () => {
     ]);
   });
 
-  it("renders an HDR face even with no stored edit", () => {
-    const plan = copyPlan(candidatesOf([PLAIN], [PLAIN], new Set(), new Set([PLAIN.path])));
-    expect(plan[0]?.kind).toBe("render");
-  });
-
   it("mixes untouched files and renders in selection order", () => {
     const plan = copyPlan(
       candidatesOf([PLAIN, JPEG], [RAW, JPEG, PLAIN], new Set([JPEG.path])),

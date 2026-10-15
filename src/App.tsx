@@ -12,26 +12,20 @@ import { StatusBar } from "./components/shell/StatusBar";
 import { useGlobalKeybindings } from "./components/shell/useGlobalKeybindings";
 import { ImageViewer } from "./components/viewer/ImageViewer";
 import { getView } from "./registry/views";
-import { developSetFusions, events, isLocal, requestMeta, setRecentFolders, type FusionRecipe } from "./ipc";
+import { events, isLocal, requestMeta, setRecentFolders } from "./ipc";
 import { executeCommand } from "./registry/commands";
 import { useDevelopStore } from "./state/develop";
-import { fusionMap } from "./state/hdr";
 import { useSceneRefinement } from "./state/sceneRefinement";
 import { restoreSession, startSessionPersistence } from "./state/session";
-import { hdrOf, useAppStore, useSelectedEntry } from "./state/store";
+import { useAppStore, useSelectedEntry } from "./state/store";
 import "./App.css";
 
-/** Registers each HDR set's face path with the develop service; no file is written until an export. */
-function useHdrDetection() {
+/** Every file's EXIF, once per folder: timeline, map and date sorts read it without asking for it. */
+function useFolderMeta() {
   const scope = useAppStore((s) => s.scope);
   const status = useAppStore((s) => s.status);
   const entries = useAppStore((s) => s.entries);
   const epoch = useAppStore((s) => s.epoch);
-  // Identity-stable: a meta batch that changed no set keeps the old array.
-  const sets = useAppStore((s) => (s.scope?.kind === "folder" ? hdrOf(s).sets : null));
-  const methods = useAppStore((s) => s.hdrMethod);
-
-  // Detection needs every file's EXIF, not only what on-screen panels asked for; once per folder.
   const askedFor = useRef<number | null>(null);
   useEffect(() => {
     if (scope?.kind !== "folder" || status !== "loaded") return;
@@ -40,30 +34,6 @@ function useHdrDetection() {
     const missing = entries.filter((e) => !useAppStore.getState().meta[e.path]).map((e) => e.path);
     if (missing.length > 0) void requestMeta(missing, epoch);
   }, [scope, status, entries, epoch]);
-
-  // Signature of what the develop service last got; an unchanged map is not re-sent.
-  const registered = useRef("");
-  const previous = useRef<Record<string, FusionRecipe>>({});
-  useEffect(() => {
-    const fusions = Object.fromEntries(
-      Object.entries(sets === null ? {} : fusionMap(sets)).map(([face, frames]) => [
-        face,
-        { frames, method: methods[face] ?? ("fusion" as const) },
-      ]),
-    );
-    const signature = JSON.stringify(fusions);
-    if (signature === registered.current) return;
-    registered.current = signature;
-    const before = previous.current;
-    previous.current = fusions;
-    void developSetFusions(fusions).then(() => {
-      // A session may have opened the face as a plain JPEG before detection landed; drop it so it reopens as the fusion.
-      const changed = [...new Set([...Object.keys(before), ...Object.keys(fusions)])].filter(
-        (path) => JSON.stringify(before[path]) !== JSON.stringify(fusions[path]),
-      );
-      if (changed.length > 0) useDevelopStore.getState().dropStale(changed);
-    });
-  }, [sets, methods]);
 }
 
 /** The session follows the lead selection in every view; panels only render it. */
@@ -90,7 +60,7 @@ function App() {
 
   useGlobalKeybindings();
   useSceneRefinement();
-  useHdrDetection();
+  useFolderMeta();
   useDevelopSession();
 
   useEffect(() => {

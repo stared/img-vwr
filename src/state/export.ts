@@ -20,14 +20,12 @@ export interface Candidate {
   entry: FileEntry;
   stack: FileEntry[];
   edited: boolean;
-  /** Fronts an HDR set: the file is one exposure of a fused photograph, so only a render exports the truth. */
-  hdr: boolean;
 }
 
 interface Planned {
   entry: FileEntry;
   job: ExportJob;
-  reason: "edited" | "hdr" | "camera-jpg" | "no-jpg" | "always-render";
+  reason: "edited" | "camera-jpg" | "no-jpg" | "always-render";
 }
 
 export function jpegOf(candidate: Candidate): FileEntry | null {
@@ -46,7 +44,6 @@ export function planFor(candidate: Candidate, options: ExportOptions): Planned {
   });
 
   if (candidate.edited) return render("edited");
-  if (candidate.hdr) return render("hdr");
   if (options.unedited === "render") return render("always-render");
   // Copying a camera JPEG would ignore the PNG format asked for.
   if (options.format.kind === "png") return render("always-render");
@@ -76,7 +73,6 @@ export function candidatesOf(
   chosen: FileEntry[],
   all: FileEntry[],
   edited: ReadonlySet<string>,
-  hdrFaces: ReadonlySet<string> = new Set(),
 ): Candidate[] {
   const byKey = new Map<string, FileEntry[]>();
   for (const entry of all) {
@@ -92,7 +88,6 @@ export function candidatesOf(
       stack,
       // Edited when any file of the stack is: the edit was made on whichever one was on screen.
       edited: stack.some((f) => edited.has(f.path)),
-      hdr: hdrFaces.has(entry.path),
     };
   });
 }

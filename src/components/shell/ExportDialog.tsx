@@ -20,7 +20,7 @@ import {
   type Candidate,
 } from "../../state/export";
 import { effectiveDims } from "../../state/derived";
-import { chosenEntries, hdrOf, useAppStore } from "../../state/store";
+import { chosenEntries, useAppStore } from "../../state/store";
 import { parseNumber, Slider } from "./Slider";
 
 type Phase =
@@ -88,14 +88,12 @@ export function ExportDialog() {
     const chosen = chosenEntries(state);
     const all = state.entries;
     let live = true;
-    // HDR faces must render regardless of the unedited policy: the file at the path is one exposure of the fusion.
-    const hdrFaces = new Set(hdrOf(state).byFace.keys());
     void developEditedPaths(all.map((e) => e.path)).then(
       (edited) => {
-        if (live) setCandidates(candidatesOf(chosen, all, new Set(edited), hdrFaces));
+        if (live) setCandidates(candidatesOf(chosen, all, new Set(edited)));
       },
       () => {
-        if (live) setCandidates(candidatesOf(chosen, all, new Set(), hdrFaces));
+        if (live) setCandidates(candidatesOf(chosen, all, new Set()));
       },
     );
     return () => {

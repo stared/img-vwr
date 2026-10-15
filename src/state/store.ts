@@ -14,7 +14,6 @@ import type {
   Crop,
   EmbedModelInfo,
   FileEntry,
-  HdrMethod,
   ImageLabels,
   ImageMeta,
   MetaEntry,
@@ -35,11 +34,9 @@ import {
   type Scope,
 } from "./collection";
 import { DEFAULT_OPTIONS, type ExportOptions } from "./export";
-import { hdrSetsOf, type HdrSet } from "./hdr";
 import type { Query, Sort } from "./query";
 import {
   collapseStacks,
-  photographKeyOf,
   siblingsOf,
   stackKeyOf,
   stackKeyOfPath,
@@ -144,8 +141,6 @@ export interface AppState {
   preferredMember: Record<string, string>;
   /** Photograph keys spread open in the filmstrip; strip-only — the visible list stays collapsed, one photograph one index. */
   expandedStacks: Record<string, true>;
-  /** face path → how that HDR set merges; absent means exposure fusion. */
-  hdrMethod: Record<string, HdrMethod>;
   /** Index into the visible (query-applied) list of the lead photograph — the one panels describe; null when nothing is selected. */
   selectedIndex: number | null;
   /** Selected paths in on-screen order; empty exactly when `selectedIndex` is null, and always contains the lead. */
@@ -236,7 +231,6 @@ interface AppActions {
   /** Show `path` in place of whatever its stack was showing. */
   preferMember: (path: string) => void;
   toggleStackExpanded: (key: string) => void;
-  setHdrMethod: (face: string, method: HdrMethod) => void;
   /** Select one image, or nothing (null) — clicking empty space, or Esc. */
   select: (index: number | null) => void;
   /** Click on an image with modifiers held; see `selectMode`. */
@@ -322,7 +316,6 @@ export const initialState: AppState = {
   stackLead: "jpg",
   preferredMember: {},
   expandedStacks: {},
-  hdrMethod: {},
   selectedIndex: null,
   selection: [],
   selectionAnchor: null,
@@ -847,8 +840,7 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
     set((s) => {
       const entry = s.entries.find((e) => e.path === path);
       if (!entry) return {};
-      // Keyed by the photograph — for a frame of an HDR set that is the set, so picking a member swaps the whole bracket.
-      const key = photographKeyOf(entry, hdrOf(s).keyByStack);
+      const key = stackKeyOf(entry);
       return withSelectionHeld(
         s,
         { preferredMember: { ...s.preferredMember, [key]: path } },
@@ -861,9 +853,6 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
       const { [key]: open, ...rest } = s.expandedStacks;
       return { expandedStacks: open ? rest : { ...rest, [key]: true } };
     }),
-
-  setHdrMethod: (face, method) =>
-    set((s) => ({ hdrMethod: { ...s.hdrMethod, [face]: method } })),
 
   select: (index) => set((s) => withSelection(s, index)),
 
@@ -1034,44 +1023,8 @@ let visibleCache: {
   stacking: boolean;
   lead: StackLead;
   preferred: Record<string, string>;
-  hdrKeys: ReadonlyMap<string, string> | null;
   result: FileEntry[];
 } | null = null;
-
-/* Memoized by input identity and additionally by answer: a meta batch that taught nothing about brackets keeps the previous maps' identity. */
-let hdrCache: {
-  entries: FileEntry[];
-  meta: Record<string, ImageMeta>;
-  signature: string;
-  sets: HdrSet[];
-  /** Every member stem's stack key → the set's face path. */
-  keyByStack: ReadonlyMap<string, string>;
-  /** Face path → its set, for anything fronting one photograph. */
-  byFace: ReadonlyMap<string, HdrSet>;
-} | null = null;
-
-export function hdrOf(state: Pick<AppState, "entries" | "meta">): {
-  sets: HdrSet[];
-  keyByStack: ReadonlyMap<string, string>;
-  byFace: ReadonlyMap<string, HdrSet>;
-} {
-  const c = hdrCache;
-  if (c && c.entries === state.entries && c.meta === state.meta) return c;
-  const sets = hdrSetsOf(state.entries, (path) => state.meta[path] ?? null);
-  const signature = sets.map((s) => `${s.face.path}:${s.frames.length}`).join("|");
-  if (c && c.signature === signature) {
-    hdrCache = { ...c, entries: state.entries, meta: state.meta };
-    return hdrCache;
-  }
-  const keyByStack = new Map<string, string>();
-  const byFace = new Map<string, HdrSet>();
-  for (const set of sets) {
-    byFace.set(set.face.path, set);
-    for (const frame of set.frames) keyByStack.set(stackKeyOf(frame), set.face.path);
-  }
-  hdrCache = { entries: state.entries, meta: state.meta, signature, sets, keyByStack, byFace };
-  return hdrCache;
-}
 
 /** Entries with filters + sort applied, memoized across all callers. */
 export function visibleOf(
@@ -1106,7 +1059,6 @@ export function visibleOf(
     collapsing,
     state.stackLead,
     state.preferredMember,
-    collapsing ? hdrOf(state).keyByStack : null,
   );
 }
 
@@ -1120,7 +1072,6 @@ function applyQueryMemo(
   stacking: boolean,
   lead: StackLead,
   preferred: Record<string, string>,
-  hdrKeys: ReadonlyMap<string, string> | null,
 ): FileEntry[] {
   const c = visibleCache;
   if (
@@ -1133,8 +1084,7 @@ function applyQueryMemo(
     c.people === people &&
     c.stacking === stacking &&
     c.lead === lead &&
-    c.preferred === preferred &&
-    c.hdrKeys === hdrKeys
+    c.preferred === preferred
   ) {
     return c.result;
   }
@@ -1145,7 +1095,7 @@ function applyQueryMemo(
     people: people ?? {},
   });
   // Stacking collapses what the query already decided, so a filter matching one member of a pair still shows it.
-  const result = stacking ? collapseStacks(filtered, preferred, lead, hdrKeys) : filtered;
+  const result = stacking ? collapseStacks(filtered, preferred, lead) : filtered;
   visibleCache = {
     entries,
     query,
@@ -1156,7 +1106,6 @@ function applyQueryMemo(
     stacking,
     lead,
     preferred,
-    hdrKeys,
     result,
   };
   return result;
@@ -1180,8 +1129,6 @@ export function useVisibleEntries(): FileEntry[] {
   const stacking = useAppStore(stacksCollapse);
   const lead = useAppStore((s) => s.stackLead);
   const preferred = useAppStore((s) => s.preferredMember);
-  // Identity-stable while detection's answer stands, so this fires only when a bracket appears or dissolves.
-  const hdrKeys = useAppStore((s) => (stacksCollapse(s) ? hdrOf(s).keyByStack : null));
   return applyQueryMemo(
     entries,
     query,
@@ -1192,6 +1139,5 @@ export function useVisibleEntries(): FileEntry[] {
     stacking,
     lead,
     preferred,
-    hdrKeys,
   );
 }

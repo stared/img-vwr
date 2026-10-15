@@ -1,9 +1,8 @@
 import type { FileEntry } from "../../ipc";
 import { fileUrl } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
-import { hdrLabel } from "../../state/hdr";
 import { pairedName, siblingsOf } from "../../state/stacks";
-import { hdrOf, selectMode, stacksCollapse, useAppStore } from "../../state/store";
+import { selectMode, stacksCollapse, useAppStore } from "../../state/store";
 import { ThumbLabels } from "../../labels/TagDot";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
@@ -19,13 +18,12 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
   const selected = useAppStore((s) => s.selection.includes(entry.path));
   const lead = useAppStore((s) => s.selectedIndex === index);
   const openViewer = useAppStore((s) => s.openViewer);
-  const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
   const crop = useAppStore((s) => s.crops[entry.path]);
   const meta = useAppStore((s) => s.meta[entry.path]);
   const dims = meta === undefined ? null : effectiveDims(meta);
   const caption = useAppStore((s) =>
     stacksCollapse(s)
-      ? pairedName(entry, siblingsOf(s.entries, entry, hdrOf(s).keyByStack))
+      ? pairedName(entry, siblingsOf(s.entries, entry))
       : entry.name,
   );
 
@@ -43,14 +41,6 @@ export function ThumbCell({ entry, index, size }: ThumbCellProps) {
     >
       <div className="thumb-frame" style={{ height: size }}>
         <ThumbLabels path={entry.path} />
-        {hdr !== null && (
-          <span
-            className="thumb-hdr"
-            title={`${hdrLabel(hdr)} — this frame fronts the fused photograph; opening it shows the merge`}
-          >
-            HDR ×{hdr.frames.length}
-          </span>
-        )}
         {crop !== undefined && <CropBadge />}
         {cacheFile !== undefined ? (
           crop !== undefined && dims !== null ? (

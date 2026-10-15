@@ -175,10 +175,6 @@ interface DevelopStore {
   caption: CaptionMode;
   setCaption: (mode: CaptionMode) => void;
 
-  /** Path whose file the canvas shows even though it opens as a fusion; cleared by navigating — edits and export still mean the fused photograph. */
-  original: string | null;
-  setOriginal: (path: string | null) => void;
-
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -187,8 +183,6 @@ interface DevelopStore {
   prefetch: (paths: string[]) => void;
   /** Neighbours already opened and developed, by path. */
   warm: Record<string, Warm>;
-  /** These paths changed meaning (an HDR registration arrived): forget warm copies and reopen the one on screen. */
-  dropStale: (paths: string[]) => void;
   setParam: (key: ParamKey, value: number) => void;
   setTemperature: (kelvin: number) => void;
   setTint: (tint: number) => void;
@@ -550,15 +544,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     // "as shot" by default: the frame's own proportions are what every other frame of the shoot will match.
     cropChoice: "original",
     cropPortrait: false,
-    original: null,
-    setOriginal: (original) => set({ original }),
     opening: null,
 
     warm: {},
 
     open: async (path) => {
       if (get().session?.path === path) return;
-      if (get().original !== null) set({ original: null });
       if (get().cropping) set({ cropping: false, cropWas: null });
       if (get().loupeAt !== null) set({ loupeAt: null, loupeAimedByUser: false });
       refetched = null;
@@ -597,19 +588,6 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     },
 
     close: () => set({ session: null, opening: null }),
-
-    dropStale: (paths) => {
-      const stale = new Set(paths);
-      const warm = get().warm;
-      const kept = Object.fromEntries(Object.entries(warm).filter(([p]) => !stale.has(p)));
-      if (Object.keys(kept).length !== Object.keys(warm).length) set({ warm: kept });
-      const current = get().session?.path ?? get().opening ?? null;
-      if (current !== null && stale.has(current)) {
-        // `open` early-outs on the same path, so the session must be gone before it is asked for again.
-        set({ session: null, opening: null });
-        void get().open(current);
-      }
-    },
 
     setParam: (key, value) => {
       const session = get().session;

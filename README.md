@@ -85,7 +85,6 @@ src-tauri/
   crates/imgvwr-develop/  format-agnostic pipeline: tone, colour, histogram,
                           focus map — knows nothing about file formats
   crates/imgvwr-raw/      raw format plugin (Core Image on macOS)
-  crates/imgvwr-hdr/      exposure-bracket merge: align, crop, fuse
   crates/imgvwr-embed/    image/text embeddings for similarity and faces
   src/                    Tauri wiring: commands (thin adapters), events,
                           services (thumbnails, develop + the `develop:`

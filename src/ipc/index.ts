@@ -11,7 +11,6 @@ import type {
   ExportJob,
   ExportPlan,
   Exported,
-  FusionRecipe,
   ImageLabels,
   ImageStats,
   Overlay,
@@ -234,13 +233,6 @@ export async function developCrops(paths: string[]): Promise<Record<string, Crop
 /** Exports one photograph; the caller drives the batch. */
 export async function developExport(job: ExportJob, plan: ExportPlan): Promise<Exported> {
   return unwrap(await commands.developExport(job, plan));
-}
-
-/** Replaces the whole map: pass every fusion in the folder, keyed by the face frame's path. */
-export async function developSetFusions(
-  fusions: Record<string, FusionRecipe>,
-): Promise<void> {
-  return commands.developSetFusions(fusions);
 }
 
 /** The per-render token stops the webview's image cache from serving the previous edit. */

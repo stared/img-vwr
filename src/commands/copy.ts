@@ -3,7 +3,7 @@ import { tempDir } from "@tauri-apps/api/path";
 import { copyFiles, developEditedPaths, developExport, type ExifSource } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { candidatesOf, jpegOf, type Candidate } from "../state/export";
-import { chosenEntries, hdrOf, useAppStore } from "../state/store";
+import { chosenEntries, useAppStore } from "../state/store";
 
 /* Copy sends exactly the photographs shown — never the whole stack, unlike rating and deleting. */
 
@@ -13,7 +13,7 @@ type CopyStep =
 
 export function copyPlan(candidates: Candidate[]): CopyStep[] {
   return candidates.map((candidate) => {
-    if (!candidate.edited && !candidate.hdr) {
+    if (!candidate.edited) {
       return { kind: "file", path: candidate.entry.path };
     }
     // Renders take the sibling JPEG's EXIF where there is one.
@@ -35,8 +35,7 @@ async function copySelection(): Promise<void> {
   const edited = new Set(
     await developEditedPaths(state.entries.map((e) => e.path)).catch(() => []),
   );
-  const hdrFaces = new Set(hdrOf(state).byFace.keys());
-  const plan = copyPlan(candidatesOf(photographs, state.entries, edited, hdrFaces));
+  const plan = copyPlan(candidatesOf(photographs, state.entries, edited));
 
   // developExport never overwrites, so repeated copies of a re-edited photograph keep their versions.
   const folder = await tempDir();

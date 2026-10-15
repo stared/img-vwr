@@ -3,8 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { FileEntry } from "../../ipc";
 import { fileUrl, requestMeta, requestThumbnails } from "../../ipc";
-import { hdrLabel } from "../../state/hdr";
-import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
 import { ThumbLabels } from "../../labels/TagDot";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 import { bandedMosaic, mosaicAspects, mosaicRows, rowsToBands, verticalNeighbor } from "./mosaic";
@@ -168,7 +167,6 @@ function MosaicCell({
   const selected = useAppStore((s) => s.selection.includes(entry.path));
   const lead = useAppStore((s) => s.selectedIndex === index);
   const openViewer = useAppStore((s) => s.openViewer);
-  const hdr = useAppStore((s) => hdrOf(s).byFace.get(entry.path) ?? null);
   const crop = useAppStore((s) => s.crops[entry.path]);
 
   return (
@@ -185,14 +183,6 @@ function MosaicCell({
       }}
     >
       <ThumbLabels path={entry.path} />
-      {hdr !== null && (
-        <span
-          className="thumb-hdr"
-          title={`${hdrLabel(hdr)} — this frame fronts the fused photograph; opening it shows the merge`}
-        >
-          HDR ×{hdr.frames.length}
-        </span>
-      )}
       {crop !== undefined && <CropBadge />}
       {cacheFile !== undefined ? (
         // The cell's shape is already the crop's, so the frame aspect is recovered by inverting croppedBoxRatio.

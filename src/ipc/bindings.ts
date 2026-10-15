@@ -287,12 +287,6 @@ async developPickWhiteBalance(path: string, x: number, y: number, settings: Deve
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
-},
-/**
- * Writes nothing: the merge stays virtual until Export.
- */
-async developSetFusions(fusions: Partial<{ [key in string]: FusionRecipe }>) : Promise<void> {
-    await TAURI_INVOKE("develop_set_fusions", { fusions });
 }
 }
 
@@ -407,7 +401,7 @@ export type DevelopState = { width: number; height: number; asShot: WhiteBalance
 /**
  * True when the webview cannot display this file itself.
  */
-needsRender: boolean; hdr: HdrOutcome }
+needsRender: boolean }
 /**
  * Keyed by absolute path, so it is never stale — hence no epoch.
  */
@@ -465,25 +459,6 @@ formatHint: string }
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
 export type FrameSource = "cameraJpeg" | "rawDevelop"
-export type FusionRecipe = { frames: string[]; method: HdrMethod }
-export type HdrMethod = 
-/**
- * Mertens exposure fusion — deliberately no knobs.
- */
-"fusion" | 
-/**
- * Scene-linear radiance, headroom kept above 1.0; the develop tone controls are the knobs.
- */
-"radiance"
-export type HdrOutcome = { kind: "plain" } | 
-/**
- * `left_out` names frames that were misaligned and left out rather than ghosted in.
- */
-{ kind: "fused"; frames: number; leftOut: string[] } | 
-/**
- * The path shows the face file alone; `reason` is the measurement that said no.
- */
-{ kind: "refused"; frames: number; reason: string }
 /**
  * 256-bin distributions of the *developed* image — what the user is actually
  * looking at, so clipping shown here is clipping they can see. (The info

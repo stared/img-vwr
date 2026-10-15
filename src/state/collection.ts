@@ -35,7 +35,6 @@ export function scopeLoading(scope: Scope, epoch: number) {
     selection: [] as string[],
     selectionAnchor: null,
     expandedStacks: {} as Record<string, true>,
-    hdrMethod: {} as Record<string, import("../ipc").HdrMethod>,
     similarity: null,
     embedProgress: null,
     people: null,

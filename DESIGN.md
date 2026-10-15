@@ -42,49 +42,10 @@ verbatim; there is no EXIF writer in the dependency tree), so a developed
 export still says when and how it was taken. Existing files are never
 overwritten: a taken name gets `-1` appended.
 
-## HDR (`src/state/hdr.ts`, `src-tauri/crates/imgvwr-hdr/`, `services/hdr.rs`)
+## HDR (removed)
 
-An HDR set is detected, not declared: frames seconds apart whose exposure
-sweeps ≥1.5 EV at one focal length (both facts required — a burst without the
-sweep is continuous shooting, a sweep without the burst is somebody changing
-settings). Detection is pure TS over EXIF the app already reads, and runs for
-every folder as its metadata streams in; no view owns it.
-
-A detected set is *one photograph*, and the app already has the machinery for
-"several files, one photograph": stacking. The set collapses like a raw+JPEG
-pair wherever stacks collapse, fronted by its middle exposure — the face —
-and the grid badges the face `HDR ×5`. The merge is virtual, Lightroom-style:
-the face's path is registered with the develop service as "open this as the
-fusion of these frames" (`develop_set_fusions`), so the viewer shows the
-fusion, edits store against the face path in `develop.db` like any other
-edit, and export renders it (named `-HDR`) through the ordinary export
-dialog. Nothing is ever written beside the originals; no button merges
-anything. The frames stay real files — visible in the grid, one keypress
-away behind the face.
-
-The fusion itself (Rust, `imgvwr-hdr`) is exposure fusion (Mertens), not
-radiance recovery — the result is a blend of the input pixels that showed
-each region best, so it looks like the camera's photographs rather than a
-tone-mapper's. Alignment is a verified rigid motion (rotation + translation,
-subpixel): nine tiles per frame vote with median-threshold-bitmap
-translations, votes are weighted by evidence and texture (smooth sky scores
-its own iso-line beautifully and knows nothing), a motion is fitted per
-exposure-neighbour link — and every candidate is *measured*, by warping and
-correlating edges against the reference where both frames resolved the
-scene. MTB proposes; photometry disposes. Failed links split the bracket
-into runs of exposures that verifiably continue one another, and the merge
-takes the longest run: the anchor is an outcome of the measurements, never
-a prior, so one unalignable frame — wherever it sits — costs the set that
-frame, not the merge. The contract is align or refuse, per frame: a frame
-that cannot be verified is left out of the fusion, a set in which no two
-exposures verify shows its face frame plain — the honest renderings are
-the merge or the frame, never a ghost. Either way the develop panel states the outcome ("fused",
-or "won't align — showing this frame alone", with the measured reason):
-a silent refusal would be indistinguishable from the feature not working.
-The output is cropped to the pixels every frame saw, turned upright before
-fusing (a virtual photograph has no EXIF to carry an orientation tag), and
-handed to the develop pipeline as a scene — from there it is anybody
-else's JPEG.
+Virtual HDR merge was removed until it can return as a self-contained module.
+The design notes and code are at commit `45901ee`.
 
 ## Sliders (`src/components/shell/Slider.tsx`)
 

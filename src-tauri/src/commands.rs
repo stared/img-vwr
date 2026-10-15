@@ -525,16 +525,6 @@ pub async fn develop_crops(
         .map_err(|e| e.to_string())?
 }
 
-/// Writes nothing: the merge stays virtual until Export.
-#[tauri::command]
-#[specta::specta]
-pub fn develop_set_fusions(
-    service: State<'_, Arc<DevelopService>>,
-    fusions: HashMap<String, crate::services::develop::FusionRecipe>,
-) {
-    service.set_fusions(fusions);
-}
-
 /// One file per call, not a batch: the UI owns progress, cancellation and order.
 #[tauri::command]
 #[specta::specta]
