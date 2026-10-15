@@ -26,6 +26,7 @@ export function registerSceneCommands(): void {
   registerCommand({
     id: "scene.next",
     title: "Next Scene",
+    input: null,
     keywords: ["jump", "group", "series", "burst"],
     menus: [],
     when: scenesOn,
@@ -35,6 +36,7 @@ export function registerSceneCommands(): void {
   registerCommand({
     id: "scene.prev",
     title: "Previous Scene",
+    input: null,
     keywords: ["jump", "group", "series", "burst"],
     menus: [],
     when: scenesOn,

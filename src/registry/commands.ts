@@ -22,12 +22,13 @@ export interface MenuPlacement {
 export interface Command {
   id: string;
   title: string;
-  keywords?: string[];
-  /** If set, the palette collects a text argument before running. */
-  input?: { placeholder: string };
+  keywords: string[];
+  /** The palette collects a text argument before running; null = runs at once. */
+  input: { placeholder: string } | null;
   /** Every command states its placements; [] = palette only. */
   menus: MenuPlacement[];
-  when?: (ctx: CommandContext) => boolean;
+  /** Applicable now; menus gray the row and keys fall through when false. */
+  when: (ctx: CommandContext) => boolean;
   run: (ctx: CommandContext, arg?: string) => void | Promise<void>;
 }
 
@@ -62,14 +63,14 @@ export function menuEntries(menu: CommandMenu, ctx: CommandContext): MenuEntry[]
     .flatMap((command) => {
       const placement = command.menus.find((p) => p.menu === menu);
       if (!placement) return [];
-      return [{ command, placement, enabled: !command.when || command.when(ctx) }];
+      return [{ command, placement, enabled: command.when(ctx) }];
     })
     .sort((a, b) => rank(a) - rank(b));
 }
 
 export function executeCommand(id: string, ctx: CommandContext, arg?: string): boolean {
   const command = registry.get(id);
-  if (!command || (command.when && !command.when(ctx))) {
+  if (!command || !command.when(ctx)) {
     return false;
   }
   void command.run(ctx, arg);
@@ -110,10 +111,10 @@ export function fuzzyScore(query: string, text: string): number | null {
 
 export function searchCommands(query: string, ctx: CommandContext): Command[] {
   return allCommands()
-    .filter((c) => !c.when || c.when(ctx))
+    .filter((c) => c.when(ctx))
     .map((c) => ({
       command: c,
-      score: fuzzyScore(query, [c.title, c.id, ...(c.keywords ?? [])].join(" ")),
+      score: fuzzyScore(query, [c.title, c.id, ...c.keywords].join(" ")),
     }))
     .filter((r): r is { command: Command; score: number } => r.score !== null)
     .sort((a, b) => b.score - a.score)

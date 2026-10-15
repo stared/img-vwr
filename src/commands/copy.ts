@@ -65,6 +65,7 @@ export function registerCopyCommands(): void {
   registerCommand({
     id: "image.copy",
     title: "Copy",
+    input: null,
     keywords: ["clipboard", "copy files", "share"],
     menus: [{ menu: "image", section: "transfer", submenu: null, label: "Copy" }],
     when: (ctx: CommandContext) => {

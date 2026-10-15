@@ -141,6 +141,7 @@ export function registerLabels(): void {
     registerCommand({
       id: `labels.stars.${n}`,
       title: n === 0 ? "Clear Rating" : `Rate ${"★".repeat(n)}`,
+      input: null,
       keywords: STAR_KEYWORDS,
       menus: [{ menu: "image", section: "labels", submenu: "Rating", label: n === 0 ? "nothing" : "★".repeat(n) }],
       when: hasSelection,

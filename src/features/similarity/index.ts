@@ -133,6 +133,7 @@ export function registerSimilarity(): void {
   registerCommand({
     id: "similar.image",
     title: "Find Similar",
+    input: null,
     keywords: ["similar", "alike", "closest", "embedding", "nearest", "resembles"],
     menus: [{ menu: "image", section: "open", submenu: null, label: "Find Similar" }],
     when: (ctx: CommandContext) => inFolderScope() && ctx.store.getState().entries.length > 0,

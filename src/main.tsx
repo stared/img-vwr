@@ -159,6 +159,8 @@ for (const panel of allPanels("left")) {
   registerCommand({
     id: `view.${panel.id}`,
     title: `Show ${panel.title}`,
+    input: null,
+    when: () => true,
     keywords: ["view", "panel", "sidebar"],
     menus: [],
     run: ({ store }) => store.getState().setActivePanel(panel.id),

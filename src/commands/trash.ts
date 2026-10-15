@@ -49,6 +49,7 @@ export function registerTrashCommands(): void {
   registerCommand({
     id: "image.trash",
     title: "Move to Trash",
+    input: null,
     keywords: ["delete", "remove", "bin", "discard", "reject", "cull"],
     menus: [{ menu: "image", section: "danger", submenu: null, label: "Move to Trash" }],
     when: (ctx: CommandContext) => {
