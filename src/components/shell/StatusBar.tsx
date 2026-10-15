@@ -1,4 +1,5 @@
 import { PhotoBadges } from "../../registry/badges";
+import { getView } from "../../registry/views";
 import { pairedName, siblingsOf } from "../../state/stacks";
 import { useAppStore, useSelectedEntry, useVisibleEntries } from "../../state/store";
 
@@ -17,7 +18,7 @@ export function StatusBar() {
   const stacking = useAppStore((s) => s.stacking);
   const siblings = entry && stacking ? siblingsOf(allEntries, entry) : [];
 
-  const looking = viewMode === "viewer" || galleryLayout === "darkroom";
+  const looking = viewMode === "viewer" || getView(galleryLayout)?.zoomable === true;
 
   const totalText = status === "loading" ? `${total}…` : `${total}`;
   const countText =

@@ -7,6 +7,7 @@ import { DarkroomGallery } from "./components/gallery/DarkroomGallery";
 import { MapGallery } from "./components/gallery/MapGallery";
 import { MosaicGallery } from "./components/gallery/MosaicGallery";
 import { TimelineGallery } from "./components/gallery/TimelineGallery";
+import { DarkroomKnobs, GridKnobs, MosaicKnobs, SceneKnobs, TimelineKnobs } from "./components/gallery/viewKnobs";
 import { registerBuiltinCommands, registerSortCommands } from "./commands/builtin";
 import { registerCopyCommands } from "./commands/copy";
 import { registerDevelopCommands } from "./commands/develop";
@@ -45,6 +46,8 @@ registerView({
   component: () => <GalleryGrid grouped={false} />,
   keywords: ["thumbnails", "cells"],
   zoomable: false,
+  stacks: false,
+  Knobs: GridKnobs,
 });
 registerView({
   id: "mosaic",
@@ -53,6 +56,8 @@ registerView({
   component: MosaicGallery,
   keywords: ["packed", "wall", "justified"],
   zoomable: false,
+  stacks: false,
+  Knobs: MosaicKnobs,
 });
 registerView({
   id: "scenes",
@@ -61,6 +66,8 @@ registerView({
   component: () => <GalleryGrid grouped />,
   keywords: ["moments", "groups", "series", "burst"],
   zoomable: false,
+  stacks: true,
+  Knobs: SceneKnobs,
 });
 registerView({
   id: "timeline",
@@ -69,6 +76,8 @@ registerView({
   component: TimelineGallery,
   keywords: ["date", "taken", "time", "chronological"],
   zoomable: false,
+  stacks: false,
+  Knobs: TimelineKnobs,
 });
 registerView({
   id: "map",
@@ -77,6 +86,8 @@ registerView({
   component: MapGallery,
   keywords: ["geo", "gps", "location"],
   zoomable: false,
+  stacks: false,
+  Knobs: null,
 });
 registerView({
   id: "darkroom",
@@ -85,6 +96,8 @@ registerView({
   component: DarkroomGallery,
   keywords: ["develop", "edit", "filmstrip", "lightroom", "carousel", "loupe"],
   zoomable: true,
+  stacks: true,
+  Knobs: DarkroomKnobs,
 });
 
 registerBuiltinCommands();

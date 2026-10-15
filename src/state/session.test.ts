@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { registerTestViews } from "../registry/testViews";
+
 import { useDevelopStore } from "./develop";
 import { restoreSession } from "./session";
 import { initialState, useAppStore } from "./store";
+
+registerTestViews();
 
 /** Must mirror the key session.ts writes. */
 const KEY = "imgvwr.session.v1";

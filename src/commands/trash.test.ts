@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { registerTestViews } from "../registry/testViews";
+
 import type { FileEntry } from "../ipc";
 import { filesBehind, initialState } from "../state/store";
 import { trashPrompt } from "./trash";
+
+registerTestViews();
 
 const file = (name: string): FileEntry => ({
   path: `/p/${name}`,

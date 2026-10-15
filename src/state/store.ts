@@ -20,6 +20,7 @@ import type {
 import { newEpoch, scanFolder } from "../ipc";
 import { storeChannel, type Channel, type ChannelMaps } from "../registry/channels";
 import { getSource } from "../registry/sources";
+import { getView } from "../registry/views";
 import {
   EPOCH_PENDING,
   folderRescanned,
@@ -57,8 +58,8 @@ import {
 } from "./query";
 
 export type ViewMode = "gallery" | "viewer";
-export const GALLERY_LAYOUTS = ["grid", "mosaic", "timeline", "map", "darkroom", "scenes"] as const;
-export type GalleryLayout = (typeof GALLERY_LAYOUTS)[number];
+/** A registered view's id. */
+export type GalleryLayout = string;
 
 export type MosaicPacking = "order" | "packed";
 export type TimelineOrientation = "vertical" | "horizontal";
@@ -393,16 +394,11 @@ type VisibleInputs = Pick<
   | "galleryLayout"
 >;
 
-/** Stacking applies only where one photograph is on screen at a time; the grid, timeline and map list every file. */
+/** Stacking applies only where one photograph is on screen at a time (the viewer, and views that say so). */
 export function stacksCollapse(
   state: Pick<AppState, "stacking" | "viewMode" | "galleryLayout">,
 ): boolean {
-  return (
-    state.stacking &&
-    (state.viewMode === "viewer" ||
-      state.galleryLayout === "darkroom" ||
-      state.galleryLayout === "scenes")
-  );
+  return state.stacking && (state.viewMode === "viewer" || getView(state.galleryLayout)?.stacks === true);
 }
 
 /** Scores for exactly this visible list, matched by identity — the memoized list keeps its object while on screen. */

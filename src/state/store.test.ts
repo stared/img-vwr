@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { registerTestViews } from "../registry/testViews";
+
 import type { Channel } from "../registry/channels";
 import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
@@ -19,6 +21,8 @@ import {
   withSelectionHeld,
   type Scope,
 } from "./store";
+
+registerTestViews();
 
 const SCORES: Channel<number | null> = { missing: null, read: () => ({}), subscribe: () => () => {} };
 
@@ -123,7 +127,6 @@ describe("sortForScope", () => {
     );
   });
 });
-
 
 describe("scanBatchArrived", () => {
   const entry = (path: string) => ({

@@ -1,10 +1,10 @@
 import { CAPTION_CYCLE, useDevelopStore, type CaptionMode } from "./develop";
 import { getSort } from "../registry/sorts";
+import { getView } from "../registry/views";
 import { defaultQuery, type Filter, type Query, type Sort } from "./query";
 import type { StackLead } from "./stacks";
 import {
   useAppStore,
-  GALLERY_LAYOUTS,
   type GalleryLayout,
   type MosaicPacking,
   type Scope,
@@ -165,7 +165,7 @@ export function restoreSession(): boolean {
 
   const app = useAppStore.getState();
   useAppStore.setState({
-    galleryLayout: oneOf(o.galleryLayout, GALLERY_LAYOUTS) ? o.galleryLayout : app.galleryLayout,
+    galleryLayout: isString(o.galleryLayout) && getView(o.galleryLayout) !== undefined ? o.galleryLayout : app.galleryLayout,
     query: readQuery(o.query),
     stacking: isBool(o.stacking) ? o.stacking : app.stacking,
     stackLead: oneOf(o.stackLead, ["jpg", "raw"] as const) ? o.stackLead : app.stackLead,
