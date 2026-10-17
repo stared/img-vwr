@@ -85,12 +85,27 @@ pub struct EmbedModelInfo {
     pub active: bool,
 }
 
+/// Fetches `file` from a Hub model repo through the cache under `cache_dir` (the standard Hugging Face layout);
+/// `offline` only looks in the cache. Blocking.
+fn hub_file(cache_dir: &std::path::Path, repo: &str, file: &str, offline: bool) -> Result<std::path::PathBuf, EmbedError> {
+    let download = |e: hf_hub::HFError| EmbedError::Download(e.to_string());
+    let (owner, name) = hf_hub::split_id(repo);
+    hf_hub::HFClient::builder()
+        .cache_dir(cache_dir)
+        .build_sync()
+        .map_err(download)?
+        .model(owner, name)
+        .download_file()
+        .filename(file)
+        .local_files_only(offline)
+        .send()
+        .map_err(download)
+}
+
 pub fn is_downloaded(spec: &ModelSpec, cache_dir: &std::path::Path) -> bool {
-    let cache = hf_hub::Cache::new(cache_dir.to_path_buf());
-    let repo = cache.model(spec.hf_repo.to_string());
     ["model.safetensors", "tokenizer.json", "config.json"]
         .iter()
-        .all(|f| repo.get(f).is_some())
+        .all(|f| hub_file(cache_dir, spec.hf_repo, f, true).is_ok())
 }
 
 pub struct Embedder {
@@ -129,12 +144,7 @@ impl Embedder {
 
     /// Downloads (or reuses) the weights, then loads. Slow — run on a background thread.
     pub fn load(spec: &'static ModelSpec, cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
-        let api = hf_hub::api::sync::ApiBuilder::new()
-            .with_cache_dir(cache_dir.to_path_buf())
-            .build()
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
-        let repo = api.model(spec.hf_repo.to_string());
-        let get = |file: &str| repo.get(file).map_err(|e| EmbedError::Download(e.to_string()));
+        let get = |file: &str| hub_file(cache_dir, spec.hf_repo, file, false);
 
         let weights = get("model.safetensors")?;
         let tokenizer =
@@ -271,14 +281,7 @@ const FACE_EDGE: usize = 112;
 impl FaceEmbedder {
     /// Blocking; downloads on first use.
     pub fn load(cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
-        let api = hf_hub::api::sync::ApiBuilder::new()
-            .with_cache_dir(cache_dir.to_path_buf())
-            .build()
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
-        let model_file = api
-            .model(FACE_MODEL_REPO.to_string())
-            .get(FACE_MODEL_FILE)
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
+        let model_file = hub_file(cache_dir, FACE_MODEL_REPO, FACE_MODEL_FILE, false)?;
         let session = ort::session::Session::builder()
             .map_err(|e| EmbedError::Model(e.to_string()))?
             .commit_from_file(&model_file)
