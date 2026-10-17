@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+# Two weeks (in minutes): a compromised or broken release is usually caught and pulled by then.
+minimumReleaseAge: 20160
