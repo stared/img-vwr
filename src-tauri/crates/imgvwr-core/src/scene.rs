@@ -4,7 +4,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 /// Kelvin plus green–magenta tint; higher temperature renders warmer, positive tint more magenta (the Lightroom/Core Image convention).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct WhiteBalance {
     pub temperature: f32,
@@ -105,7 +106,8 @@ impl std::fmt::Display for SceneError {
 impl std::error::Error for SceneError {}
 
 /// SceneReferred pixels get a look chosen on open; AlreadyRendered ones must not be graded twice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub enum Rendering {
     SceneReferred,
@@ -296,7 +298,7 @@ fn illuminant_rgb(temperature: f32) -> [f32; 3] {
     let (big_x, big_y, big_z) = (x / y, 1.0, (1.0 - x - y) / y);
     [
         3.240_454_2 * big_x - 1.537_138_5 * big_y - 0.498_531_4 * big_z,
-        -0.969_266_0 * big_x + 1.876_010_8 * big_y + 0.041_556_0 * big_z,
+        -0.969_266 * big_x + 1.876_010_8 * big_y + 0.041_556_0 * big_z,
         0.055_643_4 * big_x - 0.204_025_9 * big_y + 1.057_225_2 * big_z,
     ]
 }

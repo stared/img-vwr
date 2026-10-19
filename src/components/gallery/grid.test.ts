@@ -52,12 +52,12 @@ describe("rowNeighbor", () => {
     expect(rowNeighbor(rows, 9, 1)).toBeNull();
   });
 
-  it("steps over scene headers, keeping the column", () => {
-    const scenes = [
-      { start: 0, end: 4, startMs: 0 },
-      { start: 4, end: 10, startMs: 3_600_000 },
+  it("steps over group headers, keeping the column", () => {
+    const groups = [
+      { label: "first", start: 0, end: 4 },
+      { label: "second", start: 4, end: 10 },
     ];
-    const withHeaders = gridRows(10, scenes, 4);
+    const withHeaders = gridRows(10, groups, 4);
     expect(rowNeighbor(withHeaders, 1, 1)).toBe(5);
     expect(rowNeighbor(withHeaders, 5, -1)).toBe(1);
   });

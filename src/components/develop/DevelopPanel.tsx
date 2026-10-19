@@ -1,10 +1,10 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import { isLocal } from "../../ipc";
 
 import { parseNumber, Slider } from "../shell/Slider";
 import { ASPECT_CHOICES, isPortrait } from "../../state/crop";
-import { exposureValue, hdrLabel } from "../../state/hdr";
-import { groupStacks, siblingsOf, stackKeyOf } from "../../state/stacks";
-import { hdrOf, useAppStore, useSelectedEntry } from "../../state/store";
+import { groupStacks, siblingsOf } from "../../state/stacks";
+import { useAppStore, useSelectedEntry } from "../../state/store";
 import {
   baselineOf,
   displayedSize,
@@ -45,8 +45,6 @@ export function DevelopPanel() {
 
   const session = useDevelopStore((s) => s.session);
   const opening = useDevelopStore((s) => s.opening);
-  const original = useDevelopStore((s) => s.original);
-  const setOriginal = useDevelopStore((s) => s.setOriginal);
   const setParam = useDevelopStore((s) => s.setParam);
   const setTemperature = useDevelopStore((s) => s.setTemperature);
   const setTint = useDevelopStore((s) => s.setTint);
@@ -71,27 +69,15 @@ export function DevelopPanel() {
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
   const toggleStacking = useAppStore((s) => s.toggleStacking);
-  const hdrSet = useAppStore((s) => {
-    if (entry === null) return null;
-    const hdr = hdrOf(s);
-    const direct = hdr.byFace.get(entry.path);
-    if (direct !== undefined) return direct;
-    const facePath = hdr.keyByStack.get(stackKeyOf(entry));
-    return facePath === undefined ? null : (hdr.byFace.get(facePath) ?? null);
-  });
-  const allMeta = useAppStore((s) => s.meta);
-  const hdrMethods = useAppStore((s) => s.hdrMethod);
-  const setHdrMethod = useAppStore((s) => s.setHdrMethod);
   const hasStacks = useMemo(
     () => [...groupStacks(allEntries).values()].some((members) => members.length > 1),
     [allEntries],
   );
 
   // Session lifecycle is owned by App's useDevelopSession; this panel only renders it.
-  const isLocal = entry !== null && !entry.path.startsWith("http");
 
   if (!entry) return <p className="panel-hint">No image selected.</p>;
-  if (!isLocal) return <p className="panel-hint">Only local images can be developed.</p>;
+  if (!isLocal(entry.path)) return <p className="panel-hint">Only local images can be developed.</p>;
   if (opening !== null) return <p className="panel-hint">Opening {entry.name}…</p>;
   if (!session) return <p className="panel-hint">No develop support for this format.</p>;
 
@@ -287,133 +273,6 @@ export function DevelopPanel() {
 
       <details className="develop-secondary">
         <summary>Source & display</summary>
-      {hdrSet !== null && (() => {
-        const face = hdrSet.face;
-        const onFace = entry.path === face.path;
-        const outcome = onFace ? info.hdr : null;
-        const leftOut = outcome?.kind === "fused" ? new Set(outcome.leftOut) : null;
-        const evOf = (path: string) => {
-          const exif = allMeta[path]?.exif;
-          return exif === undefined || exif === null ? null : exposureValue(exif);
-        };
-        const faceEv = evOf(face.path);
-        const note =
-          outcome === null
-            ? "showing one frame of the set alone"
-            : outcome.kind === "fused"
-              ? leftOut !== null && leftOut.size > 0
-                ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length} frames fused; the misaligned are left out, not ghosted in`
-                : `${hdrLabel(hdrSet)} · every frame aligned to the pixel and fused`
-              : outcome.kind === "refused"
-                ? "no two exposures align with each other; no merge"
-                : "opening the fusion…";
-        return (
-          <Group title="HDR">
-            <p
-              className="develop-note"
-              title={
-                outcome?.kind === "refused"
-                  ? outcome.reason
-                  : "the merge is virtual — nothing is written beside the originals; export renders it"
-              }
-            >
-              {note}
-            </p>
-            {(() => {
-              const method = hdrMethods[face.path] ?? "fusion";
-              return (
-                <div className="develop-switch">
-                  <span className="develop-switch-label">merge by</span>
-                  <button
-                    className={method === "fusion" ? "develop-toggle on" : "develop-toggle"}
-                    title="a blend of each frame's best-exposed pixels: finished, the camera's look, no knobs"
-                    onClick={() => setHdrMethod(face.path, "fusion")}
-                  >
-                    exposure fusion
-                  </button>
-                  <button
-                    className={method === "radiance" ? "develop-toggle on" : "develop-toggle"}
-                    title="the light itself, linear, with the dark frames' highlight headroom kept; exposure, highlights and shadows become the HDR knobs"
-                    onClick={() => setHdrMethod(face.path, "radiance")}
-                  >
-                    radiance
-                  </button>
-                </div>
-              );
-            })()}
-            <button
-              className={
-                onFace && original !== face.path
-                  ? "develop-toggle hdr-frame current"
-                  : "develop-toggle hdr-frame"
-              }
-              title="the fused photograph — virtual, edits and export apply to it"
-              onClick={() => {
-                preferMember(face.path);
-                setOriginal(null);
-              }}
-            >
-              <span className="hdr-frame-name">the merge</span>
-              <span className="hdr-frame-ev" />
-              <span className="hdr-frame-fate">
-                {outcome === null
-                  ? `HDR ×${hdrSet.frames.length}`
-                  : outcome.kind === "fused"
-                    ? leftOut !== null && leftOut.size > 0
-                      ? `${hdrSet.frames.length - leftOut.size} of ${hdrSet.frames.length}`
-                      : "fused"
-                    : outcome.kind === "refused"
-                      ? "refused"
-                      : "opening…"}
-              </span>
-            </button>
-            {hdrSet.frames.map((frame) => {
-              const isFace = frame.path === face.path;
-              const ev = evOf(frame.path);
-              const step = faceEv === null || ev === null ? null : faceEv - ev;
-              // The merge anchors on whichever run of exposures verified, so the face frame itself can be the one left out.
-              const fate =
-                leftOut !== null
-                  ? leftOut.has(frame.path)
-                    ? "misaligned"
-                    : "fused"
-                  : outcome?.kind === "refused"
-                    ? isFace
-                      ? "shown alone"
-                      : "misaligned"
-                    : "one exposure";
-              const current =
-                entry.path === frame.path && (!isFace || original === face.path);
-              return (
-                <button
-                  key={frame.path}
-                  className={
-                    current ? "develop-toggle hdr-frame current" : "develop-toggle hdr-frame"
-                  }
-                  title={
-                    isFace
-                      ? "the frame the camera wrote at the merge's own path — click to check it"
-                      : "click to check this frame alone"
-                  }
-                  onClick={() => {
-                    preferMember(frame.path);
-                    setOriginal(isFace ? face.path : null);
-                  }}
-                >
-                  <span className="hdr-frame-name">{frame.name}</span>
-                  <span className="hdr-frame-ev">
-                    {step === null
-                      ? ""
-                      : `${step > 0 ? "+" : ""}${step.toFixed(1)} EV`}
-                  </span>
-                  <span className="hdr-frame-fate">{fate}</span>
-                </button>
-              );
-            })}
-          </Group>
-        );
-      })()}
-
       {sibling && (
         <div className="develop-switch" title="which file this photograph shows and edits">
           <span className="develop-switch-label">show</span>

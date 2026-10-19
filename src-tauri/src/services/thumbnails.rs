@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use imgvwr_core::{
-    thumb_cache_key, CodecError, CodecRegistry, SceneRegistry, ThumbError, THUMB_MAX_EDGE,
+    file_cache_key, CodecError, CodecRegistry, SceneRegistry, ThumbError, THUMB_MAX_EDGE,
 };
 use tauri::AppHandle;
 use tauri_specta::Event as _;
@@ -70,13 +70,7 @@ impl ThumbnailService {
                 return;
             }
         };
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        let key = thumb_cache_key(&path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        let key = file_cache_key(&path, &meta, THUMB_MAX_EDGE);
         let cache_file = self.cache_dir.join(format!("{key}.webp"));
 
         if cache_file.exists() {
@@ -102,13 +96,7 @@ impl ThumbnailService {
     /// Errors for formats with no Rust codec (AVIF): callers needing pixels cannot use the serve-the-original fallback.
     pub fn cached_thumb(&self, path: &str) -> Result<PathBuf, String> {
         let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
-        let mtime_ms = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        let key = thumb_cache_key(path, mtime_ms, meta.len(), THUMB_MAX_EDGE);
+        let key = file_cache_key(path, &meta, THUMB_MAX_EDGE);
         let cache_file = self.cache_dir.join(format!("{key}.webp"));
         if cache_file.exists() {
             return Ok(cache_file);

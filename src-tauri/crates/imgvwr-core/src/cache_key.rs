@@ -11,6 +11,19 @@ pub fn thumb_cache_key(canonical_path: &str, mtime_ms: u64, size: u64, max_edge:
     hasher.finalize().to_hex().to_string()
 }
 
+pub fn mtime_ms(meta: &std::fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// [`thumb_cache_key`] for a file on disk: any rewrite of the file changes the key.
+pub fn file_cache_key(path: &str, meta: &std::fs::Metadata, max_edge: u32) -> String {
+    thumb_cache_key(path, mtime_ms(meta), meta.len(), max_edge)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

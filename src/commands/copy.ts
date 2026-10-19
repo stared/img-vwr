@@ -1,9 +1,9 @@
 import { tempDir } from "@tauri-apps/api/path";
 
-import { copyFiles, developEditedPaths, developExport, type ExifSource } from "../ipc";
+import { api, type ExifSource } from "../ipc";
 import { registerCommand, type CommandContext } from "../registry/commands";
 import { candidatesOf, jpegOf, type Candidate } from "../state/export";
-import { chosenEntries, hdrOf, useAppStore } from "../state/store";
+import { chosenEntries, useAppStore } from "../state/store";
 
 /* Copy sends exactly the photographs shown — never the whole stack, unlike rating and deleting. */
 
@@ -13,7 +13,7 @@ type CopyStep =
 
 export function copyPlan(candidates: Candidate[]): CopyStep[] {
   return candidates.map((candidate) => {
-    if (!candidate.edited && !candidate.hdr) {
+    if (!candidate.edited) {
       return { kind: "file", path: candidate.entry.path };
     }
     // Renders take the sibling JPEG's EXIF where there is one.
@@ -33,10 +33,9 @@ async function copySelection(): Promise<void> {
 
   // Asked over the whole stack so a raw's crop counts for its stand-in JPEG (same rule as the export dialog).
   const edited = new Set(
-    await developEditedPaths(state.entries.map((e) => e.path)).catch(() => []),
+    await api.developEditedPaths(state.entries.map((e) => e.path)).catch(() => []),
   );
-  const hdrFaces = new Set(hdrOf(state).byFace.keys());
-  const plan = copyPlan(candidatesOf(photographs, state.entries, edited, hdrFaces));
+  const plan = copyPlan(candidatesOf(photographs, state.entries, edited));
 
   // developExport never overwrites, so repeated copies of a re-edited photograph keep their versions.
   const folder = await tempDir();
@@ -49,7 +48,7 @@ async function copySelection(): Promise<void> {
       continue;
     }
     try {
-      const rendered = await developExport(
+      const rendered = await api.developExport(
         { kind: "render", path: step.path, exif: step.exif },
         { folder, format: { kind: "jpeg", quality: 90 }, size: { kind: "full" } },
       );
@@ -59,13 +58,14 @@ async function copySelection(): Promise<void> {
       paths.push(step.path);
     }
   }
-  if (paths.length > 0) await copyFiles(paths);
+  if (paths.length > 0) await api.copyFiles(paths);
 }
 
 export function registerCopyCommands(): void {
   registerCommand({
     id: "image.copy",
     title: "Copy",
+    input: null,
     keywords: ["clipboard", "copy files", "share"],
     menus: [{ menu: "image", section: "transfer", submenu: null, label: "Copy" }],
     when: (ctx: CommandContext) => {

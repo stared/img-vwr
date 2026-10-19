@@ -20,102 +20,14 @@ import {
   straightened,
   withRatio,
 } from "./crop";
-import {
-  developAutoExposure,
-  developFocusPoint,
-  developPickWhiteBalance,
-  developPresets,
-  developRender,
-  developReset,
-  developSave,
-  developState,
-  FULL_REGION,
-} from "../ipc";
+import { api, FULL_REGION } from "../ipc";
+import { PARAM_KEYS, type CaptionMode, type ParamKey } from "./developControls";
+import { DETAIL_MAX_EDGE, displayedSize, frameAspect, LOUPE_MARGIN, loupeRegion } from "./developGeometry";
+
+export * from "./developControls";
+export * from "./developGeometry";
 
 /* Rendering coalesces, never queues: at most one render in flight; changes set a dirty flag and one follow-up runs when it lands. */
-
-/** Sliders that make up an edit, in the order the panel shows them. */
-export const PARAM_KEYS = [
-  "exposure",
-  "contrast",
-  "highlights",
-  "shadows",
-  "whites",
-  "blacks",
-  "rolloff",
-  "vibrance",
-  "saturation",
-] as const;
-
-type ParamKey = (typeof PARAM_KEYS)[number];
-
-export interface ParamSpec {
-  key: ParamKey;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  format: (value: number) => string;
-}
-
-const signed = (digits: number) => (value: number) =>
-  `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-
-export const PARAM_SPECS: ParamSpec[] = [
-  { key: "exposure", label: "exposure", min: -5, max: 5, step: 0.01, format: (v) => `${signed(2)(v)} EV` },
-  { key: "contrast", label: "contrast", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "highlights", label: "highlights", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "shadows", label: "shadows", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "whites", label: "whites", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "blacks", label: "blacks", min: -100, max: 100, step: 1, format: signed(0) },
-  // One-sided: zero is clipping, and nothing lies on the other side of it.
-  { key: "rolloff", label: "roll-off", min: 0, max: 100, step: 1, format: (v) => v.toFixed(0) },
-  { key: "vibrance", label: "vibrance", min: -100, max: 100, step: 1, format: signed(0) },
-  { key: "saturation", label: "saturation", min: -100, max: 100, step: 1, format: signed(0) },
-];
-
-/** Mutually exclusive pixel overlays; adding one means adding it here and in the Rust enum. */
-export const OVERLAY_CYCLE: Overlay[] = ["none", "sharpness", "clipping"];
-
-export const OVERLAY_LABELS: Record<Overlay, string> = {
-  none: "off",
-  sharpness: "focus map",
-  clipping: "clipping",
-};
-
-export const OVERLAY_NOTES: Record<Overlay, string> = {
-  none: "The photograph, unmarked.",
-  sharpness:
-    "Marks the regions that resolve fine detail. Smooth surfaces read as unsharp because there is no detail there to resolve.",
-  clipping:
-    "Red where a channel has hit white and lost its texture, blue where nothing at all was recorded.",
-};
-
-export const CAPTION_CYCLE = ["briefly", "always", "off"] as const;
-export type CaptionMode = (typeof CAPTION_CYCLE)[number];
-
-export const CAPTION_LABELS: Record<CaptionMode, string> = {
-  briefly: "on change",
-  always: "always",
-  off: "off",
-};
-
-export const CAPTION_NOTES: Record<CaptionMode, string> = {
-  briefly: "Says which photograph this is when you arrive at it, then fades.",
-  always: "Stays over the photograph.",
-  off: "Nothing over the photograph; the panels still say everything.",
-};
-
-/** How long "briefly" lasts: enough to read a filename and an exposure without hurrying. */
-export const CAPTION_LINGER_MS = 3500;
-
-export function nextCaption(current: CaptionMode): CaptionMode {
-  const at = CAPTION_CYCLE.indexOf(current);
-  return CAPTION_CYCLE[(at + 1) % CAPTION_CYCLE.length] ?? "briefly";
-}
-
-export const TEMPERATURE_RANGE = { min: 2000, max: 12000, step: 10 };
-export const TINT_RANGE = { min: -150, max: 150, step: 1 };
 
 export interface Session {
   path: string;
@@ -175,10 +87,6 @@ interface DevelopStore {
   caption: CaptionMode;
   setCaption: (mode: CaptionMode) => void;
 
-  /** Path whose file the canvas shows even though it opens as a fusion; cleared by navigating — edits and export still mean the fused photograph. */
-  original: string | null;
-  setOriginal: (path: string | null) => void;
-
   /** Set while `open` is awaiting a slow first decode of a raw file. */
   opening: string | null;
   open: (path: string) => Promise<void>;
@@ -187,8 +95,6 @@ interface DevelopStore {
   prefetch: (paths: string[]) => void;
   /** Neighbours already opened and developed, by path. */
   warm: Record<string, Warm>;
-  /** These paths changed meaning (an HDR registration arrived): forget warm copies and reopen the one on screen. */
-  dropStale: (paths: string[]) => void;
   setParam: (key: ParamKey, value: number) => void;
   setTemperature: (kelvin: number) => void;
   setTint: (tint: number) => void;
@@ -239,101 +145,6 @@ interface DevelopStore {
 
 /* Re-exported so panels that only want "is this cropped" need not know about `./crop`. */
 export { FULL_CROP, isCropped } from "./crop";
-
-/** Size in real pixels of what the viewer shows — the cropped size, or zoom percentages would be measured against thrown-away pixels. */
-export function displayedSize(
-  native: { width: number; height: number },
-  crop: Crop,
-): { width: number; height: number } {
-  return {
-    width: Math.max(1, Math.round(native.width * crop.width)),
-    height: Math.max(1, Math.round(native.height * crop.height)),
-  };
-}
-
-/** The frame's shape, which every rotation in `./crop` has to be told. */
-export function frameAspect(native: { width: number; height: number }): number {
-  return native.height > 0 ? native.width / native.height : 1;
-}
-
-/** Largest detail crop we will develop, in pixels of the longest edge. */
-const DETAIL_MAX_EDGE = 4000;
-
-/** The region covering `edge` image pixels at 1:1 around `at`, clamped inside the frame. */
-export function loupeRegion(
-  at: { x: number; y: number },
-  image: { width: number; height: number },
-  edge: number,
-): RegionArg {
-  const width = Math.min(1, edge / Math.max(1, image.width));
-  const height = Math.min(1, edge / Math.max(1, image.height));
-  const inside = (v: number, span: number) => Math.min(1 - span, Math.max(0, v - span / 2));
-  return { x: inside(at.x, width), y: inside(at.y, height), width, height };
-}
-
-/** The loupe renders this much wider than its window, so small aim movements slide over pixels already in hand. */
-export const LOUPE_MARGIN = 1.8;
-
-/** Whether pixels covering `have` can still fill a window over `want`. */
-export function loupeCovers(have: RegionArg, want: RegionArg): boolean {
-  // A pixel of slack: the regions are computed in floats from different sizes.
-  const EPS = 1e-6;
-  return (
-    want.x >= have.x - EPS &&
-    want.y >= have.y - EPS &&
-    want.x + want.width <= have.x + have.width + EPS &&
-    want.y + want.height <= have.y + have.height + EPS
-  );
-}
-
-/** How much two regions must differ before the crop is worth re-developing. */
-const REGION_EPSILON = 0.01;
-
-export function regionsDiffer(a: RegionArg, b: RegionArg): boolean {
-  return (
-    Math.abs(a.x - b.x) > REGION_EPSILON ||
-    Math.abs(a.y - b.y) > REGION_EPSILON ||
-    Math.abs(a.width - b.width) > REGION_EPSILON ||
-    Math.abs(a.height - b.height) > REGION_EPSILON
-  );
-}
-
-/** On-screen part in normalised image coordinates; `scale` is screen pixels per image pixel, `tx`/`ty` place the image's top-left. */
-export function visibleRegion(
-  view: { scale: number; tx: number; ty: number },
-  image: { width: number; height: number },
-  canvas: { width: number; height: number },
-): RegionArg {
-  const spanX = view.scale * image.width;
-  const spanY = view.scale * image.height;
-  if (spanX <= 0 || spanY <= 0) return FULL_REGION;
-  const x = Math.max(0, -view.tx / spanX);
-  const y = Math.max(0, -view.ty / spanY);
-  return {
-    x,
-    y,
-    width: Math.min(1 - x, canvas.width / spanX),
-    height: Math.min(1 - y, canvas.height / spanY),
-  };
-}
-
-/** True when the preview is magnified past its own resolution. */
-export function needsDetail(
-  view: { scale: number },
-  frame: { width: number },
-  image: { width: number },
-): boolean {
-  if (image.width <= 0 || frame.width <= 0) return false;
-  const previewPixelsPerImagePixel = frame.width / image.width;
-  // Slack so sitting exactly at the preview's resolution does not flap.
-  return view.scale > previewPixelsPerImagePixel * 1.05;
-}
-
-/** Bounded so a huge window does not turn every drag into a full-resolution render. */
-export function previewEdge(viewportLongestPx: number, dpr: number): number {
-  const wanted = Math.round(viewportLongestPx * dpr);
-  return Math.min(3000, Math.max(1200, wanted));
-}
 
 /** True when the viewer must show a developed frame rather than the file: undecodable format, or an edit applied. */
 export function needsDevelopedFrame(session: Session | null): boolean {
@@ -451,7 +262,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     const live = get().cropping ? { ...start.settings, crop: WHOLE_FRAME } : start.settings;
     const settings = get().comparing ? start.info.settings : live;
 
-    const result = await developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
+    const result = await api.developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
       (frame) => ({ ok: true as const, frame }),
       (error: unknown) => ({ ok: false as const, error: String(error) }),
     );
@@ -496,12 +307,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         const path = wanted.find((p) => p !== session.path && !(p in get().warm));
         if (path === undefined) return;
 
-        const warmed = await developState(path).then(
+        const warmed = await api.developState(path).then(
           async (info) => ({
             info,
             // A plain JPEG with no edit is shown by the webview from the file itself.
             frame: needsDevelopedFrame(sessionFor(path, info, null))
-              ? await developRender(path, info.settings, currentEdge, "none", FULL_REGION)
+              ? await api.developRender(path, info.settings, currentEdge, "none", FULL_REGION)
               : null,
           }),
           () => null,
@@ -520,7 +331,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     const session = get().session;
     if (!session) return;
     set({ session: { ...session, settings: next, dirty: true } });
-    void developSave(session.path, next).catch(() => {
+    void api.developSave(session.path, next).catch(() => {
       const now = get().session;
       if (now && now.path === session.path) {
         set({ session: { ...now, error: "could not save this edit" } });
@@ -533,7 +344,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     session: null,
     // Fetched once at store creation; the catalog is fixed for the session.
     presets: (() => {
-      void developPresets().then(
+      void api.developPresets().then(
         (presets) => set({ presets }),
         () => {},
       );
@@ -550,15 +361,12 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     // "as shot" by default: the frame's own proportions are what every other frame of the shoot will match.
     cropChoice: "original",
     cropPortrait: false,
-    original: null,
-    setOriginal: (original) => set({ original }),
     opening: null,
 
     warm: {},
 
     open: async (path) => {
       if (get().session?.path === path) return;
-      if (get().original !== null) set({ original: null });
       if (get().cropping) set({ cropping: false, cropWas: null });
       if (get().loupeAt !== null) set({ loupeAt: null, loupeAimedByUser: false });
       refetched = null;
@@ -574,7 +382,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
       set({ opening: path, session: null });
       try {
-        const info = await developState(path);
+        const info = await api.developState(path);
         // A slow open must not install itself over an image the user has navigated on from.
         if (get().opening !== path) return;
         set({ opening: null, session: sessionFor(path, info, null) });
@@ -597,19 +405,6 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     },
 
     close: () => set({ session: null, opening: null }),
-
-    dropStale: (paths) => {
-      const stale = new Set(paths);
-      const warm = get().warm;
-      const kept = Object.fromEntries(Object.entries(warm).filter(([p]) => !stale.has(p)));
-      if (Object.keys(kept).length !== Object.keys(warm).length) set({ warm: kept });
-      const current = get().session?.path ?? get().opening ?? null;
-      if (current !== null && stale.has(current)) {
-        // `open` early-outs on the same path, so the session must be gone before it is asked for again.
-        set({ session: null, opening: null });
-        void get().open(current);
-      }
-    },
 
     setParam: (key, value) => {
       const session = get().session;
@@ -648,7 +443,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     reset: async () => {
       const session = get().session;
       if (!session) return;
-      const info = await developReset(session.path);
+      const info = await api.developReset(session.path);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       set({
@@ -662,7 +457,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       if (!session || session.detailing) return;
       const { path, settings, overlay } = session;
       set({ session: { ...session, detailing: true } });
-      void developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
+      void api.developRender(path, settings, Math.min(maxEdge, DETAIL_MAX_EDGE), overlay, region).then(
         (detail) => {
           const now = get().session;
           // Only install it if it still describes the image on screen under the settings that produced it.
@@ -689,7 +484,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const session = get().session;
       if (!session) return;
       // The point is in crop coordinates; the backend maps it back onto the sensor.
-      const balance = await developPickWhiteBalance(session.path, x, y, session.settings);
+      const balance = await api.developPickWhiteBalance(session.path, x, y, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       // Disarm on use: the eyedropper is a single action, not a mode.
@@ -718,7 +513,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
     autoTone: async () => {
       const session = get().session;
       if (!session) return;
-      const exposure = await developAutoExposure(session.path, session.settings);
+      const exposure = await api.developAutoExposure(session.path, session.settings);
       const now = get().session;
       if (!now || now.path !== session.path) return;
       change({ ...now.settings, params: { ...now.settings.params, exposure } });
@@ -831,7 +626,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
       const aim =
         get().loupeAt !== null
           ? Promise.resolve(get().loupeAt as { x: number; y: number })
-          : developFocusPoint(path, settings).then(
+          : api.developFocusPoint(path, settings).then(
               ([x, y]) => ({ x, y }),
               () => ({ x: 0.5, y: 0.5 }),
             );
@@ -841,7 +636,7 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
           // Wider than the window, so the next small movement costs nothing.
           const wide = Math.round(edge * LOUPE_MARGIN);
           const region = loupeRegion(at, image, wide);
-          const frame = await developRender(path, settings, wide, overlay, region);
+          const frame = await api.developRender(path, settings, wide, overlay, region);
           return { at, frame, region };
         })
         .then(

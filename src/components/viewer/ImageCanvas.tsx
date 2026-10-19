@@ -42,8 +42,6 @@ export function ImageCanvas() {
   const entry = useSelectedEntry();
 
   const session = useDevelopStore((s) => s.session);
-  // When set, show the file at this path rather than the fusion the path opens as.
-  const original = useDevelopStore((s) => s.original);
   const requestRender = useDevelopStore((s) => s.requestRender);
   const requestDetail = useDevelopStore((s) => s.requestDetail);
   const clearDetail = useDevelopStore((s) => s.clearDetail);
@@ -284,8 +282,7 @@ export function ImageCanvas() {
   const developed =
     session !== null &&
     session.path === entry.path &&
-    needsDevelopedFrame(session) &&
-    original !== entry.path;
+    needsDevelopedFrame(session);
   const frame = developed ? session.frame : null;
   const src = frame !== null ? developFrameUrl(frame.token) : developed ? null : fileUrl(entry.path);
 

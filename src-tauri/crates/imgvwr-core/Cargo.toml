@@ -9,8 +9,12 @@ blake3 = "1.8.5"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 kamadak-exif = "0.6.1"
 serde = { workspace = true }
-specta = { workspace = true }
+specta = { workspace = true, optional = true }
 webp = "0.3.1"
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+# TypeScript bindings for the app; the crate itself does not need them.
+specta = ["dep:specta"]

@@ -10,4 +10,15 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
     },
   },
+  {
+    // Features import the core, never the reverse: deleting a feature folder must not break the core.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/features/**", "src/main.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ group: ["**/features/**", "**/features"], message: "core must not import a feature; register through a registry instead" }] },
+      ],
+    },
+  },
 );

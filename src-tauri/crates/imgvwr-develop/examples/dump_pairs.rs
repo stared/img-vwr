@@ -19,7 +19,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use imgvwr_core::{srgb_to_linear, Region, RenderRequest, SceneFormat, WhiteBalance};
+use imgvwr_core::{srgb_to_linear, Region, RenderRequest, SceneFormat};
 use imgvwr_raw::CoreImageRawFormat;
 use rayon::prelude::*;
 
@@ -221,7 +221,3 @@ fn jpeg_on_grid(path: &Path, tw: usize, th: usize) -> Result<Vec<f32>, String> {
     }
     Ok(out)
 }
-
-// Silence the unused-item lint for WhiteBalance in signatures above.
-#[allow(dead_code)]
-fn _unused(_: WhiteBalance) {}

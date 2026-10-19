@@ -71,7 +71,8 @@ pub fn model_spec(id: &str) -> Option<&'static ModelSpec> {
     MODELS.iter().find(|m| m.id == id)
 }
 
-#[derive(Debug, Clone, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct EmbedModelInfo {
     pub id: String,
@@ -84,12 +85,27 @@ pub struct EmbedModelInfo {
     pub active: bool,
 }
 
+/// Fetches `file` from a Hub model repo through the cache under `cache_dir` (the standard Hugging Face layout);
+/// `offline` only looks in the cache. Blocking.
+fn hub_file(cache_dir: &std::path::Path, repo: &str, file: &str, offline: bool) -> Result<std::path::PathBuf, EmbedError> {
+    let download = |e: hf_hub::HFError| EmbedError::Download(e.to_string());
+    let (owner, name) = hf_hub::split_id(repo);
+    hf_hub::HFClient::builder()
+        .cache_dir(cache_dir)
+        .build_sync()
+        .map_err(download)?
+        .model(owner, name)
+        .download_file()
+        .filename(file)
+        .local_files_only(offline)
+        .send()
+        .map_err(download)
+}
+
 pub fn is_downloaded(spec: &ModelSpec, cache_dir: &std::path::Path) -> bool {
-    let cache = hf_hub::Cache::new(cache_dir.to_path_buf());
-    let repo = cache.model(spec.hf_repo.to_string());
     ["model.safetensors", "tokenizer.json", "config.json"]
         .iter()
-        .all(|f| repo.get(f).is_some())
+        .all(|f| hub_file(cache_dir, spec.hf_repo, f, true).is_ok())
 }
 
 pub struct Embedder {
@@ -128,12 +144,7 @@ impl Embedder {
 
     /// Downloads (or reuses) the weights, then loads. Slow — run on a background thread.
     pub fn load(spec: &'static ModelSpec, cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
-        let api = hf_hub::api::sync::ApiBuilder::new()
-            .with_cache_dir(cache_dir.to_path_buf())
-            .build()
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
-        let repo = api.model(spec.hf_repo.to_string());
-        let get = |file: &str| repo.get(file).map_err(|e| EmbedError::Download(e.to_string()));
+        let get = |file: &str| hub_file(cache_dir, spec.hf_repo, file, false);
 
         let weights = get("model.safetensors")?;
         let tokenizer =
@@ -252,6 +263,78 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     acc.iter().sum::<f32>() + tail
 }
 
+/// ArcFace-family identity vectors ("same face") — a generic image embedding groups by lighting and hair instead.
+/// insightface buffalo_l (ResNet-50, WebFace600K) via onnxruntime: on unaligned crops the small MobileFaceNet's same/different-person similarities overlap.
+pub struct FaceEmbedder {
+    /// onnxruntime sessions want &mut for `run`; the mutex serializes.
+    session: Mutex<ort::session::Session>,
+    input_name: String,
+    output_name: String,
+}
+
+pub const FACE_MODEL_REPO: &str = "immich-app/buffalo_l";
+pub const FACE_MODEL_FILE: &str = "recognition/model.onnx";
+/// Tags cached identity vectors, so switching recognizers never reads another model's space.
+pub const FACE_MODEL_ID: &str = "buffalo-l";
+const FACE_EDGE: usize = 112;
+
+impl FaceEmbedder {
+    /// Blocking; downloads on first use.
+    pub fn load(cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
+        let model_file = hub_file(cache_dir, FACE_MODEL_REPO, FACE_MODEL_FILE, false)?;
+        let session = ort::session::Session::builder()
+            .map_err(|e| EmbedError::Model(e.to_string()))?
+            .commit_from_file(&model_file)
+            .map_err(|e| EmbedError::Model(e.to_string()))?;
+        let input_name = session
+            .inputs
+            .first()
+            .map(|i| i.name.clone())
+            .ok_or_else(|| EmbedError::Model("face model has no input".into()))?;
+        let output_name = session
+            .outputs
+            .first()
+            .map(|o| o.name.clone())
+            .ok_or_else(|| EmbedError::Model("face model has no output".into()))?;
+        Ok(Self {
+            session: Mutex::new(session),
+            input_name,
+            output_name,
+        })
+    }
+
+    /// The L2-normalized identity vector of an aligned 112×112 face crop.
+    pub fn embed_face_file(&self, path: &std::path::Path) -> Result<Vec<f32>, EmbedError> {
+        let img = image::open(path)
+            .map_err(|e| EmbedError::Image(e.to_string()))?
+            .resize_exact(
+                FACE_EDGE as u32,
+                FACE_EDGE as u32,
+                image::imageops::FilterType::Triangle,
+            )
+            .to_rgb8();
+        // NCHW, RGB, (x − 127.5) / 127.5 — the ArcFace convention.
+        let mut data = vec![0f32; 3 * FACE_EDGE * FACE_EDGE];
+        for (x, y, pixel) in img.enumerate_pixels() {
+            for c in 0..3 {
+                data[c * FACE_EDGE * FACE_EDGE + y as usize * FACE_EDGE + x as usize] =
+                    (f32::from(pixel[c]) - 127.5) / 127.5;
+            }
+        }
+        let tensor = ort::value::Tensor::from_array(([1usize, 3, FACE_EDGE, FACE_EDGE], data))
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let mut session = self.session.lock().unwrap();
+        let outputs = session
+            .run(ort::inputs![self.input_name.as_str() => tensor])
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let (_, raw) = outputs[self.output_name.as_str()]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| EmbedError::Image(e.to_string()))?;
+        let n = raw.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-12);
+        Ok(raw.iter().map(|v| v / n).collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,84 +393,5 @@ mod tests {
             assert!(std::ptr::eq(model_spec(spec.id).unwrap(), spec));
         }
         assert!(model_spec("nope").is_none());
-    }
-}
-
-/// ArcFace-family identity vectors ("same face") — a generic image embedding groups by lighting and hair instead.
-/// insightface buffalo_l (ResNet-50, WebFace600K) via onnxruntime: on unaligned crops the small MobileFaceNet's same/different-person similarities overlap.
-pub struct FaceEmbedder {
-    /// onnxruntime sessions want &mut for `run`; the mutex serializes.
-    session: Mutex<ort::session::Session>,
-    input_name: String,
-    output_name: String,
-}
-
-pub const FACE_MODEL_REPO: &str = "immich-app/buffalo_l";
-pub const FACE_MODEL_FILE: &str = "recognition/model.onnx";
-/// Tags cached identity vectors, so switching recognizers never reads another model's space.
-pub const FACE_MODEL_ID: &str = "buffalo-l";
-const FACE_EDGE: usize = 112;
-
-impl FaceEmbedder {
-    /// Blocking; downloads on first use.
-    pub fn load(cache_dir: &std::path::Path) -> Result<Self, EmbedError> {
-        let api = hf_hub::api::sync::ApiBuilder::new()
-            .with_cache_dir(cache_dir.to_path_buf())
-            .build()
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
-        let model_file = api
-            .model(FACE_MODEL_REPO.to_string())
-            .get(FACE_MODEL_FILE)
-            .map_err(|e| EmbedError::Download(e.to_string()))?;
-        let session = ort::session::Session::builder()
-            .map_err(|e| EmbedError::Model(e.to_string()))?
-            .commit_from_file(&model_file)
-            .map_err(|e| EmbedError::Model(e.to_string()))?;
-        let input_name = session
-            .inputs
-            .first()
-            .map(|i| i.name.clone())
-            .ok_or_else(|| EmbedError::Model("face model has no input".into()))?;
-        let output_name = session
-            .outputs
-            .first()
-            .map(|o| o.name.clone())
-            .ok_or_else(|| EmbedError::Model("face model has no output".into()))?;
-        Ok(Self {
-            session: Mutex::new(session),
-            input_name,
-            output_name,
-        })
-    }
-
-    /// The L2-normalized identity vector of an aligned 112×112 face crop.
-    pub fn embed_face_file(&self, path: &std::path::Path) -> Result<Vec<f32>, EmbedError> {
-        let img = image::open(path)
-            .map_err(|e| EmbedError::Image(e.to_string()))?
-            .resize_exact(
-                FACE_EDGE as u32,
-                FACE_EDGE as u32,
-                image::imageops::FilterType::Triangle,
-            )
-            .to_rgb8();
-        // NCHW, RGB, (x − 127.5) / 127.5 — the ArcFace convention.
-        let mut data = vec![0f32; 3 * FACE_EDGE * FACE_EDGE];
-        for (x, y, pixel) in img.enumerate_pixels() {
-            for c in 0..3 {
-                data[c * FACE_EDGE * FACE_EDGE + y as usize * FACE_EDGE + x as usize] =
-                    (f32::from(pixel[c]) - 127.5) / 127.5;
-            }
-        }
-        let tensor = ort::value::Tensor::from_array(([1usize, 3, FACE_EDGE, FACE_EDGE], data))
-            .map_err(|e| EmbedError::Image(e.to_string()))?;
-        let mut session = self.session.lock().unwrap();
-        let outputs = session
-            .run(ort::inputs![self.input_name.as_str() => tensor])
-            .map_err(|e| EmbedError::Image(e.to_string()))?;
-        let (_, raw) = outputs[self.output_name.as_str()]
-            .try_extract_tensor::<f32>()
-            .map_err(|e| EmbedError::Image(e.to_string()))?;
-        let n = raw.iter().map(|v| v * v).sum::<f32>().sqrt().max(1e-12);
-        Ok(raw.iter().map(|v| v / n).collect())
     }
 }

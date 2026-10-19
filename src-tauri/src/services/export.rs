@@ -165,7 +165,7 @@ fn exif_bytes(exif: &ExifSource) -> Option<Vec<u8>> {
     }
 }
 
-fn encode_jpeg(image: &image::RgbImage, quality: u8) -> Result<Vec<u8>, String> {
+pub fn encode_jpeg(image: &image::RgbImage, quality: u8) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100))
         .encode_image(image)

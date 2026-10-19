@@ -1,6 +1,7 @@
-import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
+import type { FileEntry } from "../ipc";
+import { photoData, type Channel, type ChannelMaps, type PhotoData } from "../registry/channels";
 import { getFilterField } from "../registry/filters";
-import type { FieldCtx, RangeSpec } from "../registry/filters";
+import type { RangeSpec } from "../registry/filters";
 import { getSort } from "../registry/sorts";
 import type { SortDir } from "../registry/sorts";
 
@@ -28,17 +29,6 @@ export interface Query {
 
 export const defaultQuery: Query = { filters: [], sort: { key: "name", dir: "asc" } };
 
-/** Keyed by path; total by construction — callers pass every map, so predicates never meet undefined channels. */
-export interface QueryData {
-  meta: Record<string, ImageMeta>;
-  scores: Record<string, number>;
-  labels: Record<string, ImageLabels>;
-  people: Record<string, string[]>;
-}
-
-
-/** An image nobody labeled: genuinely zero stars-null tags-none, not unknown. */
-const EMPTY_LABELS: ImageLabels = { stars: null, tags: [] };
 
 /** Display grouping only, not the openable-format list — an unlisted extension is its own group (see `formatGroupOf`). */
 export const FORMAT_GROUPS = [
@@ -61,7 +51,7 @@ export function formatGroupLabel(id: string): string {
 }
 
 /** Metadata filters match only images whose metadata has arrived; a clause whose field is gone matches nothing, not everything. */
-function matches(entry: FileEntry, filter: Filter, ctx: FieldCtx): boolean {
+function matches(entry: FileEntry, filter: Filter, ctx: PhotoData): boolean {
   switch (filter.kind) {
     case "format":
       return filter.formats.includes(formatGroupOf(entry.formatHint));
@@ -90,15 +80,13 @@ function compareValues(a: number | string, b: number | string): number {
   return naturalCollator.compare(String(a), String(b));
 }
 
-export function applyQuery(entries: FileEntry[], query: Query, data: QueryData): FileEntry[] {
-  const { meta, scores, labels, people } = data;
-  const fieldCtx = (e: FileEntry): FieldCtx => ({
-    meta: meta[e.path],
-    labels: labels[e.path] ?? EMPTY_LABELS,
-    people: people[e.path] ?? [],
-  });
+/** `maps` holds the channels the query reads (see `channelsRead`); any other channel reads as missing. */
+export function applyQuery(entries: FileEntry[], query: Query, maps: ChannelMaps): FileEntry[] {
   const filtered = query.filters.length
-    ? entries.filter((e) => query.filters.every((f) => matches(e, f, fieldCtx(e))))
+    ? entries.filter((e) => {
+        const data = photoData(maps, e.path);
+        return query.filters.every((f) => matches(e, f, data));
+      })
     : entries;
   const provider = getSort(query.sort.key);
   if (!provider) {
@@ -112,10 +100,8 @@ export function applyQuery(entries: FileEntry[], query: Query, data: QueryData):
   const valued = filtered.map((e) => ({
     e,
     v: provider.value(e, {
-      meta: meta[e.path],
+      ...photoData(maps, e.path),
       sourceIndex: sourceIndex.get(e.path) ?? 0,
-      scores,
-      labels: labels[e.path] ?? EMPTY_LABELS,
     }),
   }));
   // A ranked view shows only ranked entries; they appear as values land.
@@ -132,29 +118,15 @@ export function applyQuery(entries: FileEntry[], query: Query, data: QueryData):
     .map((x) => x.e);
 }
 
-/** True when the active sort reads computed scores from the store. */
-export function usesScores(query: Query): boolean {
-  return getSort(query.sort.key)?.reads === "scores";
-}
-
-function filtersRead(query: Query, channel: "meta" | "labels" | "people"): boolean {
-  return query.filters.some((f) => {
-    if (f.kind !== "select" && f.kind !== "range") return false;
+/** Every channel the active sort and clauses read, in a stable order: only these may invalidate the visible list. */
+export function channelsRead(query: Query): Channel<unknown>[] {
+  const read = new Set<Channel<unknown>>(getSort(query.sort.key)?.reads ?? []);
+  for (const f of query.filters) {
+    if (f.kind !== "select" && f.kind !== "range") continue;
     const field = getFilterField(f.field);
-    return field !== undefined && field.kind !== "action" && field.reads === channel;
-  });
-}
-
-export function usesMeta(query: Query): boolean {
-  return getSort(query.sort.key)?.reads === "meta" || filtersRead(query, "meta");
-}
-
-export function usesLabels(query: Query): boolean {
-  return getSort(query.sort.key)?.reads === "labels" || filtersRead(query, "labels");
-}
-
-export function usesPeople(query: Query): boolean {
-  return filtersRead(query, "people");
+    if (field !== undefined && field.kind !== "action") for (const c of field.reads) read.add(c);
+  }
+  return [...read];
 }
 
 export function withSort(query: Query, key: string): Query {

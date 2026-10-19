@@ -43,23 +43,11 @@ export function stackKeyOfPath(path: string): string {
   return `${dir}/${dot <= 0 ? name : name.slice(0, dot)}`;
 }
 
-/** Stack key widened by HDR sets: `hdrKeys` maps stack key → face path, null when no set has a say. */
-export function photographKeyOf(
-  entry: FileEntry,
-  hdrKeys: ReadonlyMap<string, string> | null,
-): string {
-  const key = stackKeyOf(entry);
-  return hdrKeys?.get(key) ?? key;
-}
-
 /** Every stack in the list, in the order their first member appears. */
-export function groupStacks(
-  entries: FileEntry[],
-  hdrKeys: ReadonlyMap<string, string> | null = null,
-): Map<string, FileEntry[]> {
+export function groupStacks(entries: FileEntry[]): Map<string, FileEntry[]> {
   const stacks = new Map<string, FileEntry[]>();
   for (const entry of entries) {
-    const key = photographKeyOf(entry, hdrKeys);
+    const key = stackKeyOf(entry);
     const members = stacks.get(key);
     if (members) members.push(entry);
     else stacks.set(key, [entry]);
@@ -82,38 +70,29 @@ export function leadOf(
   return picked ?? wanted ?? members[0] ?? null;
 }
 
-/** Each stack kept where its first member sat; an HDR face wins over the jpg/raw rule unless the user picked. */
+/** Each stack kept where its first member sat. */
 export function collapseStacks(
   entries: FileEntry[],
   preferred: Record<string, string>,
   lead: StackLead,
-  hdrKeys: ReadonlyMap<string, string> | null = null,
 ): FileEntry[] {
-  const stacks = groupStacks(entries, hdrKeys);
+  const stacks = groupStacks(entries);
   const out: FileEntry[] = [];
   const done = new Set<string>();
   for (const entry of entries) {
-    const key = photographKeyOf(entry, hdrKeys);
+    const key = stackKeyOf(entry);
     if (done.has(key)) continue;
     done.add(key);
     const members = stacks.get(key) ?? [entry];
-    // An HDR group's key is the face path; a filter can hide the face, then the group fronts like any stack.
-    const face = members.find((m) => m.path === key);
-    const shown = face && preferred[key] === undefined ? face : leadOf(members, preferred[key], lead);
+    const shown = leadOf(members, preferred[key], lead);
     if (shown) out.push(shown);
   }
   return out;
 }
 
-export function siblingsOf(
-  entries: FileEntry[],
-  entry: FileEntry,
-  hdrKeys: ReadonlyMap<string, string> | null = null,
-): FileEntry[] {
-  const key = photographKeyOf(entry, hdrKeys);
-  return entries.filter(
-    (e) => e.path !== entry.path && photographKeyOf(e, hdrKeys) === key,
-  );
+export function siblingsOf(entries: FileEntry[], entry: FileEntry): FileEntry[] {
+  const key = stackKeyOf(entry);
+  return entries.filter((e) => e.path !== entry.path && stackKeyOf(e) === key);
 }
 
 export function stackCaption(entry: FileEntry, siblings: FileEntry[]): string {

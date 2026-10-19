@@ -46,54 +46,34 @@ const file = (name: string): FileEntry => ({
   formatHint: name.slice(name.lastIndexOf(".") + 1).toLowerCase(),
 });
 
-// A raw+JPEG pair, a lone frame, and a three-frame HDR set fronted by its face; `visible` is the collapsed list.
+// A raw+JPEG pair and a lone frame; `visible` is the collapsed list.
 const rawOfPair = file("DSC_0001.NEF");
 const jpgOfPair = file("DSC_0001.JPG");
 const lone = file("DSC_0002.JPG");
-const face = file("DSC_0004.JPG");
-const bracket = [file("DSC_0003.JPG"), face, file("DSC_0005.JPG")];
-const all = [rawOfPair, jpgOfPair, lone, ...bracket];
-const hdrKeys = new Map(bracket.map((f) => [`/shoot/${f.name.slice(0, -4)}`, face.path]));
-const visible = [jpgOfPair, lone, face];
+const all = [rawOfPair, jpgOfPair, lone];
+const visible = [jpgOfPair, lone];
+const pairKey = "/shoot/DSC_0001";
 
 describe("stripCells", () => {
   it("is the visible list, one cell per photograph, while nothing is spread", () => {
-    const cells = stripCells(visible, all, {}, hdrKeys, true);
+    const cells = stripCells(visible, all, {}, true);
     expect(cells.map((c) => c.entry.path)).toEqual(visible.map((e) => e.path));
-    expect(cells.map((c) => c.index)).toEqual([0, 1, 2]);
+    expect(cells.map((c) => c.index)).toEqual([0, 1]);
   });
 
-  it("spreads a stack into its members in name order, keeping the shown one's index", () => {
-    const cells = stripCells(visible, all, { [face.path]: true }, hdrKeys, true);
-    expect(cells.map((c) => c.entry.name)).toEqual([
-      "DSC_0001.JPG",
-      "DSC_0002.JPG",
-      "DSC_0003.JPG",
-      "DSC_0004.JPG",
-      "DSC_0005.JPG",
-    ]);
+  it("spreads a raw+JPEG pair in name order however the disk listed it, keeping the shown one's index", () => {
+    const cells = stripCells(visible, all, { [pairKey]: true }, true);
+    expect(cells.map((c) => c.entry.name)).toEqual(["DSC_0001.JPG", "DSC_0001.NEF", "DSC_0002.JPG"]);
     // The shown member keeps its visible index; the extras are addressed by path, not index.
-    expect(cells.map((c) => c.index)).toEqual([0, 1, null, 2, null]);
+    expect(cells.map((c) => c.index)).toEqual([0, null, 1]);
     // Every spread cell still belongs to the one photograph.
-    expect(new Set(cells.slice(2).map((c) => c.key))).toEqual(new Set([face.path]));
-  });
-
-  it("spreads a raw+JPEG pair the same way, in name order however the disk listed it", () => {
-    const key = "/shoot/DSC_0001";
-    const cells = stripCells(visible, all, { [key]: true }, hdrKeys, true);
-    expect(cells.map((c) => c.entry.name)).toEqual([
-      "DSC_0001.JPG",
-      "DSC_0001.NEF",
-      "DSC_0002.JPG",
-      "DSC_0004.JPG",
-    ]);
-    expect(cells.map((c) => c.index)).toEqual([0, null, 1, 2]);
+    expect(new Set(cells.slice(0, 2).map((c) => c.key))).toEqual(new Set([pairKey]));
   });
 
   it("ignores a spread that no longer names a pile, and all of them with stacking off", () => {
-    const cells = stripCells([lone], [lone], { "/shoot/DSC_0002": true }, null, true);
+    const cells = stripCells([lone], [lone], { "/shoot/DSC_0002": true }, true);
     expect(cells).toEqual([{ entry: lone, index: 0, key: "/shoot/DSC_0002" }]);
-    const flat = stripCells(all, all, { [face.path]: true }, hdrKeys, false);
+    const flat = stripCells(all, all, { [pairKey]: true }, false);
     expect(flat).toHaveLength(all.length);
     expect(flat.every((c) => c.index !== null)).toBe(true);
   });

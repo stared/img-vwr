@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/imgvwr-core", "crates/imgvwr-develop", "crates/imgvwr-embed", "crates/imgvwr-hdr", "crates/imgvwr-raw"]
+members = ["crates/imgvwr-core", "crates/imgvwr-develop", "crates/imgvwr-embed", "crates/imgvwr-raw"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -19,12 +19,6 @@ overflow-checks = false
 [profile.dev.package.imgvwr-embed]
 opt-level = 2
 
-# The hdr crate is per-pixel float loops over whole sensors' worth of frames;
-# unoptimized, one merge takes the better part of a minute. Same trade as
-# imgvwr-embed: it is a leaf we rarely step through.
-[profile.dev.package.imgvwr-hdr]
-opt-level = 2
-
 [package]
 name = "imgvwr"
 default-run = "imgvwr"
@@ -41,32 +35,31 @@ name = "imgvwr_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-imgvwr-core = { path = "crates/imgvwr-core" }
-imgvwr-develop = { path = "crates/imgvwr-develop" }
-imgvwr-embed = { path = "crates/imgvwr-embed" }
-imgvwr-hdr = { path = "crates/imgvwr-hdr" }
+imgvwr-core = { path = "crates/imgvwr-core", features = ["specta"] }
+imgvwr-develop = { path = "crates/imgvwr-develop", features = ["specta"] }
+imgvwr-embed = { path = "crates/imgvwr-embed", features = ["specta"] }
 imgvwr-raw = { path = "crates/imgvwr-raw" }
-tauri = { version = "2", features = ["protocol-asset"] }
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
+tauri = { version = "2.12", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.8"
+tauri-plugin-opener = "2.7"
 serde = { workspace = true }
 serde_json = "1"
 specta = { workspace = true }
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 rayon = "1.12.0"
-tauri-plugin-mcp-bridge = "0.12.0"
-tauri-plugin-http = "2.5.9"
+tauri-plugin-mcp-bridge = "0.13"
+tauri-plugin-http = "2.8"
 # Watches the open folder: FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW
 # on Windows, behind one API.
 notify = "8"
 # Deleting a photograph means the platform's Trash, not unlink — see services::files.
 trash = "5"
 # Bundled: SQLite compiled from source, no system dependency.
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 # Encoding developed previews (JPEG) and exports (JPEG/PNG).
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 webp = "0.3.1"

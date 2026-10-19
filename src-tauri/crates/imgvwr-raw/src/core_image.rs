@@ -224,7 +224,7 @@ impl SceneImage for CoreImageRawScene {
                 let w = (f64::from(region.width) * full.size.width).max(1.0);
                 let h = (f64::from(region.height) * full.size.height).max(1.0);
                 let x = full.origin.x + f64::from(region.x) * full.size.width;
-                let y = full.origin.y + (1.0 - f64::from(region.y + region.height)) as f64
+                let y = full.origin.y + (1.0 - f64::from(region.y + region.height))
                     * full.size.height;
                 CGRect {
                     origin: objc2_core_foundation::CGPoint { x: x.round(), y: y.round() },

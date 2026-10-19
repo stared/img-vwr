@@ -37,14 +37,6 @@ async setRecentFolders(paths: string[]) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getMetadata(path: string) : Promise<Result<ImageMeta, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_metadata", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 /**
  * Never prompts (confirmation is the frontend's job) and never reports more as trashed than actually went.
  */
@@ -88,6 +80,17 @@ async requestDirCounts(paths: string[]) : Promise<void> {
 async requestMeta(paths: string[], epoch: number) : Promise<void> {
     await TAURI_INVOKE("request_meta", { paths, epoch });
 },
+/**
+ * Computed from the cached thumbnail, not the original.
+ */
+async imageStats(path: string) : Promise<Result<ImageStats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("image_stats", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async embeddingModels() : Promise<EmbedModelInfo[]> {
     return await TAURI_INVOKE("embedding_models");
 },
@@ -125,77 +128,6 @@ async embeddingRankText(query: string, paths: string[]) : Promise<Result<Similar
 async embeddingBandedScores(paths: string[], band: number) : Promise<Result<((number | null)[])[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("embedding_banded_scores", { paths, band }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Progress arrives as `faces-progress` events.
- */
-async facesIndex(paths: string[], epoch: number) : Promise<void> {
-    await TAURI_INVOKE("faces_index", { paths, epoch });
-},
-/**
- * Also propagates identity onto near-identical faceless photos.
- */
-async facesPeople(paths: string[], threshold: number, merge: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("faces_people", { paths, threshold, merge, propagate }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * An empty name un-names; naming two fragments alike merges them on the next clustering.
- */
-async facesRename(clusterId: string, name: string, merge: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("faces_rename", { clusterId, name, merge }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async facesNames() : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("faces_names") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
- * Computed from the cached thumbnail, not the original.
- */
-async imageStats(path: string) : Promise<Result<ImageStats, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("image_stats", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async labelsForPaths(paths: string[]) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("labels_for_paths", { paths }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async labelsSetStars(paths: string[], stars: number | null) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("labels_set_stars", { paths, stars }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async labelsToggleTag(paths: string[], tag: string) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("labels_toggle_tag", { paths, tag }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -305,10 +237,56 @@ async developPickWhiteBalance(path: string, x: number, y: number, settings: Deve
 }
 },
 /**
- * Writes nothing: the merge stays virtual until Export.
+ * Progress arrives as `faces-progress` events.
  */
-async developSetFusions(fusions: Partial<{ [key in string]: FusionRecipe }>) : Promise<void> {
-    await TAURI_INVOKE("develop_set_fusions", { fusions });
+async facesIndex(paths: string[], epoch: number) : Promise<void> {
+    await TAURI_INVOKE("faces_index", { paths, epoch });
+},
+/**
+ * Also propagates identity onto near-identical faceless photos.
+ */
+async facesPeople(paths: string[], threshold: number, merge: number, propagate: number) : Promise<Result<PersonCluster[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("faces_people", { paths, threshold, merge, propagate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * An empty name un-names; naming two fragments alike merges them on the next clustering.
+ */
+async facesRename(clusterId: string, name: string, merge: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("faces_rename", { clusterId, name, merge }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async labelsForPaths(paths: string[]) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_for_paths", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async labelsSetStars(paths: string[], stars: number | null) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_set_stars", { paths, stars }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async labelsToggleTag(paths: string[], tag: string) : Promise<Result<Partial<{ [key in string]: ImageLabels }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("labels_toggle_tag", { paths, tag }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -423,7 +401,7 @@ export type DevelopState = { width: number; height: number; asShot: WhiteBalance
 /**
  * True when the webview cannot display this file itself.
  */
-needsRender: boolean; hdr: HdrOutcome }
+needsRender: boolean }
 /**
  * Keyed by absolute path, so it is never stale — hence no epoch.
  */
@@ -481,25 +459,6 @@ formatHint: string }
  */
 export type FolderChanged = { entries: FileEntry[]; epoch: number }
 export type FrameSource = "cameraJpeg" | "rawDevelop"
-export type FusionRecipe = { frames: string[]; method: HdrMethod }
-export type HdrMethod = 
-/**
- * Mertens exposure fusion — deliberately no knobs.
- */
-"fusion" | 
-/**
- * Scene-linear radiance, headroom kept above 1.0; the develop tone controls are the knobs.
- */
-"radiance"
-export type HdrOutcome = { kind: "plain" } | 
-/**
- * `left_out` names frames that were misaligned and left out rather than ghosted in.
- */
-{ kind: "fused"; frames: number; leftOut: string[] } | 
-/**
- * The path shows the face file alone; `reason` is the measurement that said no.
- */
-{ kind: "refused"; frames: number; reason: string }
 /**
  * 256-bin distributions of the *developed* image — what the user is actually
  * looking at, so clipping shown here is clipping they can see. (The info

@@ -1,11 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { fileUrl, requestThumbnails, type FileEntry } from "../../ipc";
+import { api, fileUrl, type FileEntry } from "../../ipc";
 import { effectiveDims } from "../../state/derived";
-import { hdrLabel } from "../../state/hdr";
-import { groupStacks, pairedName, photographKeyOf, stackCaption } from "../../state/stacks";
-import { hdrOf, selectMode, useAppStore, useVisibleEntries } from "../../state/store";
-import { ThumbLabels } from "../../labels/TagDot";
+import { groupStacks, pairedName, stackCaption, stackKeyOf } from "../../state/stacks";
+import { selectMode, useAppStore, useVisibleEntries } from "../../state/store";
+import { PhotoBadges } from "../../registry/badges";
 import { CropBadge, CroppedThumb } from "./CroppedThumb";
 
 const REQUEST_DEBOUNCE_MS = 50;
@@ -64,17 +63,16 @@ export function stripCells(
   visible: FileEntry[],
   all: FileEntry[],
   expanded: Record<string, true>,
-  hdrKeys: ReadonlyMap<string, string> | null,
   stacking: boolean,
 ): StripCell[] {
   const cells: StripCell[] = [];
   visible.forEach((entry, index) => {
-    const key = photographKeyOf(entry, hdrKeys);
+    const key = stackKeyOf(entry);
     // `all` is in disk-scan order, so members need the explicit sort to read as the shot sequence.
     const members =
       stacking && expanded[key] !== undefined
         ? all
-            .filter((e) => photographKeyOf(e, hdrKeys) === key)
+            .filter((e) => stackKeyOf(e) === key)
             .sort((a, b) => (a.path < b.path ? -1 : 1))
         : [];
     if (members.length < 2) {
@@ -99,18 +97,17 @@ export function Filmstrip({ height }: { height: number }) {
   const meta = useAppStore((s) => s.meta);
   const allEntries = useAppStore((s) => s.entries);
   const stacking = useAppStore((s) => s.stacking);
-  const hdr = useAppStore((s) => hdrOf(s));
   const expandedStacks = useAppStore((s) => s.expandedStacks);
   const stripRef = useRef<HTMLDivElement>(null);
 
   const cells = useMemo(
-    () => stripCells(entries, allEntries, expandedStacks, hdr.keyByStack, stacking),
-    [entries, allEntries, expandedStacks, hdr, stacking],
+    () => stripCells(entries, allEntries, expandedStacks, stacking),
+    [entries, allEntries, expandedStacks, stacking],
   );
   // One pass over the folder; a per-cell scan made a render quadratic.
   const stacks = useMemo(
-    () => (stacking ? groupStacks(allEntries, hdr.keyByStack) : null),
-    [allEntries, hdr, stacking],
+    () => (stacking ? groupStacks(allEntries) : null),
+    [allEntries, stacking],
   );
   const placed = useMemo(
     () =>
@@ -162,7 +159,6 @@ export function Filmstrip({ height }: { height: number }) {
     if (left < strip.scrollLeft || left + cellWidth > strip.scrollLeft + strip.clientWidth) {
       strip.scrollTo({ left: left - (strip.clientWidth - cellWidth) / 2, behavior: "smooth" });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex]);
 
   useEffect(() => {
@@ -172,7 +168,7 @@ export function Filmstrip({ height }: { height: number }) {
         .slice(first, last)
         .map((c) => c.entry.path)
         .filter((path) => !(path in have) && !(path in thumbErrors));
-      if (wanted.length > 0) void requestThumbnails(wanted, epoch);
+      if (wanted.length > 0) void api.requestThumbnails(wanted, epoch);
     }, REQUEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [placed, first, last, epoch]);
@@ -189,7 +185,6 @@ export function Filmstrip({ height }: { height: number }) {
       <div className="filmstrip-track" style={{ width: total }}>
       {placed.slice(first, last).map(({ entry, index, key, spread, siblings }, i) => {
         const thumb = thumbs[entry.path];
-        const hdrSet = hdr.byFace.get(entry.path) ?? null;
         const member = index === null;
         // A collapsed pair is one photograph: a crop stored on either file crops the cell.
         const crop =
@@ -222,13 +217,11 @@ export function Filmstrip({ height }: { height: number }) {
                 ? `${entry.name} — in this stack; click to show it in front`
                 : spread
                   ? `${entry.name} — the one in front; double-click to restack`
-                  : hdrSet
-                    ? `${entry.name} · ${hdrLabel(hdrSet)} — the fused photograph; double-click to spread its frames`
-                    : siblings.length > 0
-                      ? `${stackCaption(entry, siblings)} — double-click to spread the stack`
-                      : stacking
-                        ? stackCaption(entry, siblings)
-                        : entry.name
+                  : siblings.length > 0
+                    ? `${stackCaption(entry, siblings)} — double-click to spread the stack`
+                    : stacking
+                      ? stackCaption(entry, siblings)
+                      : entry.name
             }
             onClick={(e) => {
               if (index === null) {
@@ -248,8 +241,7 @@ export function Filmstrip({ height }: { height: number }) {
               useAppStore.getState().setImageMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            {hdrSet !== null && <span className="thumb-hdr">HDR ×{hdrSet.frames.length}</span>}
-            <ThumbLabels path={entry.path} />
+            <PhotoBadges path={entry.path} place="cell" />
             <span className="filmstrip-photo">
               {cropped !== null && <CropBadge />}
               {thumb !== undefined && siblings.length > 0 && !spread && (

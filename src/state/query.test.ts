@@ -1,20 +1,19 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import type { FileEntry, ImageMeta } from "../ipc";
+import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
+import type { Channel, ChannelMaps } from "../registry/channels";
 import { clearFilterFieldsForTest, registerFilterField } from "../registry/filters";
 import { clearSortsForTest, registerSort, sortsFor } from "../registry/sorts";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { aspectLabelOf, effectiveDims, takenMs } from "./derived";
-import type { QueryData } from "./query";
 import {
   applyQuery,
+  channelsRead,
   dateInputValue,
   dateRangeSpec,
   defaultQuery,
   numberRangeSpec,
   rangeFromInput,
-  usesLabels,
-  usesMeta,
   formatChoices,
   withFormatToggled,
   withNameFilter,
@@ -27,6 +26,16 @@ import {
   withSort,
 } from "./query";
 
+/** A channel whose data each test hands to applyQuery directly. */
+const channel = <T,>(missing: T): Channel<T> => ({
+  missing,
+  read: () => ({}),
+  subscribe: () => () => {},
+});
+const META = channel<ImageMeta | undefined>(undefined);
+const SCORES = channel<number | null>(null);
+const LABELS = channel<ImageLabels>({ stars: null, tags: [] });
+
 // The engine is exercised through registered fields — the same seam plugins use.
 beforeAll(() => {
   clearSortsForTest();
@@ -37,7 +46,7 @@ beforeAll(() => {
     hints: { asc: "as delivered", desc: "reversed" },
     defaultDir: "asc",
     appliesTo: (scope) => scope?.kind === "source",
-    reads: "entry",
+    reads: [],
     missing: "last",
     param: null,
     value: (_entry, ctx) => ctx.sourceIndex,
@@ -48,10 +57,10 @@ beforeAll(() => {
     hints: { asc: "lowest", desc: "highest" },
     defaultDir: "desc",
     appliesTo: () => true,
-    reads: "scores",
+    reads: [SCORES],
     missing: "hide",
     param: null,
-    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
+    value: (_entry, data) => data.get(SCORES),
   });
 
   const NoMenu = () => null;
@@ -61,18 +70,19 @@ beforeAll(() => {
     id: "camera",
     label: "camera",
     appliesTo: () => true,
-    reads: "meta",
+    reads: [META],
     Menu: NoMenu,
-    value: (_entry, { meta }) => meta?.exif?.camera ?? null,
+    value: (_entry, data) => data.get(META)?.exif?.camera ?? null,
   });
   registerFilterField({
     kind: "select",
     id: "aspect",
     label: "aspect",
     appliesTo: () => true,
-    reads: "meta",
+    reads: [META],
     Menu: NoMenu,
-    value: (_entry, { meta }) => {
+    value: (_entry, data) => {
+      const meta = data.get(META);
       const dims = meta ? effectiveDims(meta) : null;
       return dims ? aspectLabelOf(dims) : null;
     },
@@ -82,16 +92,19 @@ beforeAll(() => {
     id: "taken",
     label: "taken",
     appliesTo: () => true,
-    reads: "meta",
+    reads: [META],
     Menu: NoMenu,
-    spec: dateRangeSpec((_entry, { meta }) => (meta ? takenMs(meta) : null)),
+    spec: dateRangeSpec((_entry, data) => {
+      const meta = data.get(META);
+      return meta ? takenMs(meta) : null;
+    }),
   });
   registerFilterField({
     kind: "range",
     id: "modified",
     label: "modified",
     appliesTo: () => true,
-    reads: "entry",
+    reads: [],
     Menu: NoMenu,
     spec: dateRangeSpec((entry) => entry.modifiedMs),
   });
@@ -100,7 +113,7 @@ beforeAll(() => {
     id: "size",
     label: "size",
     appliesTo: () => true,
-    reads: "entry",
+    reads: [],
     Menu: NoMenu,
     spec: numberRangeSpec((entry) => entry.size, {
       unit: "MB",
@@ -114,10 +127,11 @@ beforeAll(() => {
     id: "edge",
     label: "longest edge",
     appliesTo: () => true,
-    reads: "meta",
+    reads: [META],
     Menu: NoMenu,
     spec: numberRangeSpec(
-      (_entry, { meta }) => {
+      (_entry, data) => {
+        const meta = data.get(META);
         const dims = meta ? effectiveDims(meta) : null;
         return dims ? Math.max(dims.width, dims.height) : null;
       },
@@ -130,9 +144,9 @@ beforeAll(() => {
     id: "stars",
     label: "stars",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     Menu: NoMenu,
-    spec: numberRangeSpec((_entry, { labels }) => labels.stars ?? 0, {
+    spec: numberRangeSpec((_entry, data) => data.get(LABELS).stars ?? 0, {
       unit: "★",
       scale: 1,
       integer: true,
@@ -144,9 +158,9 @@ beforeAll(() => {
     id: "tag",
     label: "tag",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     Menu: NoMenu,
-    values: (_entry, { labels }) => labels.tags,
+    values: (_entry, data) => data.get(LABELS).tags,
   });
   registerSort({
     id: "stars",
@@ -154,15 +168,25 @@ beforeAll(() => {
     hints: { asc: "lowest rated", desc: "highest rated" },
     defaultDir: "desc",
     appliesTo: () => true,
-    reads: "labels",
+    reads: [LABELS],
     missing: "last",
     param: null,
-    value: (_entry, ctx) => ctx.labels.stars,
+    value: (_entry, data) => data.get(LABELS).stars,
   });
 });
 
-function data(part: Partial<QueryData> = {}): QueryData {
-  return { meta: {}, scores: {}, labels: {}, people: {}, ...part };
+function data(
+  part: {
+    meta?: Record<string, ImageMeta>;
+    scores?: Record<string, number>;
+    labels?: Record<string, ImageLabels>;
+  } = {},
+): ChannelMaps {
+  return new Map<Channel<unknown>, Readonly<Record<string, unknown>>>([
+    [META, part.meta ?? {}],
+    [SCORES, part.scores ?? {}],
+    [LABELS, part.labels ?? {}],
+  ]);
 }
 
 function entry(name: string, ext: string, size: number, modifiedMs: number): FileEntry {
@@ -321,12 +345,12 @@ describe("applyQuery", () => {
     expect(applyQuery(ENTRIES, query, data())).toEqual([]);
   });
 
-  it("usesMeta is true only for metadata-dependent filters", () => {
-    expect(usesMeta(defaultQuery)).toBe(false);
-    expect(usesMeta(withRangeToggled(defaultQuery, "size", 0, 1, "x"))).toBe(false);
-    expect(usesMeta(withRangeToggled(defaultQuery, "taken", 0, 1, "x"))).toBe(true);
-    expect(usesMeta(withSelectToggled(defaultQuery, "camera", "X"))).toBe(true);
-    expect(usesMeta(withSelectToggled(defaultQuery, "aspect", "4:3"))).toBe(true);
+  it("reads the meta channel only for metadata-dependent filters", () => {
+    expect(channelsRead(defaultQuery).includes(META)).toBe(false);
+    expect(channelsRead(withRangeToggled(defaultQuery, "size", 0, 1, "x")).includes(META)).toBe(false);
+    expect(channelsRead(withRangeToggled(defaultQuery, "taken", 0, 1, "x")).includes(META)).toBe(true);
+    expect(channelsRead(withSelectToggled(defaultQuery, "camera", "X")).includes(META)).toBe(true);
+    expect(channelsRead(withSelectToggled(defaultQuery, "aspect", "4:3")).includes(META)).toBe(true);
   });
 
   it("stars range filter reads labels; unrated counts as zero stars", () => {
@@ -378,12 +402,12 @@ describe("applyQuery", () => {
     ]);
   });
 
-  it("usesLabels is true for label-backed clauses and the stars sort", () => {
-    expect(usesLabels(defaultQuery)).toBe(false);
-    expect(usesLabels(withRangeToggled(defaultQuery, "stars", 3, Infinity, "x"))).toBe(true);
-    expect(usesLabels(withSelectToggled(defaultQuery, "tag", "sea"))).toBe(true);
-    expect(usesLabels({ ...defaultQuery, sort: { key: "stars", dir: "desc" } })).toBe(true);
-    expect(usesLabels(withSelectToggled(defaultQuery, "camera", "X"))).toBe(false);
+  it("reads the labels channel for label-backed clauses and the stars sort", () => {
+    expect(channelsRead(defaultQuery).includes(LABELS)).toBe(false);
+    expect(channelsRead(withRangeToggled(defaultQuery, "stars", 3, Infinity, "x")).includes(LABELS)).toBe(true);
+    expect(channelsRead(withSelectToggled(defaultQuery, "tag", "sea")).includes(LABELS)).toBe(true);
+    expect(channelsRead({ ...defaultQuery, sort: { key: "stars", dir: "desc" } }).includes(LABELS)).toBe(true);
+    expect(channelsRead(withSelectToggled(defaultQuery, "camera", "X")).includes(LABELS)).toBe(false);
   });
 });
 

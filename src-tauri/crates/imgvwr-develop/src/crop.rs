@@ -7,7 +7,8 @@ use imgvwr_core::{LinearImage, Region};
 use serde::{Deserialize, Serialize};
 
 /// The rectangle in normalised original-frame coordinates; the rectangle itself is axis-aligned in the frame rotated by `angle`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct Crop {
     pub x: f32,

@@ -1,10 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { registerTestViews } from "../test/views";
+
+import type { Channel } from "../registry/channels";
 import { clearSortsForTest, registerSort } from "../registry/sorts";
 import { clearSourcesForTest, registerSource, sourceScope } from "../registry/sources";
 import { registerBuiltinSorts } from "../sorts/builtin";
 import { defaultQuery } from "./query";
-import { folderRescanned, scopeLoading } from "./collection";
+import { folderRescanned } from "./collection";
 import {
   movedSelection,
   scanBatchArrived,
@@ -19,6 +22,10 @@ import {
   type Scope,
 } from "./store";
 
+registerTestViews();
+
+const SCORES: Channel<number | null> = { missing: null, read: () => ({}), subscribe: () => () => {} };
+
 const SOURCE_SCOPE: Scope = { kind: "source", sourceId: "tsrc", arg: "x", label: "x" };
 const OTHER_SOURCE_SCOPE: Scope = { kind: "source", sourceId: "plain", arg: "y", label: "y" };
 const FOLDER_SCOPE: Scope = { kind: "folder", path: "/p", recursive: false };
@@ -31,7 +38,7 @@ beforeAll(() => {
     id: "tsrc",
     title: "T",
     sidebarTitle: "T",
-    glyph: "t",
+    icon: "t",
     placeholder: "",
     label: (arg) => arg,
     fetch: () => Promise.resolve([]),
@@ -42,7 +49,7 @@ beforeAll(() => {
         hints: { asc: "as delivered", desc: "reversed" },
         defaultDir: "asc",
         appliesTo: sourceScope("tsrc"),
-        reads: "entry",
+        reads: [],
         missing: "last",
         param: null,
         value: (_entry, ctx) => ctx.sourceIndex,
@@ -57,7 +64,7 @@ beforeAll(() => {
     hints: { asc: "least alike", desc: "closest first" },
     defaultDir: "desc",
     appliesTo: () => true,
-    reads: "scores",
+    reads: [SCORES],
     missing: "hide",
     param: {
       segments: () => [{ kind: "text", text: "closest to x" }],
@@ -65,14 +72,15 @@ beforeAll(() => {
       collectHint: "type a phrase",
       isSet: () => true,
       clear: () => {},
+      subscribe: () => () => {},
     },
-    value: (entry, ctx) => ctx.scores[entry.path] ?? null,
+    value: (_entry, data) => data.get(SCORES),
   });
   registerSource({
     id: "plain",
     title: "P",
     sidebarTitle: "P",
-    glyph: "p",
+    icon: "p",
     placeholder: "",
     label: (arg) => arg,
     fetch: () => Promise.resolve([]),
@@ -117,16 +125,6 @@ describe("sortForScope", () => {
     expect(sortForScope(FOLDER_SCOPE, { key: "test.similar", dir: "desc" })).toEqual(
       defaultQuery.sort,
     );
-  });
-});
-
-describe("scopeLoading", () => {
-  it("forgets the previous folder's people and their finished detection", () => {
-    // A completed facesProgress left standing would auto-cluster the new folder and announce "No faces found.".
-    const reset = scopeLoading(FOLDER_SCOPE, 7);
-    expect(reset.people).toBeNull();
-    expect(reset.peopleByPath).toEqual({});
-    expect(reset.facesProgress).toBeNull();
   });
 });
 
@@ -182,8 +180,6 @@ function showing(selected: number[], anchor: number | null = null) {
     selectionAnchor: anchor === null ? (chosen[0] ?? null) : (entries[anchor]?.path ?? null),
     meta: {},
     similarity: null,
-    labels: {},
-    peopleByPath: {},
     thumbs: {},
     thumbErrors: {},
     stacking: false,
@@ -398,8 +394,6 @@ describe("a selection follows its photograph across a collapse", () => {
     query: defaultQuery,
     meta: {},
     similarity: null,
-    labels: {},
-    peopleByPath: {},
     stacking: true,
     // Raw-led so the collapse genuinely swaps which file is showing — the harder case.
     stackLead: "raw" as const,

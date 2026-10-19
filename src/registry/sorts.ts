@@ -1,23 +1,15 @@
 import type { ComponentType } from "react";
 
-import type { FileEntry, ImageLabels, ImageMeta } from "../ipc";
+import type { FileEntry } from "../ipc";
+import type { PhotoData, Reads } from "./channels";
 import type { Scope } from "../state/store";
 
 export type SortDir = "asc" | "desc";
 
-export interface SortValueContext {
-  /** Undefined until the background read delivers it. */
-  meta: ImageMeta | undefined;
+export interface SortValueContext extends PhotoData {
   /** Position as delivered: scan order for folders, API rank for sources. */
   sourceIndex: number;
-  /** Keyed by path; empty unless something put scores into the store. */
-  scores: Record<string, number>;
-  /** The empty set when unlabeled, never missing. */
-  labels: ImageLabels;
 }
-
-/** Drives re-sort invalidation. */
-export type SortReads = "entry" | "meta" | "scores" | "labels";
 
 /** One chip token; plain `text` tokens open the sort menu like the rest of the chip. */
 export type SortChipSegment =
@@ -39,6 +31,8 @@ export interface SortParam {
   isSet: () => boolean;
   /** Drops the parameter and with it the sort; rendered as the chip's ×. */
   clear: () => void;
+  /** Fires when anything `segments` reads changes, so the chip redraws. */
+  subscribe: (onChange: () => void) => () => void;
 }
 
 export interface SortProvider {
@@ -49,7 +43,7 @@ export interface SortProvider {
   /** Direction the first invocation uses; invoking again flips. */
   defaultDir: SortDir;
   appliesTo: (scope: Scope | null) => boolean;
-  reads: SortReads;
+  reads: Reads;
   /** What a null value means: sort those entries last, or hide them from the visible list. */
   missing: "last" | "hide";
   /** null for plain sorts (which survive scope changes); parameterized sorts reset with the scope. */

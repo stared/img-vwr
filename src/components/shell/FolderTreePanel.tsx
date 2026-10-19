@@ -2,7 +2,7 @@ import { IconPin, IconPinned } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
 import type { DirEntry } from "../../ipc";
-import { listSubdirs, requestDirCounts } from "../../ipc";
+import { api } from "../../ipc";
 import { executeCommand } from "../../registry/commands";
 import { chordsForCommand, formatChord } from "../../registry/keybindings";
 import { useAppStore } from "../../state/store";
@@ -77,13 +77,13 @@ export function FolderTreePanel() {
     setSubdirs(null);
     if (!folderPath) return;
     let stale = false;
-    void listSubdirs(folderPath)
+    void api.listSubdirs(folderPath)
       .then((dirs) => {
         if (stale) return;
         setSubdirs(dirs);
         // Counts stream in as background events so slow (cloud) folders never delay the list itself.
         if (dirs.length > 0) {
-          void requestDirCounts(dirs.map((d) => d.path));
+          void api.requestDirCounts(dirs.map((d) => d.path));
         }
       })
       .catch(() => {

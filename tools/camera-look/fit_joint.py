@@ -239,7 +239,7 @@ class Look(torch.nn.Module):
 
 
 def assemble_features(entries):
-    """Mirror fit_look.py image_features / look.rs features exactly."""
+    """Mirror look.rs features exactly."""
     raw = {f["tag"]: f for f in json.load(open(HERE / "features2.json"))}
     out = []
     for e in entries:
@@ -288,77 +288,13 @@ def maker_features(entries):
     return np.array(out, dtype=np.float32)
 
 
-def face_features(entries):
-    """Subject-aware features from Vision face boxes (dump_faces bin).
-
-    The predictor's remaining failures are 'who is the subject' exposure
-    decisions; the camera's Auto PC meters faces. Per image: how much face
-    there is, and how bright the largest face is relative to the scene.
-    """
-    import re as _re
-    boxes_by_tag = {}
-    for line in open(HERE / "faces.jsonl"):
-        e = json.loads(line)
-        m = _re.match(r".*/Nikon_RAW/([^/]+)/([^/]+)\.JPG", e["path"])
-        if not m:
-            continue
-        tag = m.group(1).replace(" ", "-") + "_" + m.group(2)
-        boxes_by_tag[tag] = e["boxes"]
-
-    def datefree(tag):
-        folder, stem = tag.rsplit("_DSC_", 1)
-        return _re.sub(r"^\d+-", "", folder) + "_DSC_" + stem
-
-    alias = {datefree(t): t for t in boxes_by_tag}
-    dims = {}
-    for line in open(HERE / "pairs2/manifest.jsonl"):
-        m = json.loads(line)
-        dims[m["tag"]] = (m["w"], m["h"])
-
-    out = []
-    for e in entries:
-        t = e["tag"]
-        boxes = boxes_by_tag.get(t)
-        if boxes is None and datefree(t) in alias:
-            boxes = boxes_by_tag[alias[datefree(t)]]
-        boxes = boxes or []
-        n = len(boxes)
-        total_area = sum(b[2] * b[3] for b in boxes)
-        if boxes:
-            bx = max(boxes, key=lambda b: b[2] * b[3])
-            big_area = bx[2] * bx[3]
-            w, h = dims[t]
-            x0, y0 = int(bx[0] * w), int(bx[1] * h)
-            x1, y1 = int((bx[0] + bx[2]) * w) + 1, int((bx[1] + bx[3]) * h) + 1
-            scene = np.fromfile(HERE / f"pairs2/{t}_scene.f32",
-                                dtype=np.float32).reshape(h, w, 3)
-            y = 0.2126 * scene[..., 0] + 0.7152 * scene[..., 1] + 0.0722 * scene[..., 2]
-            face_l = float(np.log2(max(np.median(
-                y[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]), 1e-8)))
-            global_l = float(np.log2(max(np.median(y), 1e-8)))
-            face_delta = face_l - global_l
-        else:
-            big_area = 0.0
-            face_l = 0.0
-            face_delta = 0.0
-        out.append([
-            min(n, 8) / 4.0,
-            min(total_area, 0.5) * 4.0,
-            min(big_area, 0.4) * 5.0,
-            face_l / 8.0 if boxes else 0.0,
-            np.clip(face_delta, -6, 6) / 3.0,
-            1.0 if boxes else 0.0,
-        ])
-    return np.array(out, dtype=np.float32)
-
-
 # maker feature columns readable without exiftool at runtime: the XMP packet
 # (plain XML in TIFF tag 700) and standard EXIF. Excludes ColorTemperatureAuto,
 # WB_RBLevels and FocusDistance, which live in Nikon's encrypted maker blocks.
 PORTABLE_MAKER = [0, 1, 2, 3, 4, 5, 9, 10, 11, 13]
 
 
-def load_data(dev, maker="none", faces=False):
+def load_data(dev, maker="none"):
     d = np.load(HERE / "samples2.npz")
     scene, cam, img = d["scene"], d["cam"], d["img"]
     entries = json.load(open(HERE / "images2.json"))
@@ -368,8 +304,6 @@ def load_data(dev, maker="none", faces=False):
         if maker == "portable":
             mk = mk[:, PORTABLE_MAKER]
         feats = np.concatenate([feats, mk], axis=1)
-    if faces:
-        feats = np.concatenate([feats, face_features(entries)], axis=1)
     n_img = len(entries)
 
     def luma(a):
@@ -497,8 +431,6 @@ def main():
     ap.add_argument("--init", default="mixed", help="shipped|random|mixed")
     ap.add_argument("--maker", default="none", choices=["none", "full", "portable"],
                     help="append per-shot maker-note features to the predictor")
-    ap.add_argument("--faces", action="store_true",
-                    help="append Vision face-box features to the predictor")
     ap.add_argument("--clip-scene", type=float, default=0.0,
                     help="clamp scene channels at this value before the matrix")
     ap.add_argument("--dual-matrix", action="store_true",
@@ -519,7 +451,7 @@ def main():
     args = ap.parse_args()
 
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
-    data = load_data(dev, maker=args.maker, faces=args.faces)
+    data = load_data(dev, maker=args.maker)
     ship = load_shipped()
     img_np = data["img"].cpu().numpy()
     if args.exclude_folder:
@@ -596,8 +528,7 @@ def main():
                                   dual_matrix=args.dual_matrix,
                                   basis_luts=args.basis_luts,
                                   clip_cross=args.clip_cross,
-                                  hidden=args.hidden, delta_c=args.delta_c,
-                                  faces=args.faces))
+                                  hidden=args.hidden, delta_c=args.delta_c))
 
     # oracle ceiling for the best model
     model = Look(ship, data["n_img"], data["feats_np"], curves=best[2]["curves"],

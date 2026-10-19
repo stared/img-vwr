@@ -1,12 +1,12 @@
 import { CAPTION_CYCLE, useDevelopStore, type CaptionMode } from "./develop";
-import { defaultQuery, usesScores, type Filter, type Query, type Sort } from "./query";
+import { getSort } from "../registry/sorts";
+import { getView } from "../registry/views";
+import { defaultQuery, type Filter, type Query, type Sort } from "./query";
 import type { StackLead } from "./stacks";
 import {
   useAppStore,
   type GalleryLayout,
-  type MosaicPacking,
   type Scope,
-  type TimelineOrientation,
 } from "./store";
 
 /* Saves the setup (scope, layout, filters), never contents or selection; transient state falls back to defaults on restore. */
@@ -20,10 +20,6 @@ interface SavedSession {
   stacking: boolean;
   stackLead: StackLead;
   gridColumns: number;
-  timelineOrientation: TimelineOrientation;
-  timelineThumbPx: number;
-  mosaicRowPx: number;
-  mosaicPacking: MosaicPacking;
   inspectorVisible: boolean;
   sidebarVisible: boolean;
   activePanelId: string;
@@ -34,8 +30,6 @@ interface SavedSession {
   pinnedFolders: string[];
   sidebarWidth: number;
   rightbarWidth: number;
-  sceneGapMin: number;
-  sceneContentWeight: number;
   develop: {
     folded: Record<string, boolean>;
     caption: CaptionMode;
@@ -50,15 +44,11 @@ function snapshot(): SavedSession {
   return {
     scope: s.scope,
     galleryLayout: s.galleryLayout,
-    // A scores-backed sort reads a model run that died with the window; restoring it would sort by nothing.
-    query: usesScores(s.query) ? { ...s.query, sort: defaultQuery.sort } : s.query,
+    // A parameterized sort (e.g. closest-to) reads a run that died with the window; restoring it would sort by nothing.
+    query: getSort(s.query.sort.key)?.param ? { ...s.query, sort: defaultQuery.sort } : s.query,
     stacking: s.stacking,
     stackLead: s.stackLead,
     gridColumns: s.gridColumns,
-    timelineOrientation: s.timelineOrientation,
-    timelineThumbPx: s.timelineThumbPx,
-    mosaicRowPx: s.mosaicRowPx,
-    mosaicPacking: s.mosaicPacking,
     inspectorVisible: s.inspectorVisible,
     sidebarVisible: s.sidebarVisible,
     activePanelId: s.activePanelId,
@@ -69,8 +59,6 @@ function snapshot(): SavedSession {
     pinnedFolders: s.pinnedFolders,
     sidebarWidth: s.sidebarWidth,
     rightbarWidth: s.rightbarWidth,
-    sceneGapMin: s.sceneGapMin,
-    sceneContentWeight: s.sceneContentWeight,
     develop: {
       folded: d.folded,
       caption: d.caption,
@@ -87,15 +75,6 @@ const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const oneOf = <T extends string>(v: unknown, all: readonly T[]): v is T =>
   isString(v) && (all as readonly string[]).includes(v);
-
-const LAYOUTS: readonly GalleryLayout[] = [
-  "grid",
-  "mosaic",
-  "timeline",
-  "map",
-  "darkroom",
-  "scenes",
-];
 
 function readScope(v: unknown): Scope | null {
   if (typeof v !== "object" || v === null) return null;
@@ -172,19 +151,11 @@ export function restoreSession(): boolean {
 
   const app = useAppStore.getState();
   useAppStore.setState({
-    galleryLayout: oneOf(o.galleryLayout, LAYOUTS) ? o.galleryLayout : app.galleryLayout,
+    galleryLayout: isString(o.galleryLayout) && getView(o.galleryLayout) !== undefined ? o.galleryLayout : app.galleryLayout,
     query: readQuery(o.query),
     stacking: isBool(o.stacking) ? o.stacking : app.stacking,
     stackLead: oneOf(o.stackLead, ["jpg", "raw"] as const) ? o.stackLead : app.stackLead,
     gridColumns: isNum(o.gridColumns) ? o.gridColumns : app.gridColumns,
-    timelineOrientation: oneOf(o.timelineOrientation, ["vertical", "horizontal"] as const)
-      ? o.timelineOrientation
-      : app.timelineOrientation,
-    timelineThumbPx: isNum(o.timelineThumbPx) ? o.timelineThumbPx : app.timelineThumbPx,
-    mosaicRowPx: isNum(o.mosaicRowPx) ? o.mosaicRowPx : app.mosaicRowPx,
-    mosaicPacking: oneOf(o.mosaicPacking, ["order", "packed"] as const)
-      ? o.mosaicPacking
-      : app.mosaicPacking,
     inspectorVisible: isBool(o.inspectorVisible) ? o.inspectorVisible : app.inspectorVisible,
     sidebarVisible: isBool(o.sidebarVisible) ? o.sidebarVisible : app.sidebarVisible,
     activePanelId: isString(o.activePanelId) ? o.activePanelId : app.activePanelId,
@@ -214,10 +185,6 @@ export function restoreSession(): boolean {
         : app.panelOrder,
     sidebarWidth: isNum(o.sidebarWidth) ? o.sidebarWidth : app.sidebarWidth,
     rightbarWidth: isNum(o.rightbarWidth) ? o.rightbarWidth : app.rightbarWidth,
-    sceneGapMin: isNum(o.sceneGapMin) ? o.sceneGapMin : app.sceneGapMin,
-    sceneContentWeight: isNum(o.sceneContentWeight)
-      ? o.sceneContentWeight
-      : app.sceneContentWeight,
   });
 
   const dev = (typeof o.develop === "object" && o.develop !== null

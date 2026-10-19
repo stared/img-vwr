@@ -18,7 +18,7 @@ export function useGlobalKeybindings() {
         // A chord on an argument-taking command collects it in the palette.
         const command = getCommand(commandId);
         if (command?.input) {
-          if (!command.when || command.when(ctx)) {
+          if (command.when(ctx)) {
             useAppStore.getState().promptCommand(commandId);
             e.preventDefault();
             return;
