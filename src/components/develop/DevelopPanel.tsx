@@ -42,6 +42,7 @@ export function DevelopPanel() {
   const entry = useSelectedEntry();
   const [autoPending, setAutoPending] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
+  const [uprightPending, setUprightPending] = useState(false);
 
   const session = useDevelopStore((s) => s.session);
   const opening = useDevelopStore((s) => s.opening);
@@ -65,6 +66,8 @@ export function DevelopPanel() {
   const setCropChoice = useDevelopStore((s) => s.setCropChoice);
   const toggleCropOrientation = useDevelopStore((s) => s.toggleCropOrientation);
   const straighten = useDevelopStore((s) => s.straighten);
+  const setKeystone = useDevelopStore((s) => s.setKeystone);
+  const autoUpright = useDevelopStore((s) => s.autoUpright);
   const allEntries = useAppStore((s) => s.entries);
   const preferMember = useAppStore((s) => s.preferMember);
   const stacking = useAppStore((s) => s.stacking);
@@ -221,6 +224,22 @@ export function DevelopPanel() {
         >
           {cropping ? "Done" : "Crop & straighten"}
         </button>
+        <button
+          className="develop-toggle"
+          disabled={uprightPending}
+          onClick={() => {
+            // Entered first, so Escape puts back the crop from before the auto.
+            if (!cropping) setCropping(true);
+            setUprightPending(true);
+            setAutoError(null);
+            void autoUpright()
+              .catch(() => setAutoError("Auto straighten failed. Please try again."))
+              .finally(() => setUprightPending(false));
+          }}
+          title="Make the photograph's straight lines plumb and level: sets straighten, vertical and horizontal, and opens the crop to check them"
+        >
+          {uprightPending ? "Straightening…" : "Auto straighten"}
+        </button>
         {cropping && (
           <>
             <button className="develop-toggle" onClick={cancelCrop}>Cancel</button>
@@ -259,13 +278,41 @@ export function DevelopPanel() {
           title="Turns the photograph under the rectangle. The crop shrinks to stay inside the frame, so straightening costs edges."
           onChange={straighten}
         />
+        <Slider
+          label="vertical"
+          value={settings.crop.vertical}
+          neutral={0}
+          min={-30}
+          max={30}
+          step={0.1}
+          display={`${settings.crop.vertical > 0 ? "+" : ""}${settings.crop.vertical.toFixed(1)}°`}
+          parse={parseNumber}
+          ticks={[{ at: 0, title: "as shot" }]}
+          layout="inline"
+          title="How far the camera pointed up (+) or down (−). Turned back, walls and posts stand upright."
+          onChange={(vertical) => setKeystone({ vertical, horizontal: settings.crop.horizontal })}
+        />
+        <Slider
+          label="horizontal"
+          value={settings.crop.horizontal}
+          neutral={0}
+          min={-30}
+          max={30}
+          step={0.1}
+          display={`${settings.crop.horizontal > 0 ? "+" : ""}${settings.crop.horizontal.toFixed(1)}°`}
+          parse={parseNumber}
+          ticks={[{ at: 0, title: "as shot" }]}
+          layout="inline"
+          title="How far the camera turned left (+) or right (−) of square-on. Turned back, a facing wall runs level."
+          onChange={(horizontal) => setKeystone({ vertical: settings.crop.vertical, horizontal })}
+        />
         </>)}
         <p className="develop-note">
           {developedSize.width} × {developedSize.height} px
           {cropped ? "" : " · the whole frame"}
         </p>
         {cropped && (
-          <button className="develop-toggle" onClick={() => setCrop(FULL_CROP)}>
+          <button className="develop-toggle" onClick={() => setCrop({ ...FULL_CROP, focal: settings.crop.focal })}>
             Reset crop
           </button>
         )}

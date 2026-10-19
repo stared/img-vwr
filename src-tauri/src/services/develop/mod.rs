@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use imgvwr_core::thumbs::apply_orientation;
 use imgvwr_core::{Region, SceneError, SceneImage, SceneRegistry, WhiteBalance};
-use imgvwr_develop::{Crop, DevelopParams, DevelopSettings, Histogram, Overlay};
+use imgvwr_develop::{Crop, DevelopParams, DevelopSettings, Histogram, Overlay, Upright};
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -135,6 +135,9 @@ impl DevelopService {
             "crop_w REAL NOT NULL DEFAULT 1",
             "crop_h REAL NOT NULL DEFAULT 1",
             "crop_angle REAL NOT NULL DEFAULT 0",
+            "crop_vertical REAL NOT NULL DEFAULT 0",
+            "crop_horizontal REAL NOT NULL DEFAULT 0",
+            "crop_focal REAL NOT NULL DEFAULT 43",
             // 'flat', not the camera look: old rows emulated the look with sliders, and applying both would double it.
             "look TEXT NOT NULL DEFAULT 'flat'",
         ] {
@@ -224,12 +227,17 @@ impl DevelopService {
         let as_shot = entry.scene.as_shot();
         let stored = self.stored_settings(path)?;
         let opening = imgvwr_develop::opening_settings(as_shot, entry.scene.rendering());
+        let mut settings = stored.clone().unwrap_or(opening);
+        // The keystone sliders turn with this lens; a stored keystone keeps the focal it was set with.
+        if !settings.crop.has_keystone() {
+            settings.crop.focal = lens_focal(path);
+        }
         Ok(DevelopState {
             width,
             height,
             as_shot,
             edited: stored.is_some(),
-            settings: stored.unwrap_or(opening),
+            settings,
             needs_render: imgvwr_raw::is_raw_extension(&extension_of(path)),
         })
     }
@@ -246,6 +254,22 @@ impl DevelopService {
             })
             .map_err(|e| e.to_string())?;
         Ok(imgvwr_develop::auto_exposure(&linear))
+    }
+
+    /// Measured on the whole frame as shot: the crop is redrawn around whatever this returns.
+    pub fn auto_upright(&self, path: &str, settings: &DevelopSettings) -> Result<Upright, String> {
+        // Below ~1400 px thin bars blur into their neighbours and the answer moves with the resampling filter.
+        const MEASURE_EDGE: u32 = 1600;
+        let entry = self.scene_for(path).map_err(|e| e.to_string())?;
+        let linear = entry
+            .scene
+            .render(imgvwr_core::RenderRequest {
+                max_edge: MEASURE_EDGE,
+                white_balance: settings.clamped().white_balance,
+                region: Region::FULL,
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(imgvwr_develop::upright(&linear, settings.clamped().crop.focal))
     }
 
     /// Two passes: a downscale hides defocus, so coarse candidates are re-measured at 1:1.
@@ -436,7 +460,8 @@ impl DevelopService {
             .prepare(
                 "SELECT temperature, tint, exposure, contrast, highlights, shadows,
                         whites, blacks, rolloff, vibrance, saturation, basis,
-                        crop_x, crop_y, crop_w, crop_h, crop_angle, look
+                        crop_x, crop_y, crop_w, crop_h, crop_angle, look,
+                        crop_vertical, crop_horizontal, crop_focal
                  FROM develop WHERE path = ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -464,6 +489,9 @@ impl DevelopService {
                         width: row.get::<_, f64>(14)? as f32,
                         height: row.get::<_, f64>(15)? as f32,
                         angle: row.get::<_, f64>(16)? as f32,
+                        vertical: row.get::<_, f64>(18)? as f32,
+                        horizontal: row.get::<_, f64>(19)? as f32,
+                        focal: row.get::<_, f64>(20)? as f32,
                     },
                     basis: row.get::<_, String>(11)?,
                     look: row.get::<_, String>(17)?,
@@ -484,9 +512,10 @@ impl DevelopService {
             "INSERT INTO develop
                  (path, temperature, tint, exposure, contrast, highlights,
                   shadows, whites, blacks, rolloff, vibrance, saturation, basis,
-                  crop_x, crop_y, crop_w, crop_h, crop_angle, look)
+                  crop_x, crop_y, crop_w, crop_h, crop_angle, look,
+                  crop_vertical, crop_horizontal, crop_focal)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                     ?14, ?15, ?16, ?17, ?18, ?19)
+                     ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
              ON CONFLICT(path) DO UPDATE SET
                  temperature = excluded.temperature, tint = excluded.tint,
                  exposure = excluded.exposure, contrast = excluded.contrast,
@@ -497,7 +526,10 @@ impl DevelopService {
                  basis = excluded.basis,
                  crop_x = excluded.crop_x, crop_y = excluded.crop_y,
                  crop_w = excluded.crop_w, crop_h = excluded.crop_h,
-                 crop_angle = excluded.crop_angle, look = excluded.look",
+                 crop_angle = excluded.crop_angle, look = excluded.look,
+                 crop_vertical = excluded.crop_vertical,
+                 crop_horizontal = excluded.crop_horizontal,
+                 crop_focal = excluded.crop_focal",
             rusqlite::params![
                 path,
                 f64::from(s.white_balance.temperature),
@@ -518,6 +550,9 @@ impl DevelopService {
                 f64::from(s.crop.height),
                 f64::from(s.crop.angle),
                 s.look.clone(),
+                f64::from(s.crop.vertical),
+                f64::from(s.crop.horizontal),
+                f64::from(s.crop.focal),
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -558,7 +593,8 @@ impl DevelopService {
             let marks = vec!["?"; chunk.len()].join(",");
             let mut stmt = conn
                 .prepare(&format!(
-                    "SELECT path, crop_x, crop_y, crop_w, crop_h, crop_angle \
+                    "SELECT path, crop_x, crop_y, crop_w, crop_h, crop_angle, \
+                     crop_vertical, crop_horizontal, crop_focal \
                      FROM develop WHERE path IN ({marks})"
                 ))
                 .map_err(|e| e.to_string())?;
@@ -572,6 +608,9 @@ impl DevelopService {
                             width: row.get::<_, f64>(3)? as f32,
                             height: row.get::<_, f64>(4)? as f32,
                             angle: row.get::<_, f64>(5)? as f32,
+                            vertical: row.get::<_, f64>(6)? as f32,
+                            horizontal: row.get::<_, f64>(7)? as f32,
+                            focal: row.get::<_, f64>(8)? as f32,
                         },
                     ))
                 })
@@ -693,6 +732,15 @@ fn measure_tuning_checked(
         imgvwr_develop::LookTuning::measure(&linear, iso, scene.as_shot(), &decisions),
         flat,
     ))
+}
+
+/// 35 mm-equivalent; a file without the equivalent is taken as full frame.
+fn lens_focal(path: &str) -> f32 {
+    imgvwr_core::read_meta(Path::new(path))
+        .ok()
+        .and_then(|m| m.exif)
+        .and_then(|e| e.focal_equivalent.or(e.focal_length))
+        .map_or(imgvwr_develop::NORMAL_FOCAL, |mm| mm as f32)
 }
 
 fn camera_jpeg_scene(path: &str) -> Option<Box<dyn SceneImage>> {

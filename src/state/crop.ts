@@ -1,6 +1,7 @@
 import type { Crop } from "../ipc";
 
-/** `Crop` is axis-aligned in a frame turned by `angle`; rotations convert through the frame's aspect and must agree exactly with `crop.rs`. */
+/** `Crop` is axis-aligned in a frame turned by `angle`; rotations convert through the frame's aspect and must agree exactly with `crop.rs`.
+ * The rectangle lives in the keystone-corrected frame, which has the original's shape, so nothing here needs the keystone; it rides along. */
 
 /** Smallest crop that is an intention rather than a slip. Matches `crop.rs`. */
 export const MIN_EXTENT = 0.02;
@@ -62,6 +63,7 @@ export function fitted(crop: Crop, aspect: number): Crop {
   const height = atLeast(crop.height, MIN_EXTENT);
   const c = centreOf({ ...crop, width, height });
   const held = {
+    ...crop,
     x: clampFinite(c.x, 0, 1) - width / 2,
     y: clampFinite(c.y, 0, 1) - height / 2,
     width,
@@ -89,6 +91,7 @@ export function fitted(crop: Crop, aspect: number): Crop {
   const cx = inside(centre.x, s.width);
   const cy = inside(centre.y, s.height);
   return {
+    ...crop,
     x: cx - shrunk.width / 2,
     y: cy - shrunk.height / 2,
     width: shrunk.width,
@@ -97,11 +100,24 @@ export function fitted(crop: Crop, aspect: number): Crop {
   };
 }
 
-export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1, angle: 0 };
+/** `NORMAL_FOCAL` in `crop.rs`; the backend replaces it with the photo's lens on open. */
+export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1, angle: 0, vertical: 0, horizontal: 0, focal: 43 };
 
+/** The whole corrected frame: rectangle and turn gone, keystone and lens kept. */
+export function uncropped(crop: Crop): Crop {
+  return { ...crop, x: 0, y: 0, width: 1, height: 1, angle: 0 };
+}
+
+/** No rectangle, no turn and no keystone; the focal alone changes nothing. */
 export function isCropped(crop: Crop): boolean {
   return (
-    crop.x !== 0 || crop.y !== 0 || crop.width !== 1 || crop.height !== 1 || crop.angle !== 0
+    crop.x !== 0 ||
+    crop.y !== 0 ||
+    crop.width !== 1 ||
+    crop.height !== 1 ||
+    crop.angle !== 0 ||
+    crop.vertical !== 0 ||
+    crop.horizontal !== 0
   );
 }
 
@@ -172,10 +188,7 @@ export function resized(
   }
 
   const centre = rotatedToOriginal(crop, (left + right) / 2, (top + bottom) / 2, aspect);
-  return fitted(
-    { x: centre.x - width / 2, y: centre.y - height / 2, width, height, angle: crop.angle },
-    aspect,
-  );
+  return fitted({ ...crop, x: centre.x - width / 2, y: centre.y - height / 2, width, height }, aspect);
 }
 
 /** Both points are in the turned frame relative to the current crop's centre; the angle rides along untouched. */
@@ -188,10 +201,7 @@ export function drawn(crop: Crop, from: Point, to: Point, aspect: number): Crop 
     (from.y + to.y) / 2,
     aspect,
   );
-  return fitted(
-    { x: centre.x - width / 2, y: centre.y - height / 2, width, height, angle: crop.angle },
-    aspect,
-  );
+  return fitted({ ...crop, x: centre.x - width / 2, y: centre.y - height / 2, width, height }, aspect);
 }
 
 interface AspectChoice {
@@ -229,10 +239,7 @@ export function withRatio(crop: Crop, ratio: number | null, aspect: number): Cro
   const height = Math.min(crop.height, (crop.width * aspect) / ratio);
   const width = (height * ratio) / aspect;
   const centre = centreOf(crop);
-  return fitted(
-    { x: centre.x - width / 2, y: centre.y - height / 2, width, height, angle: crop.angle },
-    aspect,
-  );
+  return fitted({ ...crop, x: centre.x - width / 2, y: centre.y - height / 2, width, height }, aspect);
 }
 
 /** The ratio a crop is actually sitting on, as the output would measure it. */

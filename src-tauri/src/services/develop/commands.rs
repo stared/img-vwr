@@ -46,6 +46,20 @@ pub async fn develop_auto_exposure(
         .map_err(|e| e.to_string())?
 }
 
+/// The turn and keystones that make the picture's lines plumb and level, with the focal in `settings.crop`.
+#[tauri::command]
+#[specta::specta]
+pub async fn develop_auto_upright(
+    service: State<'_, Arc<DevelopService>>,
+    path: String,
+    settings: DevelopSettings,
+) -> Result<Upright, String> {
+    let service = Arc::clone(service.inner());
+    tauri::async_runtime::spawn_blocking(move || service.auto_upright(&path, &settings))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn develop_focus_point(

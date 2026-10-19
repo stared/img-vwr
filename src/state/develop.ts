@@ -13,11 +13,11 @@ import type {
 import {
   ASPECT_CHOICES,
   fitted,
-  FULL_CROP as WHOLE_FRAME,
   isCropped,
   ratioIn,
   ratioOf,
   straightened,
+  uncropped,
   withRatio,
 } from "./crop";
 import { api, FULL_REGION } from "../ipc";
@@ -141,6 +141,10 @@ interface DevelopStore {
   setCropChoice: (id: string) => void;
   toggleCropOrientation: () => void;
   straighten: (angle: number) => void;
+  /** Degrees the camera pointed up or turned left; the picture is turned back by as much. */
+  setKeystone: (keystone: { vertical: number; horizontal: number }) => void;
+  /** Straighten and keystones from the picture's own straight lines. */
+  autoUpright: () => Promise<void>;
 }
 
 /* Re-exported so panels that only want "is this cropped" need not know about `./crop`. */
@@ -258,8 +262,10 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
 
     set({ session: { ...start, rendering: true, dirty: false } });
     const { path, overlay } = start;
-    // Cropping renders the whole frame: a crop is drawn on the photograph as shot, else there would be no way to grow one back.
-    const live = get().cropping ? { ...start.settings, crop: WHOLE_FRAME } : start.settings;
+    // Cropping renders the whole frame: a crop is drawn on the photograph as shot (keystone applied), else there would be no way to grow one back.
+    const live = get().cropping
+      ? { ...start.settings, crop: uncropped(start.settings.crop) }
+      : start.settings;
     const settings = get().comparing ? start.info.settings : live;
 
     const result = await api.developRender(path, settings, currentEdge, overlay, FULL_REGION).then(
@@ -577,6 +583,22 @@ export const useDevelopStore = create<DevelopStore>((set, get) => {
         ...session.settings,
         crop: straightened(session.settings.crop, angle, frameAspect(session.info)),
       });
+    },
+
+    setKeystone: (keystone) => {
+      const session = get().session;
+      if (!session) return;
+      change({ ...session.settings, crop: { ...session.settings.crop, ...keystone } });
+    },
+
+    autoUpright: async () => {
+      const session = get().session;
+      if (!session) return;
+      const found = await api.developAutoUpright(session.path, session.settings);
+      const now = get().session;
+      if (!now || now.path !== session.path) return;
+      const crop = { ...now.settings.crop, vertical: found.vertical, horizontal: found.horizontal };
+      change({ ...now.settings, crop: straightened(crop, found.angle, frameAspect(now.info)) });
     },
 
     applyPreset: (id) => {

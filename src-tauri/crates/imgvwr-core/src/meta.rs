@@ -19,6 +19,8 @@ pub struct ExifSubset {
     pub exposure_bias: Option<f64>,
     /// Millimetres, as marked on the lens.
     pub focal_length: Option<f64>,
+    /// What the lens frames on a full-frame sensor; how wide the picture actually is.
+    pub focal_equivalent: Option<f64>,
     /// Decimal degrees; positive = north/east.
     pub gps_lat: Option<f64>,
     pub gps_lon: Option<f64>,
@@ -227,6 +229,11 @@ fn read_exif(path: &Path) -> Option<ExifSubset> {
             .or_else(|| data.get_field(exif::Tag::ISOSpeed, exif::In::PRIMARY))
             .and_then(|f| f.value.get_uint(0)),
         focal_length: rational(exif::Tag::FocalLength),
+        focal_equivalent: data
+            .get_field(exif::Tag::FocalLengthIn35mmFilm, exif::In::PRIMARY)
+            .and_then(|f| f.value.get_uint(0))
+            .filter(|&mm| mm > 0)
+            .map(f64::from),
         gps_lat: gps_coord(&data, exif::Tag::GPSLatitude, exif::Tag::GPSLatitudeRef, 90.0),
         gps_lon: gps_coord(&data, exif::Tag::GPSLongitude, exif::Tag::GPSLongitudeRef, 180.0),
     })

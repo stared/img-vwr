@@ -41,6 +41,7 @@ function exifAt(ms: number): ImageMeta {
       fNumber: null,
       iso: null,
       focalLength: null,
+      focalEquivalent: null,
       exposureBias: null,
       gpsLat: null,
       gpsLon: null,

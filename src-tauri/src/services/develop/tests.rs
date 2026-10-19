@@ -164,7 +164,7 @@ fn a_crop_changes_what_is_rendered_and_survives_the_database() {
 
     // The rendered frame is the crop itself, not the frame with the crop drawn on it.
     let cropped_settings = DevelopSettings {
-        crop: imgvwr_develop::Crop { x: 0.25, y: 0.25, width: 0.5, height: 0.25, angle: 0.0 },
+        crop: imgvwr_develop::Crop { x: 0.25, y: 0.25, width: 0.5, height: 0.25, ..imgvwr_develop::Crop::FULL },
         ..DevelopSettings::neutral(WhiteBalance::D65)
     };
     let cropped = svc
@@ -185,7 +185,7 @@ fn a_straightened_crop_still_renders_at_the_size_asked_for() {
     let path = path.to_str().unwrap();
 
     let turned = DevelopSettings {
-        crop: imgvwr_develop::Crop { x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 8.0 },
+        crop: imgvwr_develop::Crop { x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 8.0, ..imgvwr_develop::Crop::FULL },
         ..DevelopSettings::neutral(WhiteBalance::D65)
     };
     let frame = svc.render(path, &turned, 30, Overlay::None, Region::FULL).unwrap();

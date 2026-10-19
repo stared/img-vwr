@@ -21,6 +21,7 @@ const EXIF = {
   fNumber: 1.8,
   iso: 4000,
   focalLength: 50,
+  focalEquivalent: 50,
   exposureBias: 0,
   gpsLat: null,
   gpsLon: null,

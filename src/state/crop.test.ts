@@ -38,7 +38,7 @@ function insideTheFrame(crop: Crop, aspect: number): boolean {
 
 describe("rotating between the frame and the turned frame", () => {
   it("comes back to where it started", () => {
-    const crop: Crop = { x: 0.2, y: 0.15, width: 0.5, height: 0.4, angle: 12 };
+    const crop: Crop = { ...FULL_CROP, x: 0.2, y: 0.15, width: 0.5, height: 0.4, angle: 12 };
     const point = { x: 0.42, y: 0.31 };
     const there = originalToRotated(crop, point.x, point.y, ASPECT);
     const back = rotatedToOriginal(crop, there.x, there.y, ASPECT);
@@ -48,7 +48,7 @@ describe("rotating between the frame and the turned frame", () => {
 
   it("keeps a rectangle a rectangle on a frame that is not square", () => {
     // Guards: rotating in normalised coordinates shears a 3:2 frame; perpendicularity is measured in the square space.
-    const crop: Crop = { x: 0.25, y: 0.25, width: 0.4, height: 0.4, angle: 27 };
+    const crop: Crop = { ...FULL_CROP, x: 0.25, y: 0.25, width: 0.4, height: 0.4, angle: 27 };
     const corners = cornersOf(crop, ASPECT);
     const at = (i: number) => need(corners[i], `corner ${i}`);
     const edge = (p: { x: number; y: number }, q: { x: number; y: number }) => ({
@@ -63,7 +63,7 @@ describe("rotating between the frame and the turned frame", () => {
 
 describe("fitted", () => {
   it("leaves a crop that already fits exactly where it is", () => {
-    const crop: Crop = { x: 0.1, y: 0.2, width: 0.5, height: 0.3, angle: 0 };
+    const crop: Crop = { ...FULL_CROP, x: 0.1, y: 0.2, width: 0.5, height: 0.3, angle: 0 };
     const out = fitted(crop, ASPECT);
     expect(out.x).toBeCloseTo(0.1, 6);
     expect(out.y).toBeCloseTo(0.2, 6);
@@ -73,7 +73,7 @@ describe("fitted", () => {
 
   it("slides a crop that has wandered off an edge back inside", () => {
     // Moved, not shrunk: it still fits, it is simply in the wrong place.
-    const out = fitted({ x: 0.8, y: -0.3, width: 0.5, height: 0.4, angle: 0 }, ASPECT);
+    const out = fitted({ ...FULL_CROP, x: 0.8, y: -0.3, width: 0.5, height: 0.4, angle: 0 }, ASPECT);
     expect(out.width).toBeCloseTo(0.5);
     expect(out.height).toBeCloseTo(0.4);
     expect(out.x).toBeCloseTo(0.5);
@@ -91,7 +91,7 @@ describe("fitted", () => {
   });
 
   it("keeps the shape it was given while it shrinks", () => {
-    const square = { x: 0.2, y: 0.1, width: 0.4, height: 0.6, angle: 0 };
+    const square = { ...FULL_CROP, x: 0.2, y: 0.1, width: 0.4, height: 0.6, angle: 0 };
     const before = ratioIn(square, ASPECT);
     const after = straightened(square, 20, ASPECT);
     expect(ratioIn(after, ASPECT)).toBeCloseTo(before, 5);
@@ -100,7 +100,7 @@ describe("fitted", () => {
 
   it("survives nonsense without producing any", () => {
     const wild = fitted(
-      { x: Number.NaN, y: 9, width: 0, height: 40, angle: 900 },
+      { ...FULL_CROP, x: Number.NaN, y: 9, width: 0, height: 40, angle: 900 },
       ASPECT,
     );
     expect(Number.isFinite(wild.x)).toBe(true);
@@ -112,7 +112,7 @@ describe("fitted", () => {
   it("holds at every angle a straighten can reach", () => {
     for (let angle = -45; angle <= 45; angle += 3) {
       for (const aspect of [1, 3 / 2, 2 / 3, 16 / 9]) {
-        const out = straightened({ x: 0.1, y: 0.1, width: 0.8, height: 0.7, angle: 0 }, angle, aspect);
+        const out = straightened({ ...FULL_CROP, x: 0.1, y: 0.1, width: 0.8, height: 0.7, angle: 0 }, angle, aspect);
         expect(insideTheFrame(out, aspect)).toBe(true);
       }
     }
@@ -121,7 +121,7 @@ describe("fitted", () => {
 
 describe("moved", () => {
   it("takes the rectangle where the drag went", () => {
-    const crop: Crop = { x: 0.1, y: 0.1, width: 0.4, height: 0.4, angle: 0 };
+    const crop: Crop = { ...FULL_CROP, x: 0.1, y: 0.1, width: 0.4, height: 0.4, angle: 0 };
     const out = moved(crop, 0.2, 0.1, ASPECT);
     expect(out.x).toBeCloseTo(0.3);
     expect(out.y).toBeCloseTo(0.2);
@@ -129,7 +129,7 @@ describe("moved", () => {
   });
 
   it("stops at the edge rather than shrinking", () => {
-    const crop: Crop = { x: 0.1, y: 0.1, width: 0.4, height: 0.4, angle: 0 };
+    const crop: Crop = { ...FULL_CROP, x: 0.1, y: 0.1, width: 0.4, height: 0.4, angle: 0 };
     const out = moved(crop, 5, 5, ASPECT);
     expect(out.width).toBeCloseTo(0.4);
     expect(out.x + out.width).toBeCloseTo(1);
@@ -137,7 +137,7 @@ describe("moved", () => {
 
   it("moves a turned crop along its own axes, not the sensor's", () => {
     // Screen-right on a turned frame is not the frame's x, so y must change too.
-    const crop: Crop = { x: 0.3, y: 0.3, width: 0.3, height: 0.3, angle: 30 };
+    const crop: Crop = { ...FULL_CROP, x: 0.3, y: 0.3, width: 0.3, height: 0.3, angle: 30 };
     const out = moved(crop, 0.1, 0, ASPECT);
     expect(out.y).not.toBeCloseTo(crop.y, 3);
     expect(insideTheFrame(out, ASPECT)).toBe(true);
@@ -145,7 +145,7 @@ describe("moved", () => {
 });
 
 describe("resized", () => {
-  const crop: Crop = { x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 0 };
+  const crop: Crop = { ...FULL_CROP, x: 0.2, y: 0.2, width: 0.6, height: 0.6, angle: 0 };
 
   it("holds the opposite edge still", () => {
     const out = resized(crop, "e", { x: 0.1, y: 0 }, ASPECT, null);
@@ -204,12 +204,12 @@ describe("drawn", () => {
 describe("shapes", () => {
   it("measures a ratio the way the exported file would", () => {
     // Half the width, full height of a 3:2 frame is 3:4 in output pixels, not the normalised numbers.
-    const crop: Crop = { x: 0, y: 0, width: 0.5, height: 1, angle: 0 };
+    const crop: Crop = { ...FULL_CROP, x: 0, y: 0, width: 0.5, height: 1, angle: 0 };
     expect(ratioIn(crop, ASPECT)).toBeCloseTo(0.75);
   });
 
   it("only ever takes when a shape is applied", () => {
-    const crop: Crop = { x: 0.1, y: 0.1, width: 0.8, height: 0.8, angle: 0 };
+    const crop: Crop = { ...FULL_CROP, x: 0.1, y: 0.1, width: 0.8, height: 0.8, angle: 0 };
     const square = withRatio(crop, 1, ASPECT);
     expect(ratioIn(square, ASPECT)).toBeCloseTo(1, 4);
     expect(square.width).toBeLessThanOrEqual(crop.width + 1e-6);

@@ -172,6 +172,17 @@ async developFocusPoint(path: string, settings: DevelopSettings) : Promise<Resul
 }
 },
 /**
+ * The turn and keystones that make the picture's lines plumb and level, with the focal in `settings.crop`.
+ */
+async developAutoUpright(path: string, settings: DevelopSettings) : Promise<Result<Upright, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("develop_auto_upright", { path, settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Pixels are fetched separately over the `develop:` protocol using the returned token.
  */
 async developRender(path: string, settings: DevelopSettings, maxEdge: number, overlay: Overlay, region: RegionArg) : Promise<Result<DevelopFrame, string>> {
@@ -334,7 +345,20 @@ export type Crop = { x: number; y: number; width: number; height: number;
 /**
  * Degrees clockwise; positive straightens a horizon that falls to the right.
  */
-angle: number }
+angle: number; 
+/**
+ * Degrees the camera pointed up (positive) or down; the correction turns it back level.
+ */
+vertical: number; 
+/**
+ * Degrees the camera turned left (positive) or right of square-on; the correction turns it back.
+ */
+horizontal: number; 
+/**
+ * 35 mm-equivalent focal length the two angles turn with. Only matters with a keystone; a wrong
+ * one leaves converging lines parallel but no longer at right angles to each other.
+ */
+focal: number }
 /**
  * Pixels live under `token`, fetched via the `develop:` protocol; the histogram comes inline.
  */
@@ -423,6 +447,10 @@ exposureBias: number | null;
  * Millimetres, as marked on the lens.
  */
 focalLength: number | null; 
+/**
+ * What the lens frames on a full-frame sensor; how wide the picture actually is.
+ */
+focalEquivalent: number | null; 
 /**
  * Decimal degrees; positive = north/east.
  */
@@ -542,6 +570,10 @@ export type TrashOutcome = {
  * Only paths that actually reached the Trash — exactly what the collection may drop.
  */
 removed: string[]; failed: TrashFailure[] }
+/**
+ * What the turn and keystone sliders should read; zeros when the picture gives no evidence.
+ */
+export type Upright = { angle: number; vertical: number; horizontal: number }
 /**
  * Kelvin plus green–magenta tint; higher temperature renders warmer, positive tint more magenta (the Lightroom/Core Image convention).
  */

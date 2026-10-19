@@ -203,6 +203,7 @@ const NO_EXIF = {
   fNumber: null,
   iso: null,
   focalLength: null,
+  focalEquivalent: null,
   gpsLat: null,
   gpsLon: null,
   exposureBias: null,

@@ -111,6 +111,7 @@ export function parseCommonsResponse(response: CommonsResponse): SourceItem[] {
                 iso: null,
                 exposureBias: null,
                 focalLength: null,
+                focalEquivalent: null,
                 gpsLat,
                 gpsLon,
               }

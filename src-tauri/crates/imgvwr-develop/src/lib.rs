@@ -6,18 +6,20 @@ pub mod nr;
 pub mod params;
 pub mod pipeline;
 pub mod presets;
+pub mod upright;
 
 pub use analysis::{
     auto_exposure, composite_clipping, composite_sharpness, focus_candidates, focus_point,
     histogram, resolved_detail, sharpness_map, Histogram,
 };
-pub use crop::Crop;
+pub use crop::{Crop, NORMAL_FOCAL};
 pub use look::LookTuning;
 pub use params::{DevelopParams, DevelopSettings, Overlay};
 pub use presets::{
     baseline, is_camera_default, opening_params, opening_settings, preset, presets, Preset, CAMERA,
 };
 pub use pipeline::{develop, develop_looked, MID_GREY};
+pub use upright::{upright, Upright};
 
 use imgvwr_core::{DecodedImage, Region, RenderRequest, SceneError, SceneImage};
 
@@ -28,8 +30,9 @@ pub struct Developed {
 
 /// Patch size that leaves the crop at `max_edge`: a rotated crop is smaller than the patch
 /// containing it, so asking for the patch at max_edge would quietly lose resolution when straightened.
-fn patch_edge(crop: &crop::Crop, source: Region, max_edge: u32) -> u32 {
-    let crop_longest = crop.width.max(crop.height);
+fn patch_edge(crop: &crop::Crop, source: Region, aspect: f32, max_edge: u32) -> u32 {
+    // In original-frame units, which `source` is measured in.
+    let crop_longest = crop.width.max(crop.height) * crop.corrected_scale(aspect);
     let patch_longest = source.width.max(source.height);
     if crop_longest <= 0.0 {
         return max_edge;
@@ -63,7 +66,7 @@ pub fn render_linear(
     }
     let source = crop.source_region(aspect);
     let patch = scene.render(RenderRequest {
-        max_edge: patch_edge(&crop, source, max_edge),
+        max_edge: patch_edge(&crop, source, aspect, max_edge),
         white_balance: settings.white_balance,
         region: source,
     })?;
