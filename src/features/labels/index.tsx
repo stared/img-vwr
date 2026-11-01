@@ -131,6 +131,7 @@ export function registerLabels(): void {
     Menu: TagMenuItems,
     values: (_entry, data) => data.get(LABELS).tags,
     anyLabel: ANY_TAG,
+    valueLabel: (tag) => tag,
   });
 
   registerSort({

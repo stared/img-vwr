@@ -4,7 +4,7 @@ import { always, registerPanel } from "../../registry/panels";
 import { isAnyPicked, isPicked } from "../../state/query";
 import { useAppStore } from "../../state/store";
 import "./people.css";
-import { CountsRow, PeoplePanel, personLabel } from "./PeoplePanel";
+import { CountsRow, PeoplePanel, personIdLabel, personLabel } from "./PeoplePanel";
 import { followScope, PEOPLE, usePeopleStore } from "./store";
 
 const ANYONE = "anyone";
@@ -44,6 +44,7 @@ export function registerPeople(): void {
     Menu: PersonMenuItems,
     values: (_entry, data) => data.get(PEOPLE),
     anyLabel: ANYONE,
+    valueLabel: personIdLabel,
   });
 
   registerPanel({

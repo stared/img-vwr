@@ -65,6 +65,11 @@ export function personLabel(person: PersonCluster): string {
   return person.name ?? `person ${person.id}`;
 }
 
+/** The same label from the id alone: a named person's id is their name, an unnamed one's an ordinal. */
+export function personIdLabel(id: string): string {
+  return /^\d+$/.test(id) ? `person ${id}` : id;
+}
+
 export function CountsRow({ person }: { person: PersonCluster }) {
   return (
     <span className="person-counts">

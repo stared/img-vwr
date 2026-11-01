@@ -165,6 +165,7 @@ beforeAll(() => {
     Menu: NoMenu,
     values: (_entry, data) => data.get(LABELS).tags,
     anyLabel: "any tag",
+    valueLabel: (tag) => tag,
   });
   registerSort({
     id: "stars",

@@ -499,11 +499,13 @@ export function FilterBar() {
             next: () => negateSelectFilter(filter.field),
           };
           value =
-            filter.values !== "any"
-              ? filter.values.join(", ")
-              : field?.kind === "flags"
+            field?.kind === "flags"
+              ? filter.values === "any"
                 ? field.anyLabel
-                : "any";
+                : filter.values.map(field.valueLabel).join(", ")
+              : filter.values === "any"
+                ? "any"
+                : filter.values.join(", ");
         } else if (field?.kind === "range") {
           const { ops, input } = field.spec;
           const current = field.spec.initial(filter).op;

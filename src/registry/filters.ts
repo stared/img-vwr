@@ -45,6 +45,8 @@ export type FlagsField = FieldBase & {
   values: (entry: FileEntry, data: PhotoData) => string[];
   /** Names the clause matching any value at all ("anyone", "any tag"). */
   anyLabel: string;
+  /** How the chip names a value, when the stored id is not what menus show. */
+  valueLabel: (value: string) => string;
 };
 
 /** Compares a numeric value against a half-open [from, to). */
