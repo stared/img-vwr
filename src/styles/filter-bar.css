@@ -340,3 +340,17 @@
 .filter-menu button:hover .menu-check {
   color: rgba(255, 255, 255, 0.8);
 }
+
+/* A clause chip reads "key op value"; only the operator is a live segment. */
+.chip-lead {
+  padding-right: 0;
+}
+
+.chip-op {
+  padding: 2px 4px;
+  color: var(--text);
+}
+
+.chip-value {
+  padding-left: 0;
+}

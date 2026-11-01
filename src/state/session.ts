@@ -103,7 +103,7 @@ function readFilter(v: unknown): Filter | null {
     return { kind: "name", substring: o.substring };
   }
   if (o.kind === "select" && isString(o.field) && isString(o.value)) {
-    return { kind: "select", field: o.field, value: o.value };
+    return { kind: "select", field: o.field, value: o.value, negate: o.negate === true };
   }
   if (
     o.kind === "range" &&
@@ -112,7 +112,9 @@ function readFilter(v: unknown): Filter | null {
     isNum(o.to) &&
     isString(o.label)
   ) {
-    return { kind: "range", field: o.field, from: o.from, to: o.to, label: o.label };
+    // Labels saved before the operator left them start with it.
+    const label = o.label.replace(/^[≤=≥] /, "");
+    return { kind: "range", field: o.field, from: o.from, to: o.to, label };
   }
   return null;
 }

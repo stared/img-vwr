@@ -5,7 +5,7 @@ import { getFilterField } from "../../registry/filters";
 import type { Dims } from "../../state/derived";
 import { effectiveDims } from "../../state/derived";
 import type { RangeOp } from "../../state/query";
-import { activeFormats, formatChoices } from "../../state/query";
+import { activeFormats, formatChoices, OP_SYMBOL } from "../../state/query";
 import { aspectBuckets, cameraCounts } from "../../state/stats";
 import { useAppStore } from "../../state/store";
 
@@ -104,9 +104,7 @@ export function AspectMenuItems({ close }: { close: () => void }) {
   );
 }
 
-const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
-
-function opHint(input: "date" | "number", op: RangeOp): string {
+export function opHint(input: "date" | "number", op: RangeOp): string {
   if (input === "date") {
     return op === "<=" ? "on or before" : op === "=" ? "on" : "on or after";
   }

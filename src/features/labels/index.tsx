@@ -3,7 +3,7 @@ import type { FileEntry } from "../../ipc";
 import { labelsForPaths, labelsSetStars, labelsToggleTag } from "../../ipc";
 import { registerBadge } from "../../registry/badges";
 import { registerCommand, type CommandContext } from "../../registry/commands";
-import { registerFilterField } from "../../registry/filters";
+import { getFilterField, registerFilterField } from "../../registry/filters";
 import { registerKeybindings } from "../../registry/keybindings";
 import { registerPanel } from "../../registry/panels";
 import { registerSort } from "../../registry/sorts";
@@ -34,37 +34,44 @@ async function tagSelected(tag: string): Promise<void> {
   useLabelsStore.getState().applied(labels);
 }
 
-const STAR_ROWS: { label: string; from: number; to: number }[] = [
-  { label: "★ and up", from: 1, to: Infinity },
-  { label: "★★ and up", from: 2, to: Infinity },
-  { label: "★★★ and up", from: 3, to: Infinity },
-  { label: "★★★★ and up", from: 4, to: Infinity },
-  { label: "★★★★★", from: 5, to: Infinity },
-  { label: "unrated", from: 0, to: 1 },
-];
+const STARS = ["★", "★★", "★★★", "★★★★", "★★★★★"];
+const UNRATED = "unrated";
 
+/** Picks a value; the operator stays as the chip has it (≥ for a new chip). */
 function StarsMenuItems({ close }: { close: () => void }) {
   const query = useAppStore((s) => s.query);
   const setRangeFilter = useAppStore((s) => s.setRangeFilter);
+  const field = getFilterField("stars");
+  if (field?.kind !== "range") return null;
+  const { spec } = field;
   const active = query.filters.find((f) => f.kind === "range" && f.field === "stars");
+  const unrated = active?.kind === "range" && active.label === UNRATED;
+  const current = active?.kind === "range" && !unrated ? spec.initial(active) : null;
+  const pick = (from: number, to: number, label: string) => {
+    setRangeFilter("stars", from, to, label);
+    close();
+  };
   return (
     <>
-      {STAR_ROWS.map((row) => (
-        <button
-          key={row.label}
-          onClick={() => {
-            setRangeFilter("stars", row.from, row.to, row.label);
-            close();
-          }}
-        >
-          {row.label}
-          <span className="menu-check">
-            {active?.kind === "range" && active.from === row.from && active.to === row.to
-              ? "✓"
-              : ""}
-          </span>
-        </button>
-      ))}
+      {STARS.map((label, i) => {
+        const n = i + 1;
+        return (
+          <button
+            key={label}
+            onClick={() => {
+              const b = spec.parse(current?.op ?? ">=", String(n));
+              if (b !== null) pick(b.from, b.to, label);
+            }}
+          >
+            {label}
+            <span className="menu-check">{current?.value === String(n) ? "✓" : ""}</span>
+          </button>
+        );
+      })}
+      <button onClick={() => pick(0, 1, UNRATED)}>
+        {UNRATED}
+        <span className="menu-check">{unrated ? "✓" : ""}</span>
+      </button>
     </>
   );
 }
@@ -104,12 +111,12 @@ export function registerLabels(): void {
     appliesTo: () => true,
     reads: [LABELS],
     Menu: StarsMenuItems,
-    // Unrated maps to 0 stars, mirroring STAR_ROWS' [0, 1) "unrated" row.
+    // Unrated maps to 0 stars, the menu's [0, 1) "unrated" row.
     spec: numberRangeSpec((_entry, data) => data.get(LABELS).stars ?? 0, {
       unit: "★",
       scale: 1,
       integer: true,
-      ops: [">="],
+      ops: [">=", "=", "<="],
     }),
   });
 

@@ -6,12 +6,12 @@ import { chordsForCommand, formatChord } from "../../registry/keybindings";
 import { getSort, sortsFor, type SortChipSegment, type SortDir } from "../../registry/sorts";
 import { allSources } from "../../registry/sources";
 import { allViews, getView } from "../../registry/views";
-import type { RangeOp, Sort } from "../../state/query";
-import { activeFormats, formatGroupLabel, nameFilterText } from "../../state/query";
+import type { Sort } from "../../state/query";
+import { activeFormats, formatGroupLabel, nameFilterText, OP_SYMBOL } from "../../state/query";
 import type { Scope } from "../../state/store";
 import { useAppStore, useVisibleEntries } from "../../state/store";
 import { ZoomBar } from "../viewer/ZoomBar";
-import { FormatMenuItems } from "./filterMenus";
+import { FormatMenuItems, opHint } from "./filterMenus";
 
 /** A parameterized sort whose parameter is unset contributes one "collect" row that gathers it. */
 type SortRow =
@@ -41,8 +41,6 @@ function sortOptions(scope: Scope | null): SortRow[] {
   });
 }
 
-const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
-
 function fieldHint(field: FilterField): string {
   switch (field.kind) {
     case "action":
@@ -57,31 +55,51 @@ function fieldHint(field: FilterField): string {
   }
 }
 
+/** A clause's operator, shown in place of the colon; clicking it steps to the next. */
+interface ChipOp {
+  text: string;
+  title: string;
+  next: () => void;
+}
+
 function EditableChip({
   chipKey,
   value,
   title,
+  op,
   onRemove,
   renderMenu,
 }: {
   chipKey: string;
   value: string;
   title?: string;
+  op?: ChipOp;
   onRemove?: () => void;
   renderMenu: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const bodyTitle = title ?? `edit ${chipKey} filter`;
   return (
     <div className="chip-wrap">
       <span className={`chip chip-edit${onRemove ? " chip-removable" : ""}`}>
-        <button
-          className="chip-body"
-          title={title ?? `edit ${chipKey} filter`}
-          onClick={() => setOpen(!open)}
-        >
-          <span className="chip-key">{chipKey}:</span> {value}
-        </button>
+        {op === undefined ? (
+          <button className="chip-body" title={bodyTitle} onClick={() => setOpen(!open)}>
+            <span className="chip-key">{chipKey}:</span> {value}
+          </button>
+        ) : (
+          <>
+            <button className="chip-body chip-lead" title={bodyTitle} onClick={() => setOpen(!open)}>
+              <span className="chip-key">{chipKey}</span>
+            </button>
+            <button className="chip-op chip-seg-live" title={op.title} onClick={op.next}>
+              {op.text}
+            </button>
+            <button className="chip-body chip-value" title={bodyTitle} onClick={() => setOpen(!open)}>
+              {value}
+            </button>
+          </>
+        )}
         {onRemove && (
           <button className="chip-x" title={`remove ${chipKey} filter`} onClick={onRemove}>
             ×
@@ -407,6 +425,8 @@ export function FilterBar() {
   const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
+  const negateSelectFilter = useAppStore((s) => s.negateSelectFilter);
+  const setRangeOp = useAppStore((s) => s.setRangeOp);
   const galleryLayout = useAppStore((s) => s.galleryLayout);
   const setGalleryLayout = useAppStore((s) => s.setGalleryLayout);
   const total = useAppStore((s) => s.entries.length);
@@ -466,11 +486,29 @@ export function FilterBar() {
           return null; // name and format have dedicated chips above
         }
         const field = getFilterField(filter.field);
+        let op: ChipOp | undefined;
+        if (filter.kind === "select") {
+          op = {
+            text: filter.negate ? "≠" : "=",
+            title: filter.negate ? "excluding — click to require" : "click to exclude",
+            next: () => negateSelectFilter(filter.field),
+          };
+        } else if (field?.kind === "range") {
+          const { ops, input } = field.spec;
+          const current = field.spec.initial(filter).op;
+          const following = ops[(ops.indexOf(current) + 1) % ops.length] ?? current;
+          op = {
+            text: OP_SYMBOL[current],
+            title: `${opHint(input, current)} — click for ${opHint(input, following)}`,
+            next: () => setRangeOp(filter.field, following),
+          };
+        }
         return (
           <EditableChip
             key={`${filter.kind}-${filter.field}`}
             chipKey={filter.field}
             value={filter.kind === "select" ? filter.value : filter.label}
+            op={op}
             onRemove={() =>
               filter.kind === "select"
                 ? toggleSelectFilter(filter.field, filter.value)

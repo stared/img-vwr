@@ -19,7 +19,9 @@ export type Filter =
   | { kind: "format"; formats: string[] } // any-of, by format group id
   | { kind: "name"; substring: string }
   // Keyed by a registered filter field's id; the predicates live in the registry.
-  | { kind: "select"; field: string; value: string }
+  // `negate`: the clause excludes the value instead of requiring it.
+  | { kind: "select"; field: string; value: string; negate: boolean }
+  // `label` names the value only; the operator is read back from the bounds.
   | { kind: "range"; field: string; from: number; to: number; label: string };
 
 export interface Query {
@@ -59,8 +61,13 @@ function matches(entry: FileEntry, filter: Filter, ctx: PhotoData): boolean {
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
       const field = getFilterField(filter.field);
-      if (field?.kind === "select") return field.value(entry, ctx) === filter.value;
-      if (field?.kind === "flags") return field.values(entry, ctx).includes(filter.value);
+      if (field?.kind === "select") {
+        const v = field.value(entry, ctx);
+        return v !== null && (v === filter.value) !== filter.negate;
+      }
+      if (field?.kind === "flags") {
+        return field.values(entry, ctx).includes(filter.value) !== filter.negate;
+      }
       return false;
     }
     case "range": {
@@ -166,7 +173,10 @@ export function withSelectToggled(query: Query, field: string, value: string): Q
     (f) => f.kind === "select" && f.field === field && f.value === value,
   );
   const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
-  return { ...query, filters: active ? others : [...others, { kind: "select", field, value }] };
+  return {
+    ...query,
+    filters: active ? others : [...others, { kind: "select", field, value, negate: false }],
+  };
 }
 
 /** Range filters are keyed by field — one taken-range, one size-range, etc. */
@@ -189,9 +199,35 @@ export function withRangeToggled(
 
 /* Set variants — editing an existing chip replaces its clause, never clears. */
 
+/** Picking another value keeps the clause's operator. */
 export function withSelectSet(query: Query, field: string, value: string): Query {
+  const current = query.filters.find((f) => f.kind === "select" && f.field === field);
+  const negate = current?.kind === "select" && current.negate;
   const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
-  return { ...query, filters: [...others, { kind: "select", field, value }] };
+  return { ...query, filters: [...others, { kind: "select", field, value, negate }] };
+}
+
+export function withSelectNegated(query: Query, field: string): Query {
+  return {
+    ...query,
+    filters: query.filters.map((f) =>
+      f.kind === "select" && f.field === field ? { ...f, negate: !f.negate } : f,
+    ),
+  };
+}
+
+/** The same value under another operator: ≥ 3 → = 3. */
+export function withRangeOp(query: Query, field: string, op: RangeOp): Query {
+  const spec = getFilterField(field);
+  if (spec?.kind !== "range") return query;
+  return {
+    ...query,
+    filters: query.filters.map((f) => {
+      if (f.kind !== "range" || f.field !== field) return f;
+      const bounds = spec.spec.parse(op, spec.spec.initial(f).value);
+      return bounds === null ? f : { ...f, from: bounds.from, to: bounds.to };
+    }),
+  };
 }
 
 export function withRangeSet(
@@ -209,7 +245,7 @@ export type RangeOp = "<=" | "=" | ">=";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
+export const OP_SYMBOL: Record<RangeOp, string> = { "<=": "≤", "=": "=", ">=": "≥" };
 
 /** Local ms → "YYYY-MM-DD", for prefilling date inputs. */
 export function dateInputValue(ms: number): string {
@@ -232,7 +268,7 @@ export function dateRangeSpec(value: RangeSpec["value"]): RangeSpec {
       if (!m) return null;
       const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
       if (!Number.isFinite(day)) return null;
-      const label = `${OP_SYMBOL[op]} ${raw.trim()}`;
+      const label = raw.trim();
       if (op === ">=") return { from: day, to: Infinity, label };
       if (op === "<=") return { from: -Infinity, to: day + DAY_MS, label };
       return { from: day, to: day + DAY_MS, label };
@@ -266,7 +302,7 @@ export function numberRangeSpec(
       const units = fromInput(raw);
       if (units === null) return null;
       const stored = units * scale;
-      const label = `${OP_SYMBOL[op]} ${units} ${unit}`;
+      const label = `${units} ${unit}`;
       if (op === ">=") return { from: stored, to: Infinity, label };
       if (op === "<=") return { from: -Infinity, to: stored + 1, label };
       return { from: stored, to: stored + Math.max(scale, 1), label };

@@ -19,8 +19,10 @@ import {
   withNameFilter,
   withoutFilters,
   withoutFormats,
+  withRangeOp,
   withRangeSet,
   withRangeToggled,
+  withSelectNegated,
   withSelectSet,
   withSelectToggled,
   withSort,
@@ -150,7 +152,7 @@ beforeAll(() => {
       unit: "★",
       scale: 1,
       integer: true,
-      ops: [">="],
+      ops: [">=", "=", "<="],
     }),
   });
   registerFilterField({
@@ -385,6 +387,29 @@ describe("applyQuery", () => {
     expect(applyQuery(ENTRIES, tagged, data())).toEqual([]);
   });
 
+  it("a negated tag clause keeps everything without the tag, untagged included", () => {
+    const labels = { "/p/beach2.jpg": { stars: null, tags: ["sea"] } };
+    const notSea = withSelectNegated(withSelectToggled(defaultQuery, "tag", "sea"), "tag");
+    const names = applyQuery(ENTRIES, notSea, data({ labels })).map((e) => e.name);
+    expect(names).not.toContain("beach2.jpg");
+    expect(names).toHaveLength(ENTRIES.length - 1);
+    // Picking another value keeps the operator.
+    expect(withSelectSet(notSea, "tag", "pair").filters).toEqual([
+      { kind: "select", field: "tag", value: "pair", negate: true },
+    ]);
+  });
+
+  it("changing a range operator keeps its value and label", () => {
+    const atLeast3 = withRangeToggled(defaultQuery, "stars", 3, Infinity, "★★★");
+    expect(withRangeOp(atLeast3, "stars", "=").filters).toEqual([
+      { kind: "range", field: "stars", from: 3, to: 4, label: "★★★" },
+    ]);
+    // At most 3 includes unrated, which reads as zero stars.
+    expect(withRangeOp(atLeast3, "stars", "<=").filters).toEqual([
+      { kind: "range", field: "stars", from: -Infinity, to: 4, label: "★★★" },
+    ]);
+  });
+
   it("stars sort ranks rated images first, unrated last in name order", () => {
     const labels = {
       "/p/Alps.png": { stars: 2, tags: [] },
@@ -449,10 +474,10 @@ describe("query editing", () => {
 
   it("value toggles set, switch, and clear their clause", () => {
     const one = withSelectToggled(defaultQuery, "camera", "A");
-    expect(one.filters).toEqual([{ kind: "select", field: "camera", value: "A" }]);
+    expect(one.filters).toEqual([{ kind: "select", field: "camera", value: "A", negate: false }]);
     // Another value switches the clause rather than stacking a second one.
     const switched = withSelectToggled(one, "camera", "B");
-    expect(switched.filters).toEqual([{ kind: "select", field: "camera", value: "B" }]);
+    expect(switched.filters).toEqual([{ kind: "select", field: "camera", value: "B", negate: false }]);
     // The active value clears it.
     expect(withSelectToggled(switched, "camera", "B").filters).toEqual([]);
     // Clauses on different select fields stack.
@@ -474,10 +499,10 @@ describe("query editing", () => {
   it("set variants replace their clause without ever clearing", () => {
     const one = withSelectSet(defaultQuery, "camera", "A");
     expect(withSelectSet(one, "camera", "A").filters).toEqual([
-      { kind: "select", field: "camera", value: "A" },
+      { kind: "select", field: "camera", value: "A", negate: false },
     ]);
     expect(withSelectSet(one, "camera", "B").filters).toEqual([
-      { kind: "select", field: "camera", value: "B" },
+      { kind: "select", field: "camera", value: "B", negate: false },
     ]);
     const sized = withRangeSet(defaultQuery, "size", 0, 100, "small");
     const resized = withRangeSet(sized, "size", 0, 100, "small");
@@ -500,17 +525,17 @@ describe("rangeFromInput", () => {
     expect(rangeFromInput("taken", ">=", "2024-03-05")).toEqual({
       from: day,
       to: Infinity,
-      label: "≥ 2024-03-05",
+      label: "2024-03-05",
     });
     expect(rangeFromInput("taken", "<=", "2024-03-05")).toEqual({
       from: -Infinity,
       to: next,
-      label: "≤ 2024-03-05",
+      label: "2024-03-05",
     });
     expect(rangeFromInput("modified", "=", "2024-03-05")).toEqual({
       from: day,
       to: next,
-      label: "= 2024-03-05",
+      label: "2024-03-05",
     });
   });
 
@@ -518,12 +543,12 @@ describe("rangeFromInput", () => {
     expect(rangeFromInput("size", ">=", "2.5")).toEqual({
       from: 2_500_000,
       to: Infinity,
-      label: "≥ 2.5 MB",
+      label: "2.5 MB",
     });
     expect(rangeFromInput("edge", "=", "4032")).toEqual({
       from: 4032,
       to: 4033,
-      label: "= 4032 px",
+      label: "4032 px",
     });
     expect(rangeFromInput("edge", "<=", "1000")?.to).toBe(1001);
   });

@@ -31,7 +31,7 @@ import {
   type Scope,
 } from "./collection";
 import { DEFAULT_OPTIONS, type ExportOptions } from "./export";
-import type { Query, Sort } from "./query";
+import type { Query, RangeOp, Sort } from "./query";
 import { stackKeyOf, type StackLead } from "./stacks";
 import {
   movedSelection,
@@ -47,6 +47,8 @@ import {
   defaultQuery,
   withFormatToggled,
   withNameFilter,
+  withRangeOp,
+  withSelectNegated,
   withoutFilters,
   withoutFormats,
   withRangeSet,
@@ -187,6 +189,8 @@ interface AppActions {
   toggleRangeFilter: (field: string, from: number, to: number, label: string) => void;
   setSelectFilter: (field: string, value: string) => void;
   setRangeFilter: (field: string, from: number, to: number, label: string) => void;
+  negateSelectFilter: (field: string) => void;
+  setRangeOp: (field: string, op: RangeOp) => void;
   setNameFilter: (substring: string) => void;
   clearFilters: () => void;
   setFindOpen: (open: boolean) => void;
@@ -578,6 +582,10 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
 
   setRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeSet(get().query, field, from, to, label))),
+
+  negateSelectFilter: (field) => set(withQuery(get(), withSelectNegated(get().query, field))),
+
+  setRangeOp: (field, op) => set(withQuery(get(), withRangeOp(get().query, field, op))),
 
   setNameFilter: (substring) => set(withQuery(get(), withNameFilter(get().query, substring))),
 
