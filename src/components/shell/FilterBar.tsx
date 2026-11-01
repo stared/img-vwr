@@ -489,10 +489,10 @@ export function FilterBar() {
         let op: ChipOp | undefined;
         let value = filter.kind === "range" ? filter.label : "";
         if (filter.kind === "select") {
-          // A photo has many tags or people but one camera: "includes" vs "is".
+          // A photo has many tags or people but one camera: "a person in it ∈ {…}" vs "its camera =".
           const many = field?.kind === "flags";
-          const [yes, no] = many ? ["∋", "∌"] : ["=", "≠"];
-          const [says, unsays] = many ? ["includes", "does not include"] : ["is", "is not"];
+          const [yes, no] = many ? ["∈", "∉"] : ["=", "≠"];
+          const [says, unsays] = many ? ["one of", "none of"] : ["is", "is not"];
           op = {
             text: filter.negate ? no : yes,
             title: filter.negate ? `${unsays} — click for ${says}` : `${says} — click for ${unsays}`,
