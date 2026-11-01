@@ -90,6 +90,7 @@ function TagToggles({ entry }: { entry: FileEntry }) {
         className="tag-new"
         value={draft}
         placeholder="+ tag"
+        autoComplete="off"
         spellCheck={false}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
