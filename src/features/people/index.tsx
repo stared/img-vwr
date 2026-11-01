@@ -1,34 +1,33 @@
 import { events } from "../../ipc";
 import { registerFilterField } from "../../registry/filters";
 import { always, registerPanel } from "../../registry/panels";
+import { isAnyPicked, isPicked } from "../../state/query";
 import { useAppStore } from "../../state/store";
 import "./people.css";
 import { CountsRow, PeoplePanel, personLabel } from "./PeoplePanel";
 import { followScope, PEOPLE, usePeopleStore } from "./store";
 
-function PersonMenuItems({ close }: { close: () => void }) {
+const ANYONE = "anyone";
+
+function PersonMenuItems() {
   const people = usePeopleStore((s) => s.people);
   const query = useAppStore((s) => s.query);
-  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
-  const active = query.filters.find((f) => f.kind === "select" && f.field === "person");
+  const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
+  const toggleSelectAny = useAppStore((s) => s.toggleSelectAny);
   if (people === null || people.length === 0) {
     return <span className="menu-empty">no people found yet; see the People panel</span>;
   }
   return (
     <>
+      <button onClick={() => toggleSelectAny("person")}>
+        {ANYONE}
+        <span className="menu-check">{isAnyPicked(query, "person") ? "✓" : ""}</span>
+      </button>
       {people.map((person) => (
-        <button
-          key={person.id}
-          onClick={() => {
-            setSelectFilter("person", person.id);
-            close();
-          }}
-        >
+        <button key={person.id} onClick={() => toggleSelectFilter("person", person.id)}>
           {personLabel(person)}
           <CountsRow person={person} />
-          <span className="menu-check">
-            {active?.kind === "select" && active.value === person.id ? "✓" : ""}
-          </span>
+          <span className="menu-check">{isPicked(query, "person", person.id) ? "✓" : ""}</span>
         </button>
       ))}
     </>
@@ -44,6 +43,7 @@ export function registerPeople(): void {
     reads: [PEOPLE],
     Menu: PersonMenuItems,
     values: (_entry, data) => data.get(PEOPLE),
+    anyLabel: ANYONE,
   });
 
   registerPanel({

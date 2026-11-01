@@ -76,7 +76,9 @@ function StarsMenuItems({ close }: { close: () => void }) {
   );
 }
 
-function TagMenuItems({ close }: { close: () => void }) {
+const ANY_TAG = "any tag";
+
+function TagMenuItems() {
   const entries = useAppStore((s) => s.entries);
   const labels = useLabelsStore((s) => s.labels);
   const counts = new Map<string, number>();
@@ -97,7 +99,7 @@ function TagMenuItems({ close }: { close: () => void }) {
       value: tag,
     }));
   return (
-    <SelectMenuItems field="tag" buckets={buckets} empty="nothing tagged (yet)" close={close} />
+    <SelectMenuItems field="tag" anyLabel={ANY_TAG} buckets={buckets} empty="nothing tagged (yet)" />
   );
 }
 
@@ -128,6 +130,7 @@ export function registerLabels(): void {
     reads: [LABELS],
     Menu: TagMenuItems,
     values: (_entry, data) => data.get(LABELS).tags,
+    anyLabel: ANY_TAG,
   });
 
   registerSort({

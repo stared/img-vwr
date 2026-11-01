@@ -5,7 +5,7 @@ import { getFilterField } from "../../registry/filters";
 import type { Dims } from "../../state/derived";
 import { effectiveDims } from "../../state/derived";
 import type { RangeOp } from "../../state/query";
-import { activeFormats, formatChoices, OP_SYMBOL } from "../../state/query";
+import { activeFormats, formatChoices, isAnyPicked, isPicked, OP_SYMBOL } from "../../state/query";
 import { aspectBuckets, cameraCounts } from "../../state/stats";
 import { useAppStore } from "../../state/store";
 
@@ -41,54 +41,58 @@ function useCollectionMetas(): ImageMeta[] {
   );
 }
 
+/** Rows toggle, so one clause can hold several values; `anyLabel` adds the any-value row on top. */
 export function SelectMenuItems({
   field,
+  anyLabel,
   buckets,
   empty,
-  close,
 }: {
   field: string;
+  anyLabel: string | null;
   buckets: { label: ReactNode; value: string }[];
   empty: string;
-  close: () => void;
 }) {
   const query = useAppStore((s) => s.query);
-  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
-  const active = query.filters.find((f) => f.kind === "select" && f.field === field);
+  const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
+  const toggleSelectAny = useAppStore((s) => s.toggleSelectAny);
   if (buckets.length === 0) {
     return <span className="menu-empty">{empty}</span>;
   }
   return (
     <>
+      {anyLabel !== null && (
+        <button onClick={() => toggleSelectAny(field)}>
+          {anyLabel}
+          <span className="menu-check">{isAnyPicked(query, field) ? "✓" : ""}</span>
+        </button>
+      )}
       {buckets.map((b) => (
-        <button
-          key={b.value}
-          onClick={() => {
-            setSelectFilter(field, b.value);
-            close();
-          }}
-        >
+        <button key={b.value} onClick={() => toggleSelectFilter(field, b.value)}>
           {b.label}
-          <span className="menu-check">
-            {active?.kind === "select" && active.value === b.value ? "✓" : ""}
-          </span>
+          <span className="menu-check">{isPicked(query, field, b.value) ? "✓" : ""}</span>
         </button>
       ))}
     </>
   );
 }
 
-export function CameraMenuItems({ close }: { close: () => void }) {
+export function CameraMenuItems() {
   const metas = useCollectionMetas();
   const buckets = cameraCounts(metas, 12).flatMap((b) =>
     b.value !== undefined ? [{ label: b.label, value: b.value }] : [],
   );
   return (
-    <SelectMenuItems field="camera" buckets={buckets} empty="no camera tags (yet)" close={close} />
+    <SelectMenuItems
+      field="camera"
+      anyLabel={null}
+      buckets={buckets}
+      empty="no camera tags (yet)"
+    />
   );
 }
 
-export function AspectMenuItems({ close }: { close: () => void }) {
+export function AspectMenuItems() {
   const metas = useCollectionMetas();
   const dims = metas.map(effectiveDims).filter((d): d is Dims => d !== null);
   const buckets = aspectBuckets(dims).flatMap((b) =>
@@ -97,9 +101,9 @@ export function AspectMenuItems({ close }: { close: () => void }) {
   return (
     <SelectMenuItems
       field="aspect"
+      anyLabel={null}
       buckets={buckets}
       empty="no dimensions read (yet)"
-      close={close}
     />
   );
 }

@@ -102,8 +102,14 @@ function readFilter(v: unknown): Filter | null {
   if (o.kind === "name" && isString(o.substring)) {
     return { kind: "name", substring: o.substring };
   }
-  if (o.kind === "select" && isString(o.field) && isString(o.value)) {
-    return { kind: "select", field: o.field, value: o.value, negate: o.negate === true };
+  if (o.kind === "select" && isString(o.field)) {
+    const negate = o.negate === true;
+    if (o.values === "any") return { kind: "select", field: o.field, values: "any", negate };
+    if (Array.isArray(o.values) && o.values.every(isString)) {
+      return { kind: "select", field: o.field, values: o.values, negate };
+    }
+    // Sessions saved before clauses held several values.
+    if (isString(o.value)) return { kind: "select", field: o.field, values: [o.value], negate };
   }
   if (
     o.kind === "range" &&

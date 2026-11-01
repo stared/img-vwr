@@ -53,7 +53,9 @@ import {
   withoutFormats,
   withRangeSet,
   withRangeToggled,
-  withSelectSet,
+  withSelectAnyToggled,
+  withSelectCleared,
+  withSelectRenamed,
   withSelectToggled,
   withSort,
 } from "./query";
@@ -187,7 +189,9 @@ interface AppActions {
   toggleFormatFilter: (group: string) => void;
   toggleSelectFilter: (field: string, value: string) => void;
   toggleRangeFilter: (field: string, from: number, to: number, label: string) => void;
-  setSelectFilter: (field: string, value: string) => void;
+  toggleSelectAny: (field: string) => void;
+  renameSelectValue: (field: string, from: string, to: string) => void;
+  clearSelectFilter: (field: string) => void;
   setRangeFilter: (field: string, from: number, to: number, label: string) => void;
   negateSelectFilter: (field: string) => void;
   setRangeOp: (field: string, op: RangeOp) => void;
@@ -578,7 +582,12 @@ export const useAppStore = create<AppState & AppActions>()((set, get) => ({
   toggleRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeToggled(get().query, field, from, to, label))),
 
-  setSelectFilter: (field, value) => set(withQuery(get(), withSelectSet(get().query, field, value))),
+  toggleSelectAny: (field) => set(withQuery(get(), withSelectAnyToggled(get().query, field))),
+
+  renameSelectValue: (field, from, to) =>
+    set(withQuery(get(), withSelectRenamed(get().query, field, from, to))),
+
+  clearSelectFilter: (field) => set(withQuery(get(), withSelectCleared(get().query, field))),
 
   setRangeFilter: (field, from, to, label) =>
     set(withQuery(get(), withRangeSet(get().query, field, from, to, label))),

@@ -423,7 +423,7 @@ export function FilterBar() {
   const setNameFilter = useAppStore((s) => s.setNameFilter);
   const setFindOpen = useAppStore((s) => s.setFindOpen);
   const clearFormatFilter = useAppStore((s) => s.clearFormatFilter);
-  const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
+  const clearSelectFilter = useAppStore((s) => s.clearSelectFilter);
   const toggleRangeFilter = useAppStore((s) => s.toggleRangeFilter);
   const negateSelectFilter = useAppStore((s) => s.negateSelectFilter);
   const setRangeOp = useAppStore((s) => s.setRangeOp);
@@ -487,12 +487,23 @@ export function FilterBar() {
         }
         const field = getFilterField(filter.field);
         let op: ChipOp | undefined;
+        let value = filter.kind === "range" ? filter.label : "";
         if (filter.kind === "select") {
+          // A photo has many tags or people but one camera: "includes" vs "is".
+          const many = field?.kind === "flags";
+          const [yes, no] = many ? ["∋", "∌"] : ["=", "≠"];
+          const [says, unsays] = many ? ["includes", "does not include"] : ["is", "is not"];
           op = {
-            text: filter.negate ? "≠" : "=",
-            title: filter.negate ? "excluding — click to require" : "click to exclude",
+            text: filter.negate ? no : yes,
+            title: filter.negate ? `${unsays} — click for ${says}` : `${says} — click for ${unsays}`,
             next: () => negateSelectFilter(filter.field),
           };
+          value =
+            filter.values !== "any"
+              ? filter.values.join(", ")
+              : field?.kind === "flags"
+                ? field.anyLabel
+                : "any";
         } else if (field?.kind === "range") {
           const { ops, input } = field.spec;
           const current = field.spec.initial(filter).op;
@@ -507,11 +518,11 @@ export function FilterBar() {
           <EditableChip
             key={`${filter.kind}-${filter.field}`}
             chipKey={filter.field}
-            value={filter.kind === "select" ? filter.value : filter.label}
+            value={value}
             op={op}
             onRemove={() =>
               filter.kind === "select"
-                ? toggleSelectFilter(filter.field, filter.value)
+                ? clearSelectFilter(filter.field)
                 : toggleRangeFilter(filter.field, filter.from, filter.to, filter.label)
             }
             renderMenu={(close) =>

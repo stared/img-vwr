@@ -36,8 +36,18 @@ export function LabelsBadge({ path, place }: { path: string; place: BadgePlace }
       </span>
     );
   }
+  // A dot every shown photo must carry says nothing: the clause requires exactly that one tag.
   const tags = all.filter(
-    (t) => !filtered.some((f) => f.kind === "select" && f.field === "tag" && f.value === t),
+    (t) =>
+      !filtered.some(
+        (f) =>
+          f.kind === "select" &&
+          f.field === "tag" &&
+          !f.negate &&
+          Array.isArray(f.values) &&
+          f.values.length === 1 &&
+          f.values[0] === t,
+      ),
   );
   if (stars === null && tags.length === 0) return null;
   return (

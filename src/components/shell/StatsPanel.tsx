@@ -4,7 +4,7 @@ import type { ImageMeta } from "../../ipc";
 import { api } from "../../ipc";
 import type { Dims } from "../../state/derived";
 import { effectiveDims, takenMs } from "../../state/derived";
-import { activeFormats } from "../../state/query";
+import { activeFormats, isPicked } from "../../state/query";
 import type { Bucket, NumericHistogram } from "../../state/stats";
 import {
   aspectBuckets,
@@ -231,7 +231,7 @@ export function StatsPanel() {
     );
   const formatActive = (b: Bucket) => b.value !== undefined && activeFormats(query).includes(b.value);
   const selectActive = (field: string) => (b: Bucket) =>
-    query.filters.some((f) => f.kind === "select" && f.field === field && f.value === b.value);
+    b.value !== undefined && isPicked(query, field, b.value);
   const selectValue = (field: string) => (b: Bucket) => {
     if (b.value !== undefined) toggleSelectFilter(field, b.value);
   };

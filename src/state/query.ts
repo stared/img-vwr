@@ -19,10 +19,12 @@ export type Filter =
   | { kind: "format"; formats: string[] } // any-of, by format group id
   | { kind: "name"; substring: string }
   // Keyed by a registered filter field's id; the predicates live in the registry.
-  // `negate`: the clause excludes the value instead of requiring it.
-  | { kind: "select"; field: string; value: string; negate: boolean }
+  // Matches when any of `values` is present ("any": some value at all); `negate` inverts.
+  | { kind: "select"; field: string; values: SelectValues; negate: boolean }
   // `label` names the value only; the operator is read back from the bounds.
   | { kind: "range"; field: string; from: number; to: number; label: string };
+
+export type SelectValues = "any" | string[];
 
 export interface Query {
   filters: Filter[];
@@ -61,12 +63,15 @@ function matches(entry: FileEntry, filter: Filter, ctx: PhotoData): boolean {
       return entry.name.toLowerCase().includes(filter.substring.toLowerCase());
     case "select": {
       const field = getFilterField(filter.field);
+      const { values } = filter;
       if (field?.kind === "select") {
         const v = field.value(entry, ctx);
-        return v !== null && (v === filter.value) !== filter.negate;
+        return v !== null && (values === "any" || values.includes(v)) !== filter.negate;
       }
       if (field?.kind === "flags") {
-        return field.values(entry, ctx).includes(filter.value) !== filter.negate;
+        const has = field.values(entry, ctx);
+        const hit = values === "any" ? has.length > 0 : has.some((v) => values.includes(v));
+        return hit !== filter.negate;
       }
       return false;
     }
@@ -167,15 +172,61 @@ export function withNameFilter(query: Query, substring: string): Query {
   };
 }
 
-/** One clause per field: clicking the active value clears it, another value switches to it. */
-export function withSelectToggled(query: Query, field: string, value: string): Query {
-  const active = query.filters.some(
-    (f) => f.kind === "select" && f.field === field && f.value === value,
-  );
-  const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
+function selectClause(query: Query, field: string) {
+  const f = query.filters.find((f) => f.kind === "select" && f.field === field);
+  return f?.kind === "select" ? f : undefined;
+}
+
+export function isPicked(query: Query, field: string, value: string): boolean {
+  const values = selectClause(query, field)?.values;
+  return Array.isArray(values) && values.includes(value);
+}
+
+export function isAnyPicked(query: Query, field: string): boolean {
+  return selectClause(query, field)?.values === "any";
+}
+
+/** One clause per field, edited in place; no values left drops it. */
+function withSelectValues(query: Query, field: string, values: SelectValues | null): Query {
+  const current = selectClause(query, field);
+  if (values === null || values.length === 0) {
+    return withSelectCleared(query, field);
+  }
+  if (current === undefined) {
+    return { ...query, filters: [...query.filters, { kind: "select", field, values, negate: false }] };
+  }
   return {
     ...query,
-    filters: active ? others : [...others, { kind: "select", field, value, negate: false }],
+    filters: query.filters.map((f) => (f === current ? { ...current, values } : f)),
+  };
+}
+
+export function withSelectToggled(query: Query, field: string, value: string): Query {
+  const values = selectClause(query, field)?.values ?? [];
+  if (values === "any") return withSelectValues(query, field, [value]);
+  return withSelectValues(
+    query,
+    field,
+    values.includes(value) ? values.filter((v) => v !== value) : [...values, value],
+  );
+}
+
+/** The any-value row replaces a list of values, and clears itself. */
+export function withSelectAnyToggled(query: Query, field: string): Query {
+  return withSelectValues(query, field, isAnyPicked(query, field) ? null : "any");
+}
+
+/** A value that changed its name (a person named) stays picked under the new one. */
+export function withSelectRenamed(query: Query, field: string, from: string, to: string): Query {
+  const values = selectClause(query, field)?.values;
+  if (values === undefined || values === "any") return query;
+  return withSelectValues(query, field, values.map((v) => (v === from ? to : v)));
+}
+
+export function withSelectCleared(query: Query, field: string): Query {
+  return {
+    ...query,
+    filters: query.filters.filter((f) => !(f.kind === "select" && f.field === field)),
   };
 }
 
@@ -198,14 +249,6 @@ export function withRangeToggled(
 }
 
 /* Set variants — editing an existing chip replaces its clause, never clears. */
-
-/** Picking another value keeps the clause's operator. */
-export function withSelectSet(query: Query, field: string, value: string): Query {
-  const current = query.filters.find((f) => f.kind === "select" && f.field === field);
-  const negate = current?.kind === "select" && current.negate;
-  const others = query.filters.filter((f) => !(f.kind === "select" && f.field === field));
-  return { ...query, filters: [...others, { kind: "select", field, value, negate }] };
-}
 
 export function withSelectNegated(query: Query, field: string): Query {
   return {

@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { api, type PersonCluster } from "../../ipc";
 import { storeChannel } from "../../registry/channels";
-import { isRawEntry } from "../../state/stacks";
+import { isRawEntry, stackKeyOf, stackKeyOfPath } from "../../state/stacks";
 import { useAppStore } from "../../state/store";
 
 /** Same-person cosine threshold in the ArcFace identity space, not the Similarity panel's model. */
@@ -39,6 +39,12 @@ export const usePeopleStore = create<PeopleState>()((set) => ({
       for (const path of [...cluster.photos, ...cluster.implied]) {
         (byPath[path] ??= []).push(cluster.id);
       }
+    }
+    // Raws are never scanned (see localJpegPaths); one has its sibling JPEG's people.
+    const byStack = new Map(Object.entries(byPath).map(([path, ids]) => [stackKeyOfPath(path), ids]));
+    for (const entry of useAppStore.getState().entries) {
+      const ids = isRawEntry(entry) ? byStack.get(stackKeyOf(entry)) : undefined;
+      if (ids !== undefined) byPath[entry.path] = ids;
     }
     set({ people, byPath });
   },

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api, fileUrl, type PersonCluster } from "../../ipc";
+import { isPicked } from "../../state/query";
 import { useAppStore } from "../../state/store";
 import { localJpegPaths, PERSON_MERGE, refreshPeople, usePeopleStore } from "./store";
 
@@ -86,7 +87,7 @@ export function PeoplePanel() {
   const epoch = useAppStore((s) => s.epoch);
   const query = useAppStore((s) => s.query);
   const toggleSelectFilter = useAppStore((s) => s.toggleSelectFilter);
-  const setSelectFilter = useAppStore((s) => s.setSelectFilter);
+  const renameSelectValue = useAppStore((s) => s.renameSelectValue);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
 
@@ -126,9 +127,6 @@ export function PeoplePanel() {
   }
 
   const indexing = progress !== null && progress.done < progress.total;
-  const active = new Set(
-    query.filters.flatMap((f) => (f.kind === "select" && f.field === "person" ? [f.value] : [])),
-  );
 
   async function commitName(person: PersonCluster): Promise<void> {
     const name = draft.trim();
@@ -136,9 +134,9 @@ export function PeoplePanel() {
     if (name === (person.name ?? "")) return;
     try {
       await api.facesRename(person.id, name, PERSON_MERGE);
-      if (active.has(person.id)) {
+      if (isPicked(query, "person", person.id)) {
         // Renaming changes the cluster id; re-point an active filter, or drop it on un-name.
-        if (name !== "") setSelectFilter("person", name);
+        if (name !== "") renameSelectValue("person", person.id, name);
         else toggleSelectFilter("person", person.id);
       }
       await refreshPeople();
@@ -185,7 +183,7 @@ export function PeoplePanel() {
             ) : (
               <button
                 key={person.id}
-                className={`person-chip ${active.has(person.id) ? "active" : ""}`}
+                className={`person-chip ${isPicked(query, "person", person.id) ? "active" : ""}`}
                 onClick={() => toggleSelectFilter("person", person.id)}
               >
                 <img src={fileUrl(person.cover)} alt={personLabel(person)} draggable={false} />

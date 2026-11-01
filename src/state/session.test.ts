@@ -105,7 +105,12 @@ describe("restoreSession", () => {
         scope: { kind: "cloud", bucket: "x" },
         galleryLayout: "cinema",
         query: {
-          filters: [{ kind: "select", field: "camera" }, { kind: "name", substring: "a" }],
+          filters: [
+            { kind: "select", field: "camera" },
+            { kind: "name", substring: "a" },
+            // Saved when a clause held one value.
+            { kind: "select", field: "tag", value: "sea" },
+          ],
           sort: { key: 7 },
         },
         stacking: "yes",
@@ -118,7 +123,10 @@ describe("restoreSession", () => {
     expect(s.galleryLayout).toBe("grid");
     expect(s.stacking).toBe(true);
     expect(s.query).toEqual({
-      filters: [{ kind: "name", substring: "a" }],
+      filters: [
+        { kind: "name", substring: "a" },
+        { kind: "select", field: "tag", values: ["sea"], negate: false },
+      ],
       sort: { key: "name", dir: "asc" },
     });
     expect(useDevelopStore.getState().caption).toBe("briefly");

@@ -22,8 +22,9 @@ import {
   withRangeOp,
   withRangeSet,
   withRangeToggled,
+  withSelectAnyToggled,
   withSelectNegated,
-  withSelectSet,
+  withSelectRenamed,
   withSelectToggled,
   withSort,
 } from "./query";
@@ -163,6 +164,7 @@ beforeAll(() => {
     reads: [LABELS],
     Menu: NoMenu,
     values: (_entry, data) => data.get(LABELS).tags,
+    anyLabel: "any tag",
   });
   registerSort({
     id: "stars",
@@ -393,10 +395,46 @@ describe("applyQuery", () => {
     const names = applyQuery(ENTRIES, notSea, data({ labels })).map((e) => e.name);
     expect(names).not.toContain("beach2.jpg");
     expect(names).toHaveLength(ENTRIES.length - 1);
-    // Picking another value keeps the operator.
-    expect(withSelectSet(notSea, "tag", "pair").filters).toEqual([
-      { kind: "select", field: "tag", value: "pair", negate: true },
+    // Adding a value keeps the operator: excluding either.
+    expect(withSelectToggled(notSea, "tag", "pair").filters).toEqual([
+      { kind: "select", field: "tag", values: ["sea", "pair"], negate: true },
     ]);
+  });
+
+  it("an any-value clause matches photos with at least one value; negated, those with none", () => {
+    const labels = {
+      "/p/beach2.jpg": { stars: null, tags: ["sea"] },
+      "/p/zoo.webp": { stars: null, tags: ["animals", "pair"] },
+    };
+    const tagged = withSelectAnyToggled(defaultQuery, "tag");
+    expect(applyQuery(ENTRIES, tagged, data({ labels })).map((e) => e.name)).toEqual([
+      "beach2.jpg",
+      "zoo.webp",
+    ]);
+    const untagged = applyQuery(ENTRIES, withSelectNegated(tagged, "tag"), data({ labels }));
+    expect(untagged).toHaveLength(ENTRIES.length - 2);
+    // A value replaces "any"; "any" replaces values; toggling "any" again clears.
+    expect(withSelectToggled(tagged, "tag", "sea").filters[0]).toMatchObject({ values: ["sea"] });
+    expect(withSelectAnyToggled(withSelectToggled(defaultQuery, "tag", "sea"), "tag").filters[0])
+      .toMatchObject({ values: "any" });
+    expect(withSelectAnyToggled(tagged, "tag").filters).toEqual([]);
+  });
+
+  it("several values match photos with at least one of them", () => {
+    const labels = {
+      "/p/beach2.jpg": { stars: null, tags: ["sea"] },
+      "/p/zoo.webp": { stars: null, tags: ["animals"] },
+      "/p/Alps.png": { stars: null, tags: ["snow"] },
+    };
+    const q = withSelectToggled(withSelectToggled(defaultQuery, "tag", "sea"), "tag", "animals");
+    expect(applyQuery(ENTRIES, q, data({ labels })).map((e) => e.name)).toEqual([
+      "beach2.jpg",
+      "zoo.webp",
+    ]);
+    // A renamed value stays picked under its new name.
+    expect(withSelectRenamed(q, "tag", "sea", "ocean").filters[0]).toMatchObject({
+      values: ["ocean", "animals"],
+    });
   });
 
   it("changing a range operator keeps its value and label", () => {
@@ -472,14 +510,16 @@ describe("query editing", () => {
     expect(stripped.filters).toEqual([{ kind: "name", substring: "x" }]);
   });
 
-  it("value toggles set, switch, and clear their clause", () => {
+  it("value toggles grow and shrink one clause, dropping it when empty", () => {
     const one = withSelectToggled(defaultQuery, "camera", "A");
-    expect(one.filters).toEqual([{ kind: "select", field: "camera", value: "A", negate: false }]);
-    // Another value switches the clause rather than stacking a second one.
-    const switched = withSelectToggled(one, "camera", "B");
-    expect(switched.filters).toEqual([{ kind: "select", field: "camera", value: "B", negate: false }]);
-    // The active value clears it.
-    expect(withSelectToggled(switched, "camera", "B").filters).toEqual([]);
+    expect(one.filters).toEqual([{ kind: "select", field: "camera", values: ["A"], negate: false }]);
+    // Another value joins the clause rather than stacking a second one.
+    const both = withSelectToggled(one, "camera", "B");
+    expect(both.filters).toEqual([
+      { kind: "select", field: "camera", values: ["A", "B"], negate: false },
+    ]);
+    // Toggling every value off clears it.
+    expect(withSelectToggled(withSelectToggled(both, "camera", "B"), "camera", "A").filters).toEqual([]);
     // Clauses on different select fields stack.
     const two = withSelectToggled(one, "aspect", "4:3");
     expect(two.filters).toHaveLength(2);
@@ -496,14 +536,7 @@ describe("query editing", () => {
     expect(cleared.filters).toEqual([{ kind: "range", field: "taken", from: 5, to: 10, label: "then" }]);
   });
 
-  it("set variants replace their clause without ever clearing", () => {
-    const one = withSelectSet(defaultQuery, "camera", "A");
-    expect(withSelectSet(one, "camera", "A").filters).toEqual([
-      { kind: "select", field: "camera", value: "A", negate: false },
-    ]);
-    expect(withSelectSet(one, "camera", "B").filters).toEqual([
-      { kind: "select", field: "camera", value: "B", negate: false },
-    ]);
+  it("range set variants replace their clause without ever clearing", () => {
     const sized = withRangeSet(defaultQuery, "size", 0, 100, "small");
     const resized = withRangeSet(sized, "size", 0, 100, "small");
     expect(resized.filters).toHaveLength(1);
